@@ -405,6 +405,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			// null = show all player tokens' vision (current default behavior)
 			// string = marker id - show only that specific token's vision
 			let selectedVisionTokenId: string | null = null;
+			// Auto-pan: when enabled, the projected player view auto-centers on
+			// the selected vision token (or fits all player tokens).
+			let _autoPanEnabled = false;
+			let _autoPanDebounce: ReturnType<typeof setTimeout> | null = null;
 			// Wall drag state
 			let draggingWallIndex = -1; // Index of wall being dragged (-1 = none)
 			let wallDragOffsetStartX = 0;
@@ -1778,6 +1782,25 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		visionSelected.setAttribute('title', 'Select which token\'s vision to show in Player View');
 		const visionMenu = visionDropdown.createDiv({ cls: 'dnd-map-vision-menu' });
 
+		// ── Auto-Pan toggle button (next to the View as dropdown) ──
+		const autoPanRow = tokenVisionContent.createDiv({ cls: 'dnd-map-autopan-row' });
+		const autoPanBtn = autoPanRow.createEl('button', {
+			cls: 'dnd-map-autopan-btn',
+			attr: { title: 'Auto-pan: keep the projected player view centered on the selected token(s)' },
+		});
+		autoPanBtn.innerHTML = '🎯 Auto-Pan';
+		const updateAutoPanBtnState = () => {
+			autoPanBtn.toggleClass('active', _autoPanEnabled);
+		};
+		updateAutoPanBtnState();
+		autoPanBtn.addEventListener('click', () => {
+			_autoPanEnabled = !_autoPanEnabled;
+			updateAutoPanBtnState();
+			if (_autoPanEnabled) {
+				_applyAutoPan();
+			}
+		});
+
 		// Toggle menu open/close
 		visionSelected.addEventListener('click', (e) => {
 			e.stopPropagation();
@@ -1822,6 +1845,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				visionMenu.removeClass('open');
 				refreshVisionSelector();
 				if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+				_applyAutoPan(true);
 				new Notice(selectedVisionTokenId ? `Vision: ${icon} ${name}` : 'Vision: All Players');
 			});
 			return item;
@@ -1961,6 +1985,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					selectedVisionTokenId = matchedMarker.id;
 					refreshVisionSelector();
 					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					_applyAutoPan(true);
 					const markerDef = plugin.markerLibrary.getMarker(matchedMarker.markerId);
 					const icon = markerDef?.type === 'player' ? '👤' : markerDef?.type === 'creature' ? '👹' : '🧑';
 					new Notice(`Vision synced: ${icon} ${markerDef?.name || matchedMarker.id}`);
@@ -1968,6 +1993,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					selectedVisionTokenId = null;
 					refreshVisionSelector();
 					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					_applyAutoPan(true);
 					new Notice('Vision synced: 👥 All Players');
 				}
 			});
@@ -3064,6 +3090,127 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			}
 		});
 		
+		// ── Auto-Pan: compute target viewport and smoothly animate PV ─────
+		// When enabled, this function determines the center point and zoom
+		// level for the projected player view based on the current vision
+		// selection (single token or all players). It uses a "tactical
+		// awareness" radius for single tokens (enough map to make decisions)
+		// and a bounding-box fit for multiple tokens.
+		const _applyAutoPan = (immediate = false) => {
+			if (!_autoPanEnabled) return;
+
+			// Clear any pending debounce
+			if (_autoPanDebounce !== null) {
+				clearTimeout(_autoPanDebounce);
+				_autoPanDebounce = null;
+			}
+
+			const run = () => {
+				const pm = plugin.projectionManager;
+				if (!pm) return;
+				const currentMapId = config.mapId || resourcePath;
+				// Only act when a free-mode projection is active for this map
+				const proj = pm.getProjectionForMap(currentMapId);
+				if (!proj || proj.state?.mode !== 'free') return;
+
+				const pv = Array.from(plugin._playerMapViews).find(
+					(v: any) => v.getMapId?.() === currentMapId || (v as any).mapId === currentMapId
+				) as any;
+				if (!pv) return;
+
+				const avgGridSize = ((config.gridSizeW || config.gridSize || 50)
+					+ (config.gridSizeH || config.gridSize || 50)) / 2;
+				if (avgGridSize <= 0) return;
+
+				// Collect vision-eligible player tokens (same filter as View-as list)
+				const visionTokens = (config.markers || []).filter((m: any) => {
+					const def = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
+					if (!def) return false;
+					return def.type === 'player' || m.visibleToPlayers;
+				});
+
+				const vpSize = typeof pv.getViewportSize === 'function'
+					? pv.getViewportSize()
+					: { width: 1920, height: 1080 };
+				const vpW = vpSize.width;
+				const vpH = vpSize.height;
+				const vpShort = Math.min(vpW, vpH);
+
+				let targetCx: number;
+				let targetCy: number;
+				let targetScale: number;
+
+				if (selectedVisionTokenId) {
+					// ── Single token: center on it with tactical awareness radius ──
+					const marker = (config.markers || []).find((m: any) => m.id === selectedVisionTokenId);
+					if (!marker?.position) return;
+					targetCx = marker.position.x;
+					targetCy = marker.position.y;
+
+					// Show ~12 grid squares on each side = 24 across the viewport
+					// short axis. This gives 60ft awareness radius in 5ft-grid D&D,
+					// covering movement speed + most spell/weapon ranges.
+					const tacticalSquares = 24;
+					const desiredSpan = tacticalSquares * avgGridSize;
+					targetScale = vpShort / desiredSpan;
+				} else {
+					// ── All Players: fit bounding box with comfortable padding ──
+					const playerTokens = visionTokens.filter((m: any) => m.position);
+					if (playerTokens.length === 0) return;
+
+					if (playerTokens.length === 1) {
+						// Only one player token: treat like single-token view
+						targetCx = playerTokens[0].position.x;
+						targetCy = playerTokens[0].position.y;
+						const tacticalSquares = 24;
+						const desiredSpan = tacticalSquares * avgGridSize;
+						targetScale = vpShort / desiredSpan;
+					} else {
+						// Compute bounding box
+						let minX = Infinity, maxX = -Infinity;
+						let minY = Infinity, maxY = -Infinity;
+						for (const m of playerTokens) {
+							minX = Math.min(minX, m.position.x);
+							maxX = Math.max(maxX, m.position.x);
+							minY = Math.min(minY, m.position.y);
+							maxY = Math.max(maxY, m.position.y);
+						}
+						// Add padding: 6 grid squares on each side
+						const padding = 6 * avgGridSize;
+						minX -= padding;
+						maxX += padding;
+						minY -= padding;
+						maxY += padding;
+
+						const boxW = maxX - minX;
+						const boxH = maxY - minY;
+
+						targetCx = (minX + maxX) / 2;
+						targetCy = (minY + maxY) / 2;
+						targetScale = Math.min(vpW / boxW, vpH / boxH);
+					}
+				}
+
+				// Clamp scale to reasonable bounds
+				targetScale = Math.max(0.05, Math.min(5, targetScale));
+
+				// Animate
+				if (typeof pv.smoothPanAndZoomTo === 'function') {
+					pv.smoothPanAndZoomTo(targetCx, targetCy, targetScale, 600);
+				} else {
+					// Fallback: set scale then pan
+					if (typeof pv.setTabletopScale === 'function') pv.setTabletopScale(targetScale);
+					if (typeof pv.smoothPanToImageCoords === 'function') pv.smoothPanToImageCoords(targetCx, targetCy, 600);
+				}
+			};
+
+			if (immediate) {
+				run();
+			} else {
+				_autoPanDebounce = setTimeout(run, 150);
+			}
+		};
+
 		// Sync function installed at viewport scope so it persists across
 		// re-renders when the GM view moves to a new leaf / DOM element.
 		// (rAF-coalesced: many calls per frame → one actual sync at next paint)
@@ -10354,6 +10501,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					if ((viewport as any)._syncPlayerView) {
 						(viewport as any)._syncPlayerView();
 					}
+					// Auto-pan: re-center after token moved (debounced)
+					_applyAutoPan();
 				} else if (activeTool === 'select' && draggingLightIndex >= 0) {
 					// Drop light: save position
 					draggingLightIndex = -1;
@@ -10618,6 +10767,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					viewport.style.cursor = 'default';
 					redrawAnnotations();
 					plugin.saveMapAnnotations(config, el);
+					_applyAutoPan();
 				} else if (activeTool === 'select' && draggingLightIndex >= 0) {
 					draggingLightIndex = -1;
 					lightDragOrigin = null;

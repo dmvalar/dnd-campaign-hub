@@ -486,6 +486,50 @@ export class PlayerMapView extends ItemView {
   }
 
   /**
+   * Smoothly animate the viewport to center on the given image coordinate
+   * AND change the zoom level simultaneously. Uses a CSS transition on
+   * the sled element so the browser interpolates both translate and scale
+   * in a single smooth animation.
+   */
+  smoothPanAndZoomTo(centerX: number, centerY: number, scale: number, durationMs: number = 600) {
+    if (!this.mapContainer || !this.mapImage) {
+      this.tabletopScale = scale || 1;
+      this.setTabletopPanFromImageCoords(centerX, centerY);
+      return;
+    }
+    const sled = this.mapContainer.querySelector('.dnd-player-map-sled') as HTMLElement;
+    if (!sled) {
+      this.tabletopScale = scale || 1;
+      this.setTabletopPanFromImageCoords(centerX, centerY);
+      return;
+    }
+
+    // Clear any pending cleanup from a previous smooth pan/zoom
+    if (this._smoothPanTimer !== null) {
+      clearTimeout(this._smoothPanTimer);
+      this._smoothPanTimer = null;
+    }
+
+    // Enable CSS transition, then update both scale and pan target
+    sled.style.transition = `transform ${durationMs}ms cubic-bezier(0.33, 1, 0.68, 1)`;
+    this.tabletopScale = scale || 1;
+    this.setTabletopPanFromImageCoords(centerX, centerY);
+
+    // Remove the transition property after animation completes
+    this._smoothPanTimer = setTimeout(() => {
+      sled.style.transition = '';
+      this._smoothPanTimer = null;
+    }, durationMs + 50);
+  }
+
+  /** Get the viewport dimensions for external callers (e.g. auto-pan). */
+  getViewportSize(): { width: number; height: number } {
+    if (!this.mapContainer) return { width: 1920, height: 1080 };
+    const rect = this.mapContainer.getBoundingClientRect();
+    return { width: rect.width || 1920, height: rect.height || 1080 };
+  }
+
+  /**
    * Set tabletop rotation.
    * Called by GM when using Q/E keys to rotate the player view.
    * @param rotation - Rotation in degrees (0, 90, 180, 270)

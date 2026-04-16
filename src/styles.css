@@ -9273,6 +9273,39 @@
   margin-left: auto;
 }
 
+/* ── Auto-Pan toggle ──────────────────────────────────────────────────── */
+.dnd-map-autopan-row {
+  display: flex;
+  padding: 4px 0 2px;
+}
+
+.dnd-map-autopan-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  width: 100%;
+  justify-content: center;
+}
+
+.dnd-map-autopan-btn:hover {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+}
+
+.dnd-map-autopan-btn.active {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
 /* ──────────────────────────────────────────────────────────────────────────
    Random Encounter Table Modal
    ────────────────────────────────────────────────────────────────────── */
