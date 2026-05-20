@@ -2,6 +2,7 @@ import { App, Modal, Notice, Setting, TFile, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { MarkerDefinition, CreatureSize, CREATURE_SIZE_SQUARES } from "../marker/MarkerTypes";
 import { TokenEditorWidget } from '../marker/TokenEditorWidget';
+import { TEMPLATE_VERSIONS } from "../migration";
 
 export class CreatureCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -1105,7 +1106,8 @@ statblock: true
 layout: Basic 5e Layout
 name: ${this.creatureName}
 size: ${this.size}
-type: ${this.type}`;
+type: creature
+creature_type: ${this.type}`;
 
     if (this.subtype) {
       frontmatter += `\nsubtype: ${this.subtype}`;
@@ -1239,7 +1241,9 @@ fage_stats:
         }
       });
     }
+    const creatureTemplateVersion = TEMPLATE_VERSIONS.creature || "1.11.0";
     frontmatter += `\ntoken_id: ${this.tokenId}`;
+    frontmatter += `\ntemplate_version: ${creatureTemplateVersion}`;
     frontmatter += `\n---\n\n`;
 
     // Add description
