@@ -2,6 +2,8 @@
 
 This guide walks you through installing D&D Campaign Hub and setting up your first campaign.
 
+If you are installing the plugin from GitHub for the first time, start with the more detailed [First Steps guide](first-steps.md).
+
 ## Install the plugin
 
 ### From community plugins (recommended)
