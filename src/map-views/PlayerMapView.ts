@@ -397,7 +397,22 @@ export class PlayerMapView extends ItemView {
 
     // Fog-of-war
     n(c.fogOfWar?.enabled ? 1 : 0);
-    n(c.fogOfWar?.regions?.length || 0);
+    const digestFogRegions: any[] = c.fogOfWar?.regions || [];
+    n(digestFogRegions.length);
+    for (let i = 0; i < digestFogRegions.length; i++) {
+      const r = digestFogRegions[i];
+      if (r.type) s(r.type);
+      if (r.shape) s(r.shape);
+      n(r.x || r.cx || 0); n(r.y || r.cy || 0);
+      n(r.width || r.radius || 0); n(r.height || 0);
+      if (Array.isArray(r.points)) {
+        n(r.points.length);
+        for (const point of r.points) {
+          n(point.x || 0);
+          n(point.y || 0);
+        }
+      }
+    }
 
     // Grid
     n(c.gridSize || 0);
@@ -4472,6 +4487,7 @@ export class PlayerMapView extends ItemView {
     const _mdMask = _canvasPool.acquire(w, h);
     const _mdCtx = _mdMask.getContext('2d');
     if (_mdCtx) {
+      _mdCtx.clearRect(0, 0, w, h);
       for (const region of (config.fogOfWar.regions || [])) {
         if (region.type === 'magic-darkness') {
           _hasMagicDarkness = true;

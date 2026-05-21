@@ -560,6 +560,83 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			let fogDragEnd: { x: number; y: number } | null = null;
 			let fogPolygonPoints: { x: number; y: number }[] = [];
 			if (!config.fogOfWar) config.fogOfWar = { enabled: true, regions: [] };
+
+			const pointInFogRegion = (point: { x: number; y: number }, region: any): boolean => {
+				if (!region) return false;
+				if (region.shape === 'rect') {
+					const x1 = Math.min(region.x || 0, (region.x || 0) + (region.width || 0));
+					const x2 = Math.max(region.x || 0, (region.x || 0) + (region.width || 0));
+					const y1 = Math.min(region.y || 0, (region.y || 0) + (region.height || 0));
+					const y2 = Math.max(region.y || 0, (region.y || 0) + (region.height || 0));
+					return point.x >= x1 && point.x <= x2 && point.y >= y1 && point.y <= y2;
+				}
+				if (region.shape === 'circle') {
+					const dx = point.x - (region.cx || 0);
+					const dy = point.y - (region.cy || 0);
+					const r = region.radius || 0;
+					return dx * dx + dy * dy <= r * r;
+				}
+				if (region.shape === 'polygon' && Array.isArray(region.points) && region.points.length >= 3) {
+					let inside = false;
+					for (let i = 0, j = region.points.length - 1; i < region.points.length; j = i++) {
+						const pi = region.points[i];
+						const pj = region.points[j];
+						if (!pi || !pj) continue;
+						const intersects = ((pi.y > point.y) !== (pj.y > point.y)) &&
+							(point.x < ((pj.x - pi.x) * (point.y - pi.y)) / ((pj.y - pi.y) || 1e-9) + pi.x);
+						if (intersects) inside = !inside;
+					}
+					return inside;
+				}
+				return false;
+			};
+
+			const sampleFogRegion = (region: any): { x: number; y: number }[] => {
+				if (!region) return [];
+				if (region.shape === 'rect') {
+					const x1 = region.x || 0;
+					const y1 = region.y || 0;
+					const x2 = x1 + (region.width || 0);
+					const y2 = y1 + (region.height || 0);
+					return [
+						{ x: x1, y: y1 }, { x: x2, y: y1 }, { x: x2, y: y2 }, { x: x1, y: y2 },
+						{ x: (x1 + x2) / 2, y: (y1 + y2) / 2 },
+					];
+				}
+				if (region.shape === 'circle') {
+					const cx = region.cx || 0;
+					const cy = region.cy || 0;
+					const r = region.radius || 0;
+					const points = [{ x: cx, y: cy }];
+					for (let i = 0; i < 16; i++) {
+						const a = (i / 16) * Math.PI * 2;
+						points.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
+					}
+					return points;
+				}
+				if (region.shape === 'polygon' && Array.isArray(region.points)) {
+					const points = region.points.map((p: any) => ({ x: p.x || 0, y: p.y || 0 }));
+					if (points.length > 0) {
+						const centroid = points.reduce(
+							(acc: { x: number; y: number }, p: { x: number; y: number }) => ({ x: acc.x + p.x, y: acc.y + p.y }),
+							{ x: 0, y: 0 },
+						);
+						points.push({ x: centroid.x / points.length, y: centroid.y / points.length });
+					}
+					return points;
+				}
+				return [];
+			};
+
+			const fogRegionFullyCoveredBy = (older: any, newer: any): boolean => {
+				const samples = sampleFogRegion(older);
+				return samples.length > 0 && samples.every((point) => pointInFogRegion(point, newer));
+			};
+
+			const compactFogRegionsForNewRegion = (newRegion: any) => {
+				const regions = config.fogOfWar?.regions || [];
+				config.fogOfWar.regions = regions.filter((existing: any) => !fogRegionFullyCoveredBy(existing, newRegion));
+			};
 			// Dynamic Lighting walls state (pivot/chain drawing)
 			let wallPoints: { x: number; y: number }[] = [];
 			let wallPreviewPos: { x: number; y: number } | null = null;
@@ -8697,6 +8774,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const _gmMdMask = _canvasPool.acquire(w, h);
 				const _gmMdCtx = _gmMdMask.getContext('2d');
 				if (_gmMdCtx) {
+					_gmMdCtx.clearRect(0, 0, w, h);
 					for (const region of (config.fogOfWar.regions || [])) {
 						if (region.type === 'magic-darkness') {
 							_gmHasMD = true;
@@ -11118,6 +11196,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				};
 				saveToHistory();
 				config.fogOfWar.enabled = true;
+				compactFogRegionsForNewRegion(region);
 				config.fogOfWar.regions.push(region);
 				fogPolygonPoints = [];
 				redrawAnnotations();
@@ -11229,6 +11308,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						if (region) {
 							saveToHistory();
 							config.fogOfWar.enabled = true;
+							compactFogRegionsForNewRegion(region);
 							config.fogOfWar.regions.push(region);
 							redrawAnnotations();
 							plugin.saveMapAnnotations(config, el);
