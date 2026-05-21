@@ -5,6 +5,22 @@ All notable changes to the D&D Campaign Hub plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-05-21
+
+### Added
+
+- **Player View Initiative Overlay** — Battle maps can now show a compact initiative tracker directly in the Player View, with encounter linking guidance, current encounter status, resize modes, HP/condition details, and combat feedback animations.
+- **Battle Map Token Groups** — DMs can group selected tokens into a movable group token, add tokens to existing groups, release individual members, and project group vision through the Player View selector.
+- **Expanded Vision Types** — Battle map tokens now support Blindsight, Tremorsense, and Truesight. Truesight can pierce Magic Darkness where appropriate.
+- **Player View Auto-Pan Controls** — Player View controls now include Auto-Pan and Initiative display options, with smarter vision-aware zooming and safe-area panning around the initiative overlay.
+
+### Fixed
+
+- **DM Layer Privacy** — Player View no longer tracks Auto-Pan, drag distance rulers, highlighted movement tiles, or vision updates from tokens moved on the DM layer.
+- **Wall-Constrained Movement** — Player and group token movement is blocked by map walls unless the token is on the DM layer.
+- **Fog of War Overrides** — New fog regions now properly override Magic Darkness functionality, clear stale darkness masks, and conservatively compact older fully-covered fog regions.
+- **Selection UX** — Multi-token selection now shows a visible selection rectangle and dismisses its action menu when clicking away, switching tools, or starting a new selection.
+
 ## [0.9.0] - 2026-04-11
 
 ### Added

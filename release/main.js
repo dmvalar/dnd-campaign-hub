@@ -993,7 +993,7 @@ var init_types2 = __esm({
       spell: "1.2.0",
       campaign: "1.1.0",
       trap: "1.3.1",
-      creature: "1.10.0",
+      creature: "1.11.0",
       encounter: "1.2.0",
       "encounter-table": "1.3.0",
       "point-of-interest": "1.2.0"
@@ -4074,6 +4074,9 @@ var init_MarkerLibraryModal = __esm({
         this.creatureSize = "medium";
         this.pixelSize = 40;
         this.darkvision = 0;
+        this.blindsight = 0;
+        this.tremorsense = 0;
+        this.truesight = 0;
         this.markerLibrary = markerLibrary;
         this.marker = marker;
         this.onSave = onSave;
@@ -4087,6 +4090,9 @@ var init_MarkerLibraryModal = __esm({
           this.creatureSize = marker.creatureSize || "medium";
           this.pixelSize = marker.pixelSize || 40;
           this.darkvision = marker.darkvision || 0;
+          this.blindsight = marker.blindsight || 0;
+          this.tremorsense = marker.tremorsense || 0;
+          this.truesight = marker.truesight || 0;
         }
       }
       onOpen() {
@@ -4124,6 +4130,27 @@ var init_MarkerLibraryModal = __esm({
           })
         );
         this.darkvisionSettingEl = darkvisionSetting.settingEl;
+        const blindsightSetting = new import_obsidian38.Setting(contentEl).setName("Blindsight").setDesc("Default blindsight range in feet (0-300)").addText(
+          (text) => text.setValue(this.blindsight > 0 ? this.blindsight.toString() : "").setPlaceholder("0").onChange((value) => {
+            const num2 = parseInt(value) || 0;
+            this.blindsight = Math.max(0, Math.min(300, num2));
+          })
+        );
+        this.blindsightSettingEl = blindsightSetting.settingEl;
+        const tremorsenseSetting = new import_obsidian38.Setting(contentEl).setName("Tremorsense").setDesc("Default tremorsense range in feet (0-300)").addText(
+          (text) => text.setValue(this.tremorsense > 0 ? this.tremorsense.toString() : "").setPlaceholder("0").onChange((value) => {
+            const num2 = parseInt(value) || 0;
+            this.tremorsense = Math.max(0, Math.min(300, num2));
+          })
+        );
+        this.tremorsenseSettingEl = tremorsenseSetting.settingEl;
+        const truesightSetting = new import_obsidian38.Setting(contentEl).setName("Truesight").setDesc("Default truesight range in feet (0-300)").addText(
+          (text) => text.setValue(this.truesight > 0 ? this.truesight.toString() : "").setPlaceholder("0").onChange((value) => {
+            const num2 = parseInt(value) || 0;
+            this.truesight = Math.max(0, Math.min(300, num2));
+          })
+        );
+        this.truesightSettingEl = truesightSetting.settingEl;
         const pixelSizeSetting = new import_obsidian38.Setting(contentEl).setName("Size (pixels)").setDesc("Marker diameter in pixels (20\u2013100)").addSlider(
           (slider) => slider.setLimits(20, 100, 5).setValue(this.pixelSize).setDynamicTooltip().onChange((value) => {
             this.pixelSize = value;
@@ -4226,6 +4253,9 @@ var init_MarkerLibraryModal = __esm({
         const isCreature = ["player", "npc", "creature"].includes(this.type);
         this.creatureSizeSettingEl.style.display = isCreature ? "" : "none";
         this.darkvisionSettingEl.style.display = isCreature ? "" : "none";
+        this.blindsightSettingEl.style.display = isCreature ? "" : "none";
+        this.tremorsenseSettingEl.style.display = isCreature ? "" : "none";
+        this.truesightSettingEl.style.display = isCreature ? "" : "none";
         this.pixelSizeSettingEl.style.display = isCreature ? "none" : "";
       }
       updatePreview() {
@@ -4296,6 +4326,15 @@ var init_MarkerLibraryModal = __esm({
           def.creatureSize = this.creatureSize;
           if (this.darkvision > 0) {
             def.darkvision = this.darkvision;
+          }
+          if (this.blindsight > 0) {
+            def.blindsight = this.blindsight;
+          }
+          if (this.tremorsense > 0) {
+            def.tremorsense = this.tremorsense;
+          }
+          if (this.truesight > 0) {
+            def.truesight = this.truesight;
           }
         } else {
           def.pixelSize = this.pixelSize;
@@ -9958,6 +9997,13 @@ function showEnvAssetContextMenu(app, event, instance, definition, assetLibrary,
       }
     }
   }
+  if (callbacks.onDuplicate) {
+    menu.addItem(
+      (item) => item.setTitle("\u{1F4CB} Duplicate").onClick(() => {
+        callbacks.onDuplicate(instance);
+      })
+    );
+  }
   menu.addSeparator();
   menu.addItem(
     (item) => item.setTitle("\u{1F5D1}\uFE0F Delete").onClick(() => {
@@ -10872,9 +10918,10 @@ var _MapController = class _MapController {
     if (this.hasMarkerOnMap(markerDef.id, borderColor)) {
       return { success: false, reason: `"${(_d = opts.display) != null ? _d : opts.name}" is already on the map` };
     }
-    const gs = config.gridSize || 70;
+    const gsW = config.gridSizeW || config.gridSize || 70;
+    const gsH = config.gridSizeH || config.gridSize || 70;
     const squares = CREATURE_SIZE_SQUARES[markerDef.creatureSize || "medium"] || 1;
-    const position = this.findOpenPosition(config, gs, squares);
+    const position = this.findOpenPosition(config, gsW, gsH, squares);
     const isAlly = opts.player || opts.friendly;
     const layer = isAlly ? "Player" : "DM";
     const markerRef = {
@@ -10931,21 +10978,23 @@ var _MapController = class _MapController {
    * Find an open grid position for a new token.
    * Starts near the map centre and spirals outward.
    */
-  findOpenPosition(config, gridSize, sizeSquares) {
+  findOpenPosition(config, gridSizeW, gridSizeH, sizeSquares) {
     var _a, _b;
     const ox = config.gridOffsetX || 0;
     const oy = config.gridOffsetY || 0;
     const w = ((_a = config.dimensions) == null ? void 0 : _a.width) || 2e3;
     const h = ((_b = config.dimensions) == null ? void 0 : _b.height) || 2e3;
-    const halfToken = sizeSquares * gridSize / 2;
-    const step = sizeSquares < 1 ? gridSize * sizeSquares : gridSize;
+    const halfTokenW = sizeSquares * gridSizeW / 2;
+    const halfTokenH = sizeSquares * gridSizeH / 2;
+    const stepX = sizeSquares < 1 ? gridSizeW * sizeSquares : gridSizeW;
+    const stepY = sizeSquares < 1 ? gridSizeH * sizeSquares : gridSizeH;
     const markers = config.markers || [];
-    const centreCol = Math.round((w / 2 - ox - halfToken) / step);
-    const centreRow = Math.round((h / 2 - oy - halfToken) / step);
+    const centreCol = Math.round((w / 2 - ox - halfTokenW) / stepX);
+    const centreRow = Math.round((h / 2 - oy - halfTokenH) / stepY);
     const isOccupied = (col, row) => {
-      const cx2 = ox + col * step + halfToken;
-      const cy2 = oy + row * step + halfToken;
-      const threshold = gridSize * 0.4;
+      const cx2 = ox + col * stepX + halfTokenW;
+      const cy2 = oy + row * stepY + halfTokenH;
+      const threshold = Math.min(gridSizeW, gridSizeH) * 0.4;
       return markers.some((m) => {
         const dx = m.position.x - cx2;
         const dy = m.position.y - cy2;
@@ -10960,14 +11009,14 @@ var _MapController = class _MapController {
           const row = centreRow + dr;
           if (!isOccupied(col, row)) {
             return {
-              x: ox + col * step + halfToken,
-              y: oy + row * step + halfToken
+              x: ox + col * stepX + halfTokenW,
+              y: oy + row * stepY + halfTokenH
             };
           }
         }
       }
     }
-    return { x: w / 2 + markers.length * gridSize, y: h / 2 };
+    return { x: w / 2 + markers.length * gridSizeW, y: h / 2 };
   }
 };
 /* ═══════════════════════ Mutations ═══════════════════════ */
@@ -11001,10 +11050,368 @@ _MapController.COLOR_NAME_TO_HEX = {
 var MapController = _MapController;
 
 // src/map/MapCreationModal.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 init_types();
+
+// src/map/MapPersistence.ts
+var import_obsidian3 = require("obsidian");
+
+// src/map/MapFactory.ts
+var MAP_SCHEMA_VERSION = 2;
+function getMapAnnotationDefaults() {
+  return {
+    schemaVersion: MAP_SCHEMA_VERSION,
+    mapId: "",
+    name: "",
+    imageFile: "",
+    isVideo: false,
+    type: "battlemap",
+    dimensions: {},
+    gridType: "square",
+    gridSize: 70,
+    gridOffsetX: 0,
+    gridOffsetY: 0,
+    gridSizeW: void 0,
+    gridSizeH: void 0,
+    gridVisible: true,
+    scale: { value: 5, unit: "feet" },
+    activeLayer: "Player",
+    showInitiativeInPlayerView: false,
+    initiativeOverlaySize: "medium",
+    // Annotations
+    highlights: [],
+    markers: [],
+    drawings: [],
+    textAnnotations: [],
+    tunnels: [],
+    poiReferences: [],
+    hexTerrains: [],
+    hexClimates: [],
+    customTerrainDescriptions: {},
+    hexcrawlState: null,
+    fogOfWar: { enabled: false, regions: [] },
+    walls: [],
+    lightSources: [],
+    tileElevations: {},
+    difficultTerrain: {},
+    envAssets: [],
+    // Template system
+    isTemplate: false,
+    templateTags: void 0,
+    // Metadata
+    lastModified: ""
+  };
+}
+function normalizeMapAnnotations(raw) {
+  var _a;
+  if (!raw || typeof raw !== "object") return { ...getMapAnnotationDefaults() };
+  const defaults = getMapAnnotationDefaults();
+  const out = {};
+  for (const [key, defaultVal] of Object.entries(defaults)) {
+    if (key === "gridVisible") {
+      out[key] = raw[key] !== void 0 ? raw[key] : defaultVal;
+    } else {
+      out[key] = (_a = raw[key]) != null ? _a : defaultVal;
+    }
+  }
+  for (const key of Object.keys(raw)) {
+    if (!(key in out)) {
+      out[key] = raw[key];
+    }
+  }
+  out.schemaVersion = MAP_SCHEMA_VERSION;
+  if (Array.isArray(out.markers)) {
+    out.markers = out.markers.map((m) => {
+      const cleaned = _stripRuntimeFields(m);
+      if (cleaned.elevation && typeof cleaned.elevation === "object") {
+        cleaned.elevation = _stripRuntimeFields(cleaned.elevation);
+      }
+      if (cleaned.tunnelState && typeof cleaned.tunnelState === "object") {
+        cleaned.tunnelState = _stripRuntimeFields(cleaned.tunnelState);
+      }
+      return cleaned;
+    });
+  }
+  return out;
+}
+function _stripRuntimeFields(obj) {
+  const out = {};
+  for (const [key, val2] of Object.entries(obj)) {
+    if (!key.startsWith("_")) {
+      out[key] = val2;
+    }
+  }
+  return out;
+}
+function cloneTemplateToMap(templateData, newMapId, mapName, overrides) {
+  const cloned = normalizeMapAnnotations(structuredClone(templateData));
+  cloned.mapId = newMapId;
+  cloned.name = mapName;
+  cloned.highlights = [];
+  cloned.isTemplate = false;
+  cloned.templateTags = void 0;
+  cloned.linkedEncounter = "";
+  cloned.linkedScene = "";
+  cloned.activeLayer = "Player";
+  cloned.lastModified = (/* @__PURE__ */ new Date()).toISOString();
+  for (const marker of cloned.markers) {
+    marker.id = `marker_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
+  }
+  if (overrides) {
+    Object.assign(cloned, overrides);
+  }
+  return cloned;
+}
+
+// src/map/MapPersistence.ts
+var SAVE_DEBOUNCE_MS = 1e3;
+var _templateIndex = null;
+function invalidateTemplateIndex() {
+  _templateIndex = null;
+}
+async function _getTemplateIndex(plugin) {
+  if (_templateIndex) return _templateIndex;
+  const entries = [];
+  try {
+    const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
+    if (!await plugin.app.vault.adapter.exists(annotationDir)) {
+      _templateIndex = entries;
+      return entries;
+    }
+    const listing = await plugin.app.vault.adapter.list(annotationDir);
+    for (const filePath of listing.files) {
+      if (!filePath.endsWith(".json")) continue;
+      try {
+        const raw = await plugin.app.vault.adapter.read(filePath);
+        const data = JSON.parse(raw);
+        if (!data.isTemplate || !data.templateTags) continue;
+        entries.push({
+          mapId: data.mapId,
+          name: data.name || "Unnamed Template",
+          imageFile: data.imageFile,
+          tags: data.templateTags
+        });
+      } catch (e) {
+      }
+    }
+  } catch (err) {
+    console.error("[MapPersistence] Error building template index:", err);
+  }
+  _templateIndex = entries;
+  return entries;
+}
+function saveMapAnnotations(plugin, config, el) {
+  const viewport = el.querySelector(".dnd-map-viewport");
+  if (viewport && viewport._syncPlayerView) {
+    viewport._syncPlayerView();
+  }
+  if (!config.mapId) {
+    console.error("Cannot save annotations: mapId missing");
+    return;
+  }
+  const mapId = config.mapId;
+  const existing = plugin._pendingSaves.get(mapId);
+  if (existing) clearTimeout(existing.timer);
+  const timer = setTimeout(() => {
+    _flushMapSave(plugin, mapId);
+  }, SAVE_DEBOUNCE_MS);
+  plugin._pendingSaves.set(mapId, { config, el, timer });
+}
+async function _flushMapSave(plugin, mapId) {
+  const entry = plugin._pendingSaves.get(mapId);
+  if (!entry) return;
+  clearTimeout(entry.timer);
+  const config = entry.config;
+  try {
+    const mapData = normalizeMapAnnotations(config);
+    mapData.lastModified = (/* @__PURE__ */ new Date()).toISOString();
+    const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
+    const dirExists = await plugin.app.vault.adapter.exists(annotationDir);
+    if (!dirExists) {
+      await plugin.app.vault.adapter.mkdir(annotationDir);
+    }
+    const annotationPath = getMapAnnotationPath(plugin, config.mapId);
+    const annotationJson = JSON.stringify(mapData, null, 2);
+    await plugin.app.vault.adapter.write(annotationPath, annotationJson);
+    plugin._pendingSaves.delete(mapId);
+    invalidateTemplateIndex();
+  } catch (error2) {
+    console.error("Error saving map annotations:", error2);
+    entry.timer = setTimeout(() => {
+      _flushMapSave(plugin, mapId);
+    }, SAVE_DEBOUNCE_MS * 2);
+    new import_obsidian3.Notice("\u26A0\uFE0F Map save failed \u2014 will retry automatically");
+  }
+}
+async function _flushAllPendingSaves(plugin) {
+  const ids = [...plugin._pendingSaves.keys()];
+  for (const id of ids) {
+    await _flushMapSave(plugin, id);
+  }
+}
+function getMapAnnotationPath(plugin, mapId) {
+  return `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations/${mapId}.json`;
+}
+async function loadMapAnnotations(plugin, mapId) {
+  try {
+    const annotationPath = getMapAnnotationPath(plugin, mapId);
+    if (await plugin.app.vault.adapter.exists(annotationPath)) {
+      const data = await plugin.app.vault.adapter.read(annotationPath);
+      const parsedData = JSON.parse(data);
+      return normalizeMapAnnotations(parsedData);
+    } else {
+      return {};
+    }
+  } catch (error2) {
+    console.error("Error loading map annotations:", error2);
+    return {};
+  }
+}
+async function queryMapTemplates(plugin, criteria) {
+  var _a, _b, _c, _d, _e;
+  const index = await _getTemplateIndex(plugin);
+  const results = [];
+  for (const entry of index) {
+    const tags = entry.tags;
+    let score = 0;
+    if (criteria.terrain && ((_a = tags.terrain) == null ? void 0 : _a.includes(criteria.terrain))) score += 3;
+    if (criteria.climate && ((_b = tags.climate) == null ? void 0 : _b.includes(criteria.climate))) score += 2;
+    if (criteria.location && ((_c = tags.location) == null ? void 0 : _c.includes(criteria.location))) score += 2;
+    if (criteria.timeOfDay && ((_d = tags.timeOfDay) == null ? void 0 : _d.includes(criteria.timeOfDay))) score += 1;
+    if (criteria.size && ((_e = tags.size) == null ? void 0 : _e.includes(criteria.size))) score += 1;
+    const hasCriteria = criteria.terrain || criteria.climate || criteria.location;
+    if (score > 0 || !hasCriteria) {
+      results.push({ ...entry, matchScore: score });
+    }
+  }
+  results.sort((a, b) => b.matchScore - a.matchScore);
+  return results;
+}
+async function migrateExistingTemplatesToNotes(plugin) {
+  try {
+    const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
+    if (!await plugin.app.vault.adapter.exists(annotationDir)) return;
+    const listing = await plugin.app.vault.adapter.list(annotationDir);
+    const templateMaps = [];
+    for (const filePath of listing.files) {
+      if (!filePath.endsWith(".json")) continue;
+      try {
+        const raw = await plugin.app.vault.adapter.read(filePath);
+        const data = JSON.parse(raw);
+        if (data.isTemplate && data.mapId) {
+          templateMaps.push({ mapId: data.mapId, name: data.name || "Template" });
+        }
+      } catch (e) {
+      }
+    }
+    if (templateMaps.length === 0) return;
+    const folder = BATTLEMAP_TEMPLATE_FOLDER;
+    if (!await plugin.app.vault.adapter.exists(folder)) {
+      await plugin.app.vault.createFolder(folder);
+    }
+    const existingMapIds = /* @__PURE__ */ new Set();
+    const mdFiles = plugin.app.vault.getMarkdownFiles().filter(
+      (f) => f.path.startsWith(folder + "/")
+    );
+    for (const file of mdFiles) {
+      try {
+        const content = await plugin.app.vault.read(file);
+        const match = content.match(/"mapId"\s*:\s*"([^"]+)"/);
+        if (match && match[1]) existingMapIds.add(match[1]);
+      } catch (e) {
+      }
+    }
+    let migrated = 0;
+    for (const tpl of templateMaps) {
+      if (existingMapIds.has(tpl.mapId)) continue;
+      const safeName = tpl.name.replace(/[\\/:*?"<>|]/g, "_").trim() || "Template";
+      let notePath = `${folder}/${safeName}.md`;
+      let counter = 1;
+      while (await plugin.app.vault.adapter.exists(notePath)) {
+        notePath = `${folder}/${safeName} (${counter}).md`;
+        counter++;
+      }
+      const codeBlock = `\`\`\`dnd-map
+${JSON.stringify({ mapId: tpl.mapId }, null, 2)}
+\`\`\``;
+      const content = `---
+tags:
+  - battlemap-template
+template_name: "${tpl.name}"
+---
+# ${tpl.name}
+
+${codeBlock}
+`;
+      await plugin.app.vault.create(notePath, content);
+      migrated++;
+    }
+    if (migrated > 0) {
+      new import_obsidian3.Notice(`\u{1F5FA}\uFE0F Migrated ${migrated} battlemap template${migrated > 1 ? "s" : ""} to ${folder}/`);
+    }
+  } catch (err) {
+  }
+}
+async function enrichTokenCampaigns(plugin) {
+  try {
+    await new Promise((resolve) => {
+      if (plugin.app.metadataCache.resolvedLinks) {
+        resolve();
+      } else {
+        const ref = plugin.app.metadataCache.on("resolved", () => {
+          plugin.app.metadataCache.offref(ref);
+          resolve();
+        });
+      }
+    });
+    const allFiles = plugin.app.vault.getMarkdownFiles();
+    let enriched = 0;
+    let backfilled = 0;
+    for (const file of allFiles) {
+      const cache = plugin.app.metadataCache.getFileCache(file);
+      if (!(cache == null ? void 0 : cache.frontmatter)) continue;
+      const fm = cache.frontmatter;
+      const fmType = fm.type;
+      if (fmType !== "player" && fmType !== "npc") continue;
+      const campaign = fm.campaign;
+      if (!campaign) continue;
+      let tokenId = fm.token_id;
+      if (!tokenId) {
+        const name = fm.name || file.basename;
+        const markerType = fmType === "player" ? "player" : "npc";
+        const allMarkers = plugin.markerLibrary.getAllMarkers();
+        const match = allMarkers.find(
+          (m) => m.name === name && m.type === markerType && !m.campaign
+        );
+        if (match) {
+          tokenId = match.id;
+          try {
+            await plugin.app.fileManager.processFrontMatter(file, (frontmatter) => {
+              frontmatter.token_id = tokenId;
+            });
+            backfilled++;
+          } catch (e) {
+          }
+        }
+      }
+      if (!tokenId) continue;
+      const marker = plugin.markerLibrary.getMarker(tokenId);
+      if (!marker) continue;
+      if (marker.campaign) continue;
+      marker.campaign = campaign;
+      marker.updatedAt = Date.now();
+      await plugin.markerLibrary.setMarker(marker);
+      enriched++;
+    }
+    if (enriched > 0 || backfilled > 0) {
+    }
+  } catch (err) {
+  }
+}
+
+// src/map/MapCreationModal.ts
 var BATTLEMAP_TEMPLATE_FOLDER = "z_BattlemapTemplates";
-var _MapCreationModal = class _MapCreationModal extends import_obsidian3.Modal {
+var _MapCreationModal = class _MapCreationModal extends import_obsidian4.Modal {
   constructor(app, plugin, mapManager, editConfig, editElement, insertCodeBlock = true, templateMode = false) {
     var _a, _b;
     super(app);
@@ -11045,7 +11452,7 @@ var _MapCreationModal = class _MapCreationModal extends import_obsidian3.Modal {
       this.scaleValue = ((_a = editConfig.scale) == null ? void 0 : _a.value) || 5;
       this.scaleUnit = ((_b = editConfig.scale) == null ? void 0 : _b.unit) || "feet";
       const file = this.app.vault.getAbstractFileByPath(editConfig.imageFile);
-      if (file instanceof import_obsidian3.TFile) {
+      if (file instanceof import_obsidian4.TFile) {
         this.selectedFile = file;
       }
     }
@@ -11079,7 +11486,7 @@ var _MapCreationModal = class _MapCreationModal extends import_obsidian3.Modal {
   createImageSelector(container) {
     const section = container.createDiv({ cls: "dnd-map-section" });
     section.createEl("h3", { text: "Step 1: Select Map Image" });
-    new import_obsidian3.Setting(section).setName("Map image").setDesc("Choose an image file from your vault (PNG, JPG, WEBP, GIF, APNG, AVIF, MP4, WebM)").addButton((button) => {
+    new import_obsidian4.Setting(section).setName("Map image").setDesc("Choose an image file from your vault (PNG, JPG, WEBP, GIF, APNG, AVIF, MP4, WebM)").addButton((button) => {
       button.setButtonText("Choose Image").onClick(async () => {
         await this.selectImageFromVault();
       });
@@ -11103,7 +11510,7 @@ var _MapCreationModal = class _MapCreationModal extends import_obsidian3.Modal {
       return file.path.startsWith(_MapCreationModal.MAP_ASSET_FOLDER + "/") && MAP_MEDIA_EXTENSIONS.includes(ext);
     });
     if (imageFiles.length === 0) {
-      new import_obsidian3.Notice("No map files found in z_Assets/Maps");
+      new import_obsidian4.Notice("No map files found in z_Assets/Maps");
       return;
     }
     const fileNames = imageFiles.map((f) => f.path);
@@ -11126,20 +11533,20 @@ var _MapCreationModal = class _MapCreationModal extends import_obsidian3.Modal {
       if (nameInput) {
         nameInput.value = this.mapName;
       }
-      new import_obsidian3.Notice(`Grid size auto-detected: ${this.gridSize}px (${detection.confidence} confidence)`);
+      new import_obsidian4.Notice(`Grid size auto-detected: ${this.gridSize}px (${detection.confidence} confidence)`);
     }).open();
   }
   createConfigSection(container) {
     const section = container.createDiv({ cls: "dnd-map-section" });
     section.createEl("h3", { text: this.templateMode ? "Step 2: Template Configuration" : "Step 2: Map Configuration" });
-    new import_obsidian3.Setting(section).setName(this.templateMode ? "Template name" : "Map name").setDesc(this.templateMode ? "Descriptive name for this template" : "Name for this map").addText((text) => {
+    new import_obsidian4.Setting(section).setName(this.templateMode ? "Template name" : "Map name").setDesc(this.templateMode ? "Descriptive name for this template" : "Name for this map").addText((text) => {
       text.setPlaceholder(this.templateMode ? "Forest Clearing (Day)" : "Tavern Brawl").setValue(this.mapName).onChange((value) => {
         this.mapName = value;
       });
       text.inputEl.name = "mapName";
     });
     if (!this.templateMode) {
-      new import_obsidian3.Setting(section).setName("Map type").setDesc("Type of map").addDropdown((dropdown) => {
+      new import_obsidian4.Setting(section).setName("Map type").setDesc("Type of map").addDropdown((dropdown) => {
         dropdown.addOption("battlemap", "\u2694\uFE0F Battle Map (tactical combat)").addOption("world", "\u{1F30D} World Map (exploration)").addOption("regional", "\u{1F5FA}\uFE0F Regional Map (travel)").setValue(this.mapType).onChange((value) => {
           this.mapType = value;
           if (this.mapType === "battlemap") {
@@ -11159,13 +11566,13 @@ var _MapCreationModal = class _MapCreationModal extends import_obsidian3.Modal {
   createGridSection(container) {
     const section = container.createDiv({ cls: "dnd-map-section" });
     section.createEl("h3", { text: "Step 3: Grid Configuration" });
-    new import_obsidian3.Setting(section).setName("Grid type").setDesc("Type of grid overlay").addDropdown((dropdown) => {
+    new import_obsidian4.Setting(section).setName("Grid type").setDesc("Type of grid overlay").addDropdown((dropdown) => {
       dropdown.addOption("square", "\u2B1B Square Grid").addOption("hex-horizontal", "\u2B21 Hex Grid (Horizontal)").addOption("hex-vertical", "\u2B22 Hex Grid (Vertical)").addOption("none", "\u274C No Grid").setValue(this.gridType).onChange((value) => {
         this.gridType = value;
         this.redrawPreviewOverlay();
       });
     });
-    new import_obsidian3.Setting(section).setName("Grid size (pixels)").setDesc("Size of each grid cell in pixels").addText((text) => {
+    new import_obsidian4.Setting(section).setName("Grid size (pixels)").setDesc("Size of each grid cell in pixels").addText((text) => {
       text.setPlaceholder("70").setValue(String(this.gridSize)).onChange((value) => {
         const parsed = parseInt(value);
         if (!isNaN(parsed) && parsed > 0) {
@@ -11193,10 +11600,10 @@ var _MapCreationModal = class _MapCreationModal extends import_obsidian3.Modal {
           input.value = String(this.gridSize);
         }
         this.redrawPreviewOverlay();
-        new import_obsidian3.Notice(`Grid size set to ${preset.gridSize}px`);
+        new import_obsidian4.Notice(`Grid size set to ${preset.gridSize}px`);
       };
     });
-    new import_obsidian3.Setting(section).setName("Scale").setDesc("Real-world distance per grid square").addText((text) => {
+    new import_obsidian4.Setting(section).setName("Scale").setDesc("Real-world distance per grid square").addText((text) => {
       text.setPlaceholder("5").setValue(String(this.scaleValue)).onChange((value) => {
         const parsed = parseInt(value);
         if (!isNaN(parsed) && parsed > 0) {
@@ -11361,8 +11768,10 @@ var _MapCreationModal = class _MapCreationModal extends import_obsidian3.Modal {
   // ── Grid drawing (mirrors plugin.drawGridOverlay logic) ──────
   drawPreviewGrid(ctx, natW, natH, s) {
     if (this.gridType === "none") return;
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.35)";
-    ctx.lineWidth = Math.max(1, 1.5 * s);
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.65)";
+    ctx.lineWidth = Math.max(2, 2 * s);
+    ctx.lineCap = "square";
+    ctx.lineJoin = "miter";
     const gs = this.gridSize;
     if (this.gridType === "square") {
       for (let x = 0; x <= natW; x += gs) {
@@ -11619,11 +12028,11 @@ var _MapCreationModal = class _MapCreationModal extends import_obsidian3.Modal {
   async createMap() {
     var _a;
     if (!this.selectedFile) {
-      new import_obsidian3.Notice("Please select an image file");
+      new import_obsidian4.Notice("Please select an image file");
       return;
     }
     if (!this.mapName.trim()) {
-      new import_obsidian3.Notice("Please enter a map name");
+      new import_obsidian4.Notice("Please enter a map name");
       return;
     }
     try {
@@ -11711,9 +12120,10 @@ var _MapCreationModal = class _MapCreationModal extends import_obsidian3.Modal {
       }
       await this.plugin.saveMapAnnotations(fullConfig, document.createElement("div"));
       if (this.templateMode) {
+        await _flushMapSave(this.plugin, mapData.id);
         await this.createTemplateNote(mapData);
       } else if (this.editMode && this.editConfig) {
-        new import_obsidian3.Notice(`\u2705 Map "${this.mapName}" updated`);
+        new import_obsidian4.Notice(`\u2705 Map "${this.mapName}" updated`);
       } else if (this.insertCodeBlock) {
         const activeFile = this.app.workspace.getActiveFile();
         if (activeFile) {
@@ -11723,16 +12133,16 @@ var _MapCreationModal = class _MapCreationModal extends import_obsidian3.Modal {
             editor.replaceSelection(`
 ${codeBlock}
 `);
-            new import_obsidian3.Notice(`\u2705 Map "${this.mapName}" inserted into note`);
+            new import_obsidian4.Notice(`\u2705 Map "${this.mapName}" inserted into note`);
           }
         }
       } else {
-        new import_obsidian3.Notice(`\u2705 Map "${this.mapName}" created`);
+        new import_obsidian4.Notice(`\u2705 Map "${this.mapName}" created`);
       }
       this.close();
     } catch (error2) {
       console.error("Error creating map:", error2);
-      new import_obsidian3.Notice("Failed to create map");
+      new import_obsidian4.Notice("Failed to create map");
     }
   }
   refresh() {
@@ -11774,7 +12184,7 @@ template_name: "${this.mapName}"
 ${codeBlock}
 `;
     const file = await this.app.vault.create(notePath, content);
-    new import_obsidian3.Notice(`\u2705 Template "${this.mapName}" created \u2014 opening for configuration\u2026`);
+    new import_obsidian4.Notice(`\u2705 Template "${this.mapName}" created \u2014 opening for configuration\u2026`);
     await this.app.workspace.getLeaf(false).openFile(file);
     this.close();
   }
@@ -11785,7 +12195,7 @@ ${codeBlock}
 };
 _MapCreationModal.MAP_ASSET_FOLDER = "z_Assets/Maps";
 var MapCreationModal = _MapCreationModal;
-var _ImageSelectorModal = class _ImageSelectorModal extends import_obsidian3.Modal {
+var _ImageSelectorModal = class _ImageSelectorModal extends import_obsidian4.Modal {
   constructor(app, files, onSelect) {
     super(app);
     this.listContainer = null;
@@ -12135,14 +12545,14 @@ var _ImageSelectorModal = class _ImageSelectorModal extends import_obsidian3.Mod
           counter++;
         }
         const created = await this.app.vault.createBinary(destPath, buffer);
-        new import_obsidian3.Notice(`\u2705 Uploaded "${file.name}" to ${destPath}`);
+        new import_obsidian4.Notice(`\u2705 Uploaded "${file.name}" to ${destPath}`);
         this.files.unshift(created);
         this.buildFolderList();
         this.onSelect(created);
         this.close();
       } catch (err) {
         console.error("Failed to upload file:", err);
-        new import_obsidian3.Notice("\u274C Failed to upload file");
+        new import_obsidian4.Notice("\u274C Failed to upload file");
       }
     });
     input.click();
@@ -12166,7 +12576,7 @@ var ImageSelectorModal = _ImageSelectorModal;
 var import_obsidian7 = require("obsidian");
 
 // src/map/MapTemplateTagModal.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 init_types();
 
 // src/hexcrawl/types.ts
@@ -12303,7 +12713,7 @@ function createDefaultHexcrawlState(mapId) {
 }
 
 // src/map/MapTemplateTagModal.ts
-var MapTemplateTagModal = class extends import_obsidian4.Modal {
+var MapTemplateTagModal = class extends import_obsidian5.Modal {
   constructor(app, plugin, mapId, mapName, existingTags, onSave) {
     super(app);
     this.plugin = plugin;
@@ -12446,7 +12856,7 @@ var MapTemplateTagModal = class extends import_obsidian4.Modal {
     saveBtn.style.padding = "8px 16px";
     saveBtn.addEventListener("click", async () => {
       await this.onSave(this.tags);
-      new import_obsidian4.Notice(`\u2705 Tags saved for "${this.mapName}"`);
+      new import_obsidian5.Notice(`\u2705 Tags saved for "${this.mapName}"`);
       this.close();
     });
   }
@@ -12524,363 +12934,7 @@ var MapTemplateTagModal = class extends import_obsidian4.Modal {
 
 // src/map/TemplatePickerModal.ts
 var import_obsidian6 = require("obsidian");
-
-// src/map/MapFactory.ts
-var MAP_SCHEMA_VERSION = 1;
-function getMapAnnotationDefaults() {
-  return {
-    schemaVersion: MAP_SCHEMA_VERSION,
-    mapId: "",
-    name: "",
-    imageFile: "",
-    isVideo: false,
-    type: "battlemap",
-    dimensions: {},
-    gridType: "square",
-    gridSize: 70,
-    gridOffsetX: 0,
-    gridOffsetY: 0,
-    gridSizeW: void 0,
-    gridSizeH: void 0,
-    gridVisible: true,
-    scale: { value: 5, unit: "feet" },
-    activeLayer: "Player",
-    // Annotations
-    highlights: [],
-    markers: [],
-    drawings: [],
-    textAnnotations: [],
-    tunnels: [],
-    poiReferences: [],
-    hexTerrains: [],
-    hexClimates: [],
-    customTerrainDescriptions: {},
-    hexcrawlState: null,
-    fogOfWar: { enabled: false, regions: [] },
-    walls: [],
-    lightSources: [],
-    tileElevations: {},
-    difficultTerrain: {},
-    envAssets: [],
-    // Template system
-    isTemplate: false,
-    templateTags: void 0,
-    // Metadata
-    lastModified: ""
-  };
-}
-function normalizeMapAnnotations(raw) {
-  var _a;
-  if (!raw || typeof raw !== "object") return { ...getMapAnnotationDefaults() };
-  const defaults = getMapAnnotationDefaults();
-  const out = {};
-  for (const [key, defaultVal] of Object.entries(defaults)) {
-    if (key === "gridVisible") {
-      out[key] = raw[key] !== void 0 ? raw[key] : defaultVal;
-    } else {
-      out[key] = (_a = raw[key]) != null ? _a : defaultVal;
-    }
-  }
-  for (const key of Object.keys(raw)) {
-    if (!(key in out)) {
-      out[key] = raw[key];
-    }
-  }
-  out.schemaVersion = MAP_SCHEMA_VERSION;
-  if (Array.isArray(out.markers)) {
-    out.markers = out.markers.map((m) => {
-      const cleaned = _stripRuntimeFields(m);
-      if (cleaned.elevation && typeof cleaned.elevation === "object") {
-        cleaned.elevation = _stripRuntimeFields(cleaned.elevation);
-      }
-      if (cleaned.tunnelState && typeof cleaned.tunnelState === "object") {
-        cleaned.tunnelState = _stripRuntimeFields(cleaned.tunnelState);
-      }
-      return cleaned;
-    });
-  }
-  return out;
-}
-function _stripRuntimeFields(obj) {
-  const out = {};
-  for (const [key, val2] of Object.entries(obj)) {
-    if (!key.startsWith("_")) {
-      out[key] = val2;
-    }
-  }
-  return out;
-}
-function cloneTemplateToMap(templateData, newMapId, mapName, overrides) {
-  const cloned = normalizeMapAnnotations(structuredClone(templateData));
-  cloned.mapId = newMapId;
-  cloned.name = mapName;
-  cloned.highlights = [];
-  cloned.isTemplate = false;
-  cloned.templateTags = void 0;
-  cloned.linkedEncounter = "";
-  cloned.linkedScene = "";
-  cloned.activeLayer = "Player";
-  cloned.lastModified = (/* @__PURE__ */ new Date()).toISOString();
-  for (const marker of cloned.markers) {
-    marker.id = `marker_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
-  }
-  if (overrides) {
-    Object.assign(cloned, overrides);
-  }
-  return cloned;
-}
-
-// src/map/TemplatePickerModal.ts
 init_types();
-
-// src/map/MapPersistence.ts
-var import_obsidian5 = require("obsidian");
-var SAVE_DEBOUNCE_MS = 1e3;
-var _templateIndex = null;
-function invalidateTemplateIndex() {
-  _templateIndex = null;
-}
-async function _getTemplateIndex(plugin) {
-  if (_templateIndex) return _templateIndex;
-  const entries = [];
-  try {
-    const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
-    if (!await plugin.app.vault.adapter.exists(annotationDir)) {
-      _templateIndex = entries;
-      return entries;
-    }
-    const listing = await plugin.app.vault.adapter.list(annotationDir);
-    for (const filePath of listing.files) {
-      if (!filePath.endsWith(".json")) continue;
-      try {
-        const raw = await plugin.app.vault.adapter.read(filePath);
-        const data = JSON.parse(raw);
-        if (!data.isTemplate || !data.templateTags) continue;
-        entries.push({
-          mapId: data.mapId,
-          name: data.name || "Unnamed Template",
-          imageFile: data.imageFile,
-          tags: data.templateTags
-        });
-      } catch (e) {
-      }
-    }
-  } catch (err) {
-    console.error("[MapPersistence] Error building template index:", err);
-  }
-  _templateIndex = entries;
-  return entries;
-}
-function saveMapAnnotations(plugin, config, el) {
-  const viewport = el.querySelector(".dnd-map-viewport");
-  if (viewport && viewport._syncPlayerView) {
-    viewport._syncPlayerView();
-  }
-  if (!config.mapId) {
-    console.error("Cannot save annotations: mapId missing");
-    return;
-  }
-  const mapId = config.mapId;
-  const existing = plugin._pendingSaves.get(mapId);
-  if (existing) clearTimeout(existing.timer);
-  const timer = setTimeout(() => {
-    _flushMapSave(plugin, mapId);
-  }, SAVE_DEBOUNCE_MS);
-  plugin._pendingSaves.set(mapId, { config, el, timer });
-}
-async function _flushMapSave(plugin, mapId) {
-  const entry = plugin._pendingSaves.get(mapId);
-  if (!entry) return;
-  clearTimeout(entry.timer);
-  const config = entry.config;
-  try {
-    const mapData = normalizeMapAnnotations(config);
-    mapData.lastModified = (/* @__PURE__ */ new Date()).toISOString();
-    const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
-    const dirExists = await plugin.app.vault.adapter.exists(annotationDir);
-    if (!dirExists) {
-      await plugin.app.vault.adapter.mkdir(annotationDir);
-    }
-    const annotationPath = getMapAnnotationPath(plugin, config.mapId);
-    const annotationJson = JSON.stringify(mapData, null, 2);
-    await plugin.app.vault.adapter.write(annotationPath, annotationJson);
-    plugin._pendingSaves.delete(mapId);
-    invalidateTemplateIndex();
-  } catch (error2) {
-    console.error("Error saving map annotations:", error2);
-    entry.timer = setTimeout(() => {
-      _flushMapSave(plugin, mapId);
-    }, SAVE_DEBOUNCE_MS * 2);
-    new import_obsidian5.Notice("\u26A0\uFE0F Map save failed \u2014 will retry automatically");
-  }
-}
-async function _flushAllPendingSaves(plugin) {
-  const ids = [...plugin._pendingSaves.keys()];
-  for (const id of ids) {
-    await _flushMapSave(plugin, id);
-  }
-}
-function getMapAnnotationPath(plugin, mapId) {
-  return `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations/${mapId}.json`;
-}
-async function loadMapAnnotations(plugin, mapId) {
-  try {
-    const annotationPath = getMapAnnotationPath(plugin, mapId);
-    if (await plugin.app.vault.adapter.exists(annotationPath)) {
-      const data = await plugin.app.vault.adapter.read(annotationPath);
-      const parsedData = JSON.parse(data);
-      return normalizeMapAnnotations(parsedData);
-    } else {
-      return {};
-    }
-  } catch (error2) {
-    console.error("Error loading map annotations:", error2);
-    return {};
-  }
-}
-async function queryMapTemplates(plugin, criteria) {
-  var _a, _b, _c, _d, _e;
-  const index = await _getTemplateIndex(plugin);
-  const results = [];
-  for (const entry of index) {
-    const tags = entry.tags;
-    let score = 0;
-    if (criteria.terrain && ((_a = tags.terrain) == null ? void 0 : _a.includes(criteria.terrain))) score += 3;
-    if (criteria.climate && ((_b = tags.climate) == null ? void 0 : _b.includes(criteria.climate))) score += 2;
-    if (criteria.location && ((_c = tags.location) == null ? void 0 : _c.includes(criteria.location))) score += 2;
-    if (criteria.timeOfDay && ((_d = tags.timeOfDay) == null ? void 0 : _d.includes(criteria.timeOfDay))) score += 1;
-    if (criteria.size && ((_e = tags.size) == null ? void 0 : _e.includes(criteria.size))) score += 1;
-    const hasCriteria = criteria.terrain || criteria.climate || criteria.location;
-    if (score > 0 || !hasCriteria) {
-      results.push({ ...entry, matchScore: score });
-    }
-  }
-  results.sort((a, b) => b.matchScore - a.matchScore);
-  return results;
-}
-async function migrateExistingTemplatesToNotes(plugin) {
-  try {
-    const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
-    if (!await plugin.app.vault.adapter.exists(annotationDir)) return;
-    const listing = await plugin.app.vault.adapter.list(annotationDir);
-    const templateMaps = [];
-    for (const filePath of listing.files) {
-      if (!filePath.endsWith(".json")) continue;
-      try {
-        const raw = await plugin.app.vault.adapter.read(filePath);
-        const data = JSON.parse(raw);
-        if (data.isTemplate && data.mapId) {
-          templateMaps.push({ mapId: data.mapId, name: data.name || "Template" });
-        }
-      } catch (e) {
-      }
-    }
-    if (templateMaps.length === 0) return;
-    const folder = BATTLEMAP_TEMPLATE_FOLDER;
-    if (!await plugin.app.vault.adapter.exists(folder)) {
-      await plugin.app.vault.createFolder(folder);
-    }
-    const existingMapIds = /* @__PURE__ */ new Set();
-    const mdFiles = plugin.app.vault.getMarkdownFiles().filter(
-      (f) => f.path.startsWith(folder + "/")
-    );
-    for (const file of mdFiles) {
-      try {
-        const content = await plugin.app.vault.read(file);
-        const match = content.match(/"mapId"\s*:\s*"([^"]+)"/);
-        if (match && match[1]) existingMapIds.add(match[1]);
-      } catch (e) {
-      }
-    }
-    let migrated = 0;
-    for (const tpl of templateMaps) {
-      if (existingMapIds.has(tpl.mapId)) continue;
-      const safeName = tpl.name.replace(/[\\/:*?"<>|]/g, "_").trim() || "Template";
-      let notePath = `${folder}/${safeName}.md`;
-      let counter = 1;
-      while (await plugin.app.vault.adapter.exists(notePath)) {
-        notePath = `${folder}/${safeName} (${counter}).md`;
-        counter++;
-      }
-      const codeBlock = `\`\`\`dnd-map
-${JSON.stringify({ mapId: tpl.mapId }, null, 2)}
-\`\`\``;
-      const content = `---
-tags:
-  - battlemap-template
-template_name: "${tpl.name}"
----
-# ${tpl.name}
-
-${codeBlock}
-`;
-      await plugin.app.vault.create(notePath, content);
-      migrated++;
-    }
-    if (migrated > 0) {
-      new import_obsidian5.Notice(`\u{1F5FA}\uFE0F Migrated ${migrated} battlemap template${migrated > 1 ? "s" : ""} to ${folder}/`);
-    }
-  } catch (err) {
-  }
-}
-async function enrichTokenCampaigns(plugin) {
-  try {
-    await new Promise((resolve) => {
-      if (plugin.app.metadataCache.resolvedLinks) {
-        resolve();
-      } else {
-        const ref = plugin.app.metadataCache.on("resolved", () => {
-          plugin.app.metadataCache.offref(ref);
-          resolve();
-        });
-      }
-    });
-    const allFiles = plugin.app.vault.getMarkdownFiles();
-    let enriched = 0;
-    let backfilled = 0;
-    for (const file of allFiles) {
-      const cache = plugin.app.metadataCache.getFileCache(file);
-      if (!(cache == null ? void 0 : cache.frontmatter)) continue;
-      const fm = cache.frontmatter;
-      const fmType = fm.type;
-      if (fmType !== "player" && fmType !== "npc") continue;
-      const campaign = fm.campaign;
-      if (!campaign) continue;
-      let tokenId = fm.token_id;
-      if (!tokenId) {
-        const name = fm.name || file.basename;
-        const markerType = fmType === "player" ? "player" : "npc";
-        const allMarkers = plugin.markerLibrary.getAllMarkers();
-        const match = allMarkers.find(
-          (m) => m.name === name && m.type === markerType && !m.campaign
-        );
-        if (match) {
-          tokenId = match.id;
-          try {
-            await plugin.app.fileManager.processFrontMatter(file, (frontmatter) => {
-              frontmatter.token_id = tokenId;
-            });
-            backfilled++;
-          } catch (e) {
-          }
-        }
-      }
-      if (!tokenId) continue;
-      const marker = plugin.markerLibrary.getMarker(tokenId);
-      if (!marker) continue;
-      if (marker.campaign) continue;
-      marker.campaign = campaign;
-      marker.updatedAt = Date.now();
-      await plugin.markerLibrary.setMarker(marker);
-      enriched++;
-    }
-    if (enriched > 0 || backfilled > 0) {
-    }
-  } catch (err) {
-  }
-}
-
-// src/map/TemplatePickerModal.ts
 var TemplatePickerModal = class extends import_obsidian6.Modal {
   constructor(app, plugin, mapManager, insertCodeBlock = true) {
     super(app);
@@ -46946,6 +47000,36 @@ async function dumpPDFFields(data) {
   return result;
 }
 
+// src/utils/VisionSenses.ts
+function parseVisionSenses(senses) {
+  const result = {
+    darkvision: 0,
+    blindsight: 0,
+    tremorsense: 0,
+    truesight: 0
+  };
+  if (!senses || !senses.trim()) {
+    return result;
+  }
+  const parts = senses.split(",").map((part) => part.trim()).filter((part) => part.length > 0);
+  for (const part of parts) {
+    const match = part.match(/^(darkvision|blindsight|truesight|tremorsense)\s+(\d+)\s*ft/i);
+    if (match) {
+      const rawKey = match[1];
+      const rawValue = match[2];
+      const key = rawKey.toLowerCase();
+      const value = parseInt(rawValue, 10) || 0;
+      if (value > 0) {
+        if (key === "darkvision") result.darkvision = value;
+        if (key === "blindsight") result.blindsight = value;
+        if (key === "tremorsense") result.tremorsense = value;
+        if (key === "truesight") result.truesight = value;
+      }
+    }
+  }
+  return result;
+}
+
 // src/character/PCCreationModal.ts
 var PCCreationModal = class extends import_obsidian41.Modal {
   constructor(app, plugin, pcPath) {
@@ -47509,6 +47593,7 @@ var PCCreationModal = class extends import_obsidian41.Modal {
         }
         const now = Date.now();
         const existingMarker = this.plugin.markerLibrary.getMarker(tokenId);
+        const visionSenses = parseVisionSenses(this.senses);
         const tokenAppearance = (_b = this.tokenEditor) == null ? void 0 : _b.getValues();
         const tokenDef = {
           ...existingMarker || {},
@@ -47521,6 +47606,10 @@ var PCCreationModal = class extends import_obsidian41.Modal {
           imageFile: (tokenAppearance == null ? void 0 : tokenAppearance.imageFile) || void 0,
           imageFit: (tokenAppearance == null ? void 0 : tokenAppearance.imageFit) !== "cover" ? tokenAppearance == null ? void 0 : tokenAppearance.imageFit : void 0,
           creatureSize: (existingMarker == null ? void 0 : existingMarker.creatureSize) || "medium",
+          darkvision: visionSenses.darkvision || (existingMarker == null ? void 0 : existingMarker.darkvision) || 0,
+          blindsight: visionSenses.blindsight || (existingMarker == null ? void 0 : existingMarker.blindsight) || 0,
+          tremorsense: visionSenses.tremorsense || (existingMarker == null ? void 0 : existingMarker.tremorsense) || 0,
+          truesight: visionSenses.truesight || (existingMarker == null ? void 0 : existingMarker.truesight) || 0,
           campaign: campaignName,
           createdAt: (existingMarker == null ? void 0 : existingMarker.createdAt) || now,
           updatedAt: now
@@ -47534,6 +47623,7 @@ var PCCreationModal = class extends import_obsidian41.Modal {
         }
         const now = Date.now();
         tokenId = this.plugin.markerLibrary.generateId();
+        const visionSenses = parseVisionSenses(this.senses);
         const tokenAppearance = (_i = this.tokenEditor) == null ? void 0 : _i.getValues();
         const tokenDef = {
           id: tokenId,
@@ -47545,6 +47635,10 @@ var PCCreationModal = class extends import_obsidian41.Modal {
           imageFile: (tokenAppearance == null ? void 0 : tokenAppearance.imageFile) || void 0,
           imageFit: (tokenAppearance == null ? void 0 : tokenAppearance.imageFit) !== "cover" ? tokenAppearance == null ? void 0 : tokenAppearance.imageFit : void 0,
           creatureSize: "medium",
+          darkvision: visionSenses.darkvision || 0,
+          blindsight: visionSenses.blindsight || 0,
+          tremorsense: visionSenses.tremorsense || 0,
+          truesight: visionSenses.truesight || 0,
           campaign: campaignName,
           createdAt: now,
           updatedAt: now
@@ -48918,6 +49012,7 @@ var NPCCreationModal = class extends import_obsidian43.Modal {
         }
         const now = Date.now();
         const existingMarker = this.plugin.markerLibrary.getMarker(tokenId);
+        const visionSenses = parseVisionSenses(this.senses);
         const tokenAppearance = (_b = this.tokenEditor) == null ? void 0 : _b.getValues();
         const tokenDef = {
           ...existingMarker || {},
@@ -48930,7 +49025,10 @@ var NPCCreationModal = class extends import_obsidian43.Modal {
           imageFile: (tokenAppearance == null ? void 0 : tokenAppearance.imageFile) || void 0,
           imageFit: (tokenAppearance == null ? void 0 : tokenAppearance.imageFit) !== "cover" ? tokenAppearance == null ? void 0 : tokenAppearance.imageFit : void 0,
           creatureSize: mappedSize,
-          darkvision: darkvision || (existingMarker == null ? void 0 : existingMarker.darkvision) || 0,
+          darkvision: visionSenses.darkvision || (existingMarker == null ? void 0 : existingMarker.darkvision) || 0,
+          blindsight: visionSenses.blindsight || (existingMarker == null ? void 0 : existingMarker.blindsight) || 0,
+          tremorsense: visionSenses.tremorsense || (existingMarker == null ? void 0 : existingMarker.tremorsense) || 0,
+          truesight: visionSenses.truesight || (existingMarker == null ? void 0 : existingMarker.truesight) || 0,
           campaign: campaignName,
           createdAt: (existingMarker == null ? void 0 : existingMarker.createdAt) || now,
           updatedAt: now
@@ -57072,6 +57170,7 @@ _Add any additional notes about the item's history, lore, or usage here._
 
 // src/creature/CreatureCreationModal.ts
 var import_obsidian58 = require("obsidian");
+init_migration();
 var CreatureCreationModal = class extends import_obsidian58.Modal {
   constructor(app, plugin, creaturePath) {
     super(app);
@@ -57755,13 +57854,7 @@ var CreatureCreationModal = class extends import_obsidian58.Modal {
         this.tokenId = this.plugin.markerLibrary.generateId();
       }
       const existingMarker = this.plugin.markerLibrary.getMarker(this.tokenId);
-      let parsedDarkvision = (existingMarker == null ? void 0 : existingMarker.darkvision) || 0;
-      if (this.senses) {
-        const dvMatch = this.senses.match(/darkvision\s+(\d+)\s*ft/i);
-        if (dvMatch && dvMatch[1]) {
-          parsedDarkvision = parseInt(dvMatch[1]);
-        }
-      }
+      const visionSenses = parseVisionSenses(this.senses);
       const tokenAppearance = (_a = this.tokenEditor) == null ? void 0 : _a.getValues();
       const tokenDef = {
         ...existingMarker || {},
@@ -57774,7 +57867,10 @@ var CreatureCreationModal = class extends import_obsidian58.Modal {
         imageFile: (tokenAppearance == null ? void 0 : tokenAppearance.imageFile) || void 0,
         imageFit: (tokenAppearance == null ? void 0 : tokenAppearance.imageFit) !== "cover" ? tokenAppearance == null ? void 0 : tokenAppearance.imageFit : void 0,
         creatureSize: mappedSize,
-        darkvision: parsedDarkvision,
+        darkvision: visionSenses.darkvision || (existingMarker == null ? void 0 : existingMarker.darkvision) || 0,
+        blindsight: visionSenses.blindsight || (existingMarker == null ? void 0 : existingMarker.blindsight) || 0,
+        tremorsense: visionSenses.tremorsense || (existingMarker == null ? void 0 : existingMarker.tremorsense) || 0,
+        truesight: visionSenses.truesight || (existingMarker == null ? void 0 : existingMarker.truesight) || 0,
         createdAt: (existingMarker == null ? void 0 : existingMarker.createdAt) || now,
         updatedAt: now
       };
@@ -57813,7 +57909,8 @@ statblock: true
 layout: Basic 5e Layout
 name: ${this.creatureName}
 size: ${this.size}
-type: ${this.type}`;
+type: creature
+creature_type: ${this.type}`;
     if (this.subtype) {
       frontmatter += `
 subtype: ${this.subtype}`;
@@ -57965,8 +58062,11 @@ reactions:`;
         }
       });
     }
+    const creatureTemplateVersion = TEMPLATE_VERSIONS.creature || "1.11.0";
     frontmatter += `
 token_id: ${this.tokenId}`;
+    frontmatter += `
+template_version: ${creatureTemplateVersion}`;
     frontmatter += `
 ---
 
@@ -60152,7 +60252,12 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     // desired image top-left X (natural px)
     this.tabletopTargetY = null;
     // desired image top-left Y (natural px)
+    this.tabletopTargetViewportX = null;
+    this.tabletopTargetViewportY = null;
     this.mapContainer = null;
+    this.initiativeOverlayEl = null;
+    this.prevInitiativeState = /* @__PURE__ */ new Map();
+    this.prevInitiativeActiveId = null;
     this.syncCanvasToImage = null;
     this.isFullscreen = false;
     // Track fullscreen state
@@ -60214,11 +60319,26 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
   getMapId() {
     return this.mapId;
   }
+  isTokenGroup(marker) {
+    var _a, _b;
+    return !!((_b = (_a = marker == null ? void 0 : marker.tokenGroup) == null ? void 0 : _a.members) == null ? void 0 : _b.length);
+  }
   // Fast hash of last synced config — skip redundant redraws
   /** HiDPI canvas resolution multiplier (mirrors plugin setting). */
   get _canvasScale() {
     var _a;
-    return Math.max(1, Math.min(4, (_a = this.plugin.settings.mapCanvasScale) != null ? _a : 2));
+    const requested = Math.max(1, Math.min(4, (_a = this.plugin.settings.mapCanvasScale) != null ? _a : 2));
+    if (!this.mapImage) return requested;
+    const maxSide = 16384;
+    const maxArea = 268435456;
+    const sideScale = Math.min(
+      this.mapImage.naturalWidth ? maxSide / this.mapImage.naturalWidth : requested,
+      this.mapImage.naturalHeight ? maxSide / this.mapImage.naturalHeight : requested
+    );
+    const areaScale = Math.sqrt(
+      this.mapImage.naturalWidth && this.mapImage.naturalHeight ? maxArea / (this.mapImage.naturalWidth * this.mapImage.naturalHeight) : requested
+    );
+    return Math.max(0.1, Math.min(requested, sideScale, areaScale));
   }
   getViewType() {
     return PLAYER_MAP_VIEW_TYPE;
@@ -60268,6 +60388,7 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     const changed = digest !== this._lastConfigDigest;
     this._lastConfigDigest = digest;
     this.mapConfig = config;
+    this.renderInitiativeOverlay();
     if (changed) {
       this.redrawAnnotations();
     }
@@ -60397,8 +60518,10 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
       n(((_a = m.position) == null ? void 0 : _a.x) || 0);
       n(((_b = m.position) == null ? void 0 : _b.y) || 0);
       n(m.darkvision || 0);
-      n(((_c = m.light) == null ? void 0 : _c.bright) || 0);
-      n(((_d = m.light) == null ? void 0 : _d.dim) || 0);
+      n(m.truesight || 0);
+      n(this.isTokenGroup(m) ? ((_c = m.tokenGroup.members) == null ? void 0 : _c.length) || 0 : 0);
+      n(((_d = m.light) == null ? void 0 : _d.bright) || 0);
+      n(((_e = m.light) == null ? void 0 : _e.dim) || 0);
       n(m.visibleToPlayers ? 1 : 0);
       if (m.elevation) {
         n(m.elevation.height || 0);
@@ -60436,19 +60559,36 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
       n(l.dim || 0);
       n(l.active !== false ? 1 : 0);
     }
-    n(((_e = c.drawings) == null ? void 0 : _e.length) || 0);
-    n(((_f = c.highlights) == null ? void 0 : _f.length) || 0);
-    n(((_g = c.aoeEffects) == null ? void 0 : _g.length) || 0);
-    n(((_h = c.tunnels) == null ? void 0 : _h.length) || 0);
-    n(((_i = c.poiReferences) == null ? void 0 : _i.length) || 0);
+    n(((_f = c.drawings) == null ? void 0 : _f.length) || 0);
+    n(((_g = c.highlights) == null ? void 0 : _g.length) || 0);
+    n(((_h = c.aoeEffects) == null ? void 0 : _h.length) || 0);
+    n(((_i = c.tunnels) == null ? void 0 : _i.length) || 0);
+    n(((_j = c.poiReferences) == null ? void 0 : _j.length) || 0);
     const envAssets = c.envAssets || [];
     n(envAssets.length);
     for (let i = 0; i < envAssets.length; i++) {
       const ea = envAssets[i];
-      if ((_j = ea.scatterConfig) == null ? void 0 : _j.blocksVision) n(1);
+      if ((_k = ea.scatterConfig) == null ? void 0 : _k.blocksVision) n(1);
     }
-    n(((_k = c.fogOfWar) == null ? void 0 : _k.enabled) ? 1 : 0);
-    n(((_m = (_l = c.fogOfWar) == null ? void 0 : _l.regions) == null ? void 0 : _m.length) || 0);
+    n(((_l = c.fogOfWar) == null ? void 0 : _l.enabled) ? 1 : 0);
+    const digestFogRegions = ((_m = c.fogOfWar) == null ? void 0 : _m.regions) || [];
+    n(digestFogRegions.length);
+    for (let i = 0; i < digestFogRegions.length; i++) {
+      const r = digestFogRegions[i];
+      if (r.type) s(r.type);
+      if (r.shape) s(r.shape);
+      n(r.x || r.cx || 0);
+      n(r.y || r.cy || 0);
+      n(r.width || r.radius || 0);
+      n(r.height || 0);
+      if (Array.isArray(r.points)) {
+        n(r.points.length);
+        for (const point of r.points) {
+          n(point.x || 0);
+          n(point.y || 0);
+        }
+      }
+    }
     n(c.gridSize || 0);
     n(c.gridVisible ? 1 : 0);
     n(c.gridOffsetX || 0);
@@ -60487,6 +60627,191 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     if (dt) n(Object.keys(dt).length);
     return h;
   }
+  getVisibleInitiativeCombatants(state) {
+    return state.combatants.filter((c) => {
+      var _a;
+      return c && !c.hidden && ((_a = c.enabled) != null ? _a : true);
+    });
+  }
+  hpColor(pct) {
+    const r = pct > 0.5 ? Math.round(92 + (224 - 92) * (1 - (pct - 0.5) * 2)) : Math.round(224 + (201 - 224) * (1 - pct * 2));
+    const g = pct > 0.5 ? Math.round(184 + (160 - 184) * (1 - (pct - 0.5) * 2)) : Math.round(160 * pct * 2 + 48 * (1 - pct * 2));
+    const b = pct > 0.5 ? Math.round(92 + (48 - 92) * (1 - (pct - 0.5) * 2)) : Math.round(48 * pct * 2 + 44 * (1 - pct * 2));
+    return `rgb(${r},${g},${b})`;
+  }
+  hpCondition(pct) {
+    if (pct <= 0) return "Dead";
+    if (pct <= 0.25) return "Critical";
+    if (pct <= 0.5) return "Bloodied";
+    if (pct <= 0.75) return "Hurt";
+    if (pct < 1) return "Scratched";
+    return "Uninjured";
+  }
+  initiativeStatusSignature(combatant) {
+    return combatant.statuses.map((s) => {
+      var _a, _b;
+      return `${s.name}:${(_a = s.duration) != null ? _a : ""}:${(_b = s.note) != null ? _b : ""}`;
+    }).join("|");
+  }
+  renderInitiativeHP(parent, combatant, isAlly) {
+    const hpWrap = parent.createDiv({ cls: "dnd-player-initiative-hp" });
+    const pct = combatant.maxHP > 0 ? Math.max(0, Math.min(1, combatant.currentHP / combatant.maxHP)) : 0;
+    const color = this.hpColor(pct);
+    if (isAlly) {
+      const bar = hpWrap.createDiv({ cls: "dnd-player-initiative-hp-bar" });
+      const fill2 = bar.createDiv({ cls: "dnd-player-initiative-hp-fill" });
+      fill2.style.width = `${pct * 100}%`;
+      fill2.style.background = color;
+      if (combatant.tempHP > 0 && combatant.maxHP > 0) {
+        const temp = bar.createDiv({ cls: "dnd-player-initiative-hp-temp" });
+        temp.style.width = `${Math.min(1, combatant.tempHP / combatant.maxHP) * 100}%`;
+      }
+      let hpText = `${combatant.currentHP}/${combatant.maxHP}`;
+      if (combatant.tempHP > 0) hpText += ` (+${combatant.tempHP})`;
+      hpWrap.createEl("span", { cls: "dnd-player-initiative-hp-text", text: hpText });
+    } else {
+      const condition = hpWrap.createEl("span", {
+        cls: "dnd-player-initiative-hp-condition",
+        text: this.hpCondition(pct)
+      });
+      condition.style.color = color;
+    }
+    return hpWrap;
+  }
+  renderInitiativeOverlay() {
+    var _a, _b, _c, _d, _e;
+    const container = this.containerEl.children[1];
+    if (!container || !container.isConnected) return;
+    const state = (_a = this.mapConfig) == null ? void 0 : _a.combatState;
+    const showOverlay = ((_b = this.mapConfig) == null ? void 0 : _b.showInitiativeInPlayerView) === true && !!state;
+    if (!showOverlay) {
+      if (this.initiativeOverlayEl) {
+        this.initiativeOverlayEl.remove();
+        this.initiativeOverlayEl = null;
+      }
+      this.prevInitiativeState.clear();
+      this.prevInitiativeActiveId = null;
+      return;
+    }
+    const visibleCombatants = this.getVisibleInitiativeCombatants(state);
+    if (visibleCombatants.length === 0) {
+      if (this.initiativeOverlayEl) {
+        this.initiativeOverlayEl.remove();
+        this.initiativeOverlayEl = null;
+      }
+      return;
+    }
+    if (!this.initiativeOverlayEl || !this.initiativeOverlayEl.isConnected) {
+      this.initiativeOverlayEl = container.createDiv({ cls: "dnd-player-initiative-overlay" });
+    }
+    const overlay = this.initiativeOverlayEl;
+    const sizes = ["compact", "medium", "large", "huge", "fullscreen"];
+    const size = sizes.includes((_c = this.mapConfig) == null ? void 0 : _c.initiativeOverlaySize) ? this.mapConfig.initiativeOverlaySize : "medium";
+    overlay.removeClass("size-compact", "size-medium", "size-large", "size-huge", "size-fullscreen");
+    overlay.addClass(`size-${size}`);
+    overlay.empty();
+    const header = overlay.createDiv({ cls: "dnd-player-initiative-header" });
+    header.createEl("span", { cls: "dnd-player-initiative-title", text: "Initiative" });
+    header.createEl("span", {
+      cls: "dnd-player-initiative-round",
+      text: state.started ? `Round ${state.round}` : "Not started"
+    });
+    const list = overlay.createDiv({ cls: "dnd-player-initiative-list" });
+    const activeId = state.started ? (_d = state.combatants[state.turnIndex]) == null ? void 0 : _d.id : null;
+    const activeChanged = activeId !== this.prevInitiativeActiveId;
+    const activeVisibleIndex = activeId ? visibleCombatants.findIndex((c) => c.id === activeId) : -1;
+    const ordered = activeVisibleIndex >= 0 ? [...visibleCombatants.slice(activeVisibleIndex), ...visibleCombatants.slice(0, activeVisibleIndex)] : visibleCombatants;
+    const maxRows = size === "fullscreen" ? 18 : size === "huge" ? 14 : size === "large" ? 10 : size === "compact" ? 4 : 6;
+    const shown = ordered.slice(0, maxRows);
+    for (const combatant of shown) {
+      const isActive = !!activeId && combatant.id === activeId;
+      const isAlly = combatant.player || combatant.friendly;
+      const isDead = (_e = combatant.dead) != null ? _e : combatant.currentHP <= 0;
+      const previous = this.prevInitiativeState.get(combatant.id);
+      const statusSignature = this.initiativeStatusSignature(combatant);
+      const rowClasses = ["dnd-player-initiative-row"];
+      if (isActive) rowClasses.push("is-active");
+      if (isAlly) rowClasses.push("is-ally");
+      else rowClasses.push("is-enemy");
+      if (isDead) rowClasses.push("is-dead");
+      if (previous) {
+        if (combatant.currentHP < previous.hp) rowClasses.push("is-damaged");
+        else if (combatant.currentHP > previous.hp) rowClasses.push("is-healed");
+        if (combatant.tempHP !== previous.tempHP) rowClasses.push("is-temp-changed");
+        if (combatant.currentAC !== previous.ac) rowClasses.push("is-ac-changed");
+        if (statusSignature !== previous.statuses) rowClasses.push("is-status-changed");
+      }
+      if (isActive && activeChanged && this.prevInitiativeActiveId !== null) {
+        rowClasses.push("is-turn-changed");
+      }
+      const row = list.createDiv({
+        cls: rowClasses.join(" ")
+      });
+      row.createEl("span", {
+        cls: "dnd-player-initiative-score",
+        text: state.started ? String(combatant.initiative) : "-"
+      });
+      const nameWrap = row.createDiv({ cls: "dnd-player-initiative-name-wrap" });
+      nameWrap.createEl("span", { cls: "dnd-player-initiative-name", text: combatant.display });
+      const metaRow = nameWrap.createDiv({ cls: "dnd-player-initiative-meta" });
+      if (isAlly) {
+        metaRow.createEl("span", { cls: "dnd-player-initiative-ac", text: `AC ${combatant.currentAC}` });
+      }
+      if (combatant.deathSaves && isAlly) {
+        const deathSaves = metaRow.createEl("span", { cls: "dnd-player-initiative-death-saves" });
+        deathSaves.createEl("span", { cls: "dnd-player-initiative-ds-success", text: `S${combatant.deathSaves.successes}` });
+        deathSaves.createEl("span", { cls: "dnd-player-initiative-ds-failure", text: `F${combatant.deathSaves.failures}` });
+      }
+      if (combatant.statuses.length > 0) {
+        const statuses = nameWrap.createDiv({ cls: "dnd-player-initiative-statuses" });
+        const maxStatuses = size === "compact" ? 2 : 4;
+        for (const status of combatant.statuses.slice(0, maxStatuses)) {
+          statuses.createEl("span", {
+            cls: "dnd-player-initiative-status",
+            text: status.duration !== void 0 ? `${status.name} (${status.duration})` : status.name,
+            attr: { title: status.note ? `${status.name}: ${status.note}` : status.name }
+          });
+        }
+        if (combatant.statuses.length > maxStatuses) {
+          statuses.createEl("span", {
+            cls: "dnd-player-initiative-status",
+            text: `+${combatant.statuses.length - maxStatuses}`
+          });
+        }
+      }
+      const hpWrap = this.renderInitiativeHP(row, combatant, isAlly);
+      if (previous && combatant.currentHP !== previous.hp) {
+        const delta = combatant.currentHP - previous.hp;
+        hpWrap.createEl("span", {
+          cls: `dnd-player-initiative-hp-delta ${delta > 0 ? "is-heal" : "is-damage"}`,
+          text: `${delta > 0 ? "+" : ""}${delta}`
+        });
+      } else if (previous && combatant.tempHP !== previous.tempHP) {
+        const delta = combatant.tempHP - previous.tempHP;
+        hpWrap.createEl("span", {
+          cls: `dnd-player-initiative-hp-delta ${delta > 0 ? "is-temp-gain" : "is-temp-loss"}`,
+          text: `${delta > 0 ? "+" : ""}${delta} THP`
+        });
+      }
+      if (isActive) {
+        row.createEl("span", { cls: "dnd-player-initiative-turn", text: "Turn" });
+      }
+      this.prevInitiativeState.set(combatant.id, {
+        hp: combatant.currentHP,
+        maxHP: combatant.maxHP,
+        tempHP: combatant.tempHP,
+        ac: combatant.currentAC,
+        statuses: statusSignature
+      });
+    }
+    this.prevInitiativeActiveId = activeId || null;
+    if (ordered.length > shown.length) {
+      overlay.createDiv({
+        cls: "dnd-player-initiative-more",
+        text: `+${ordered.length - shown.length} more`
+      });
+    }
+  }
   /**
    * Set tabletop pan to show given image coordinates at top-left of viewport.
    * Called by GM when dragging the player-view region rectangle.
@@ -60502,6 +60827,15 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
   setTabletopPanFromImageCoords(centerX, centerY) {
     this.tabletopTargetX = centerX;
     this.tabletopTargetY = centerY;
+    this.tabletopTargetViewportX = null;
+    this.tabletopTargetViewportY = null;
+    this.applyTabletopTransform();
+  }
+  setTabletopPanFromImageCoordsAtViewportPoint(centerX, centerY, viewportX, viewportY) {
+    this.tabletopTargetX = centerX;
+    this.tabletopTargetY = centerY;
+    this.tabletopTargetViewportX = viewportX;
+    this.tabletopTargetViewportY = viewportY;
     this.applyTabletopTransform();
   }
   /**
@@ -60529,6 +60863,77 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
       sled.style.transition = "";
       this._smoothPanTimer = null;
     }, durationMs + 50);
+  }
+  /**
+   * Smoothly animate the viewport to center on the given image coordinate
+   * AND change the zoom level simultaneously. Uses a CSS transition on
+   * the sled element so the browser interpolates both translate and scale
+   * in a single smooth animation.
+   */
+  smoothPanAndZoomTo(centerX, centerY, scale2, durationMs = 600) {
+    if (!this.mapContainer || !this.mapImage) {
+      this.tabletopScale = scale2 || 1;
+      this.setTabletopPanFromImageCoords(centerX, centerY);
+      return;
+    }
+    const sled = this.mapContainer.querySelector(".dnd-player-map-sled");
+    if (!sled) {
+      this.tabletopScale = scale2 || 1;
+      this.setTabletopPanFromImageCoords(centerX, centerY);
+      return;
+    }
+    if (this._smoothPanTimer !== null) {
+      clearTimeout(this._smoothPanTimer);
+      this._smoothPanTimer = null;
+    }
+    sled.style.transition = `transform ${durationMs}ms cubic-bezier(0.33, 1, 0.68, 1)`;
+    this.tabletopScale = scale2 || 1;
+    this.setTabletopPanFromImageCoords(centerX, centerY);
+    this._smoothPanTimer = setTimeout(() => {
+      sled.style.transition = "";
+      this._smoothPanTimer = null;
+    }, durationMs + 50);
+  }
+  smoothPanAndZoomToViewportPoint(centerX, centerY, scale2, viewportX, viewportY, durationMs = 600) {
+    if (!this.mapContainer || !this.mapImage) {
+      this.tabletopScale = scale2 || 1;
+      this.setTabletopPanFromImageCoordsAtViewportPoint(centerX, centerY, viewportX, viewportY);
+      return;
+    }
+    const sled = this.mapContainer.querySelector(".dnd-player-map-sled");
+    if (!sled) {
+      this.tabletopScale = scale2 || 1;
+      this.setTabletopPanFromImageCoordsAtViewportPoint(centerX, centerY, viewportX, viewportY);
+      return;
+    }
+    if (this._smoothPanTimer !== null) {
+      clearTimeout(this._smoothPanTimer);
+      this._smoothPanTimer = null;
+    }
+    sled.style.transition = `transform ${durationMs}ms cubic-bezier(0.33, 1, 0.68, 1)`;
+    this.tabletopScale = scale2 || 1;
+    this.setTabletopPanFromImageCoordsAtViewportPoint(centerX, centerY, viewportX, viewportY);
+    this._smoothPanTimer = setTimeout(() => {
+      sled.style.transition = "";
+      this._smoothPanTimer = null;
+    }, durationMs + 50);
+  }
+  /** Get the viewport dimensions for external callers (e.g. auto-pan). */
+  getViewportSize() {
+    if (!this.mapContainer) return { width: 1920, height: 1080 };
+    const rect = this.mapContainer.getBoundingClientRect();
+    return { width: rect.width || 1920, height: rect.height || 1080 };
+  }
+  getInitiativeOverlayRect() {
+    if (!this.mapContainer || !this.initiativeOverlayEl || !this.initiativeOverlayEl.isConnected) return null;
+    const viewportRect = this.mapContainer.getBoundingClientRect();
+    const overlayRect = this.initiativeOverlayEl.getBoundingClientRect();
+    const left = Math.max(0, overlayRect.left - viewportRect.left);
+    const top = Math.max(0, overlayRect.top - viewportRect.top);
+    const right = Math.min(viewportRect.width, overlayRect.right - viewportRect.left);
+    const bottom = Math.min(viewportRect.height, overlayRect.bottom - viewportRect.top);
+    if (right <= left || bottom <= top) return null;
+    return { left, top, right, bottom, width: right - left, height: bottom - top };
   }
   /**
    * Set tabletop rotation.
@@ -60582,6 +60987,7 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     }
   }
   applyTabletopTransform() {
+    var _a, _b;
     if (!this.mapContainer || !this.mapImage) return;
     const sled = this.mapContainer.querySelector(".dnd-player-map-sled");
     if (!sled) return;
@@ -60596,8 +61002,10 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     if (this.tabletopTargetX !== null && this.tabletopTargetY !== null) {
       const cx2 = this.tabletopTargetX;
       const cy2 = this.tabletopTargetY;
-      this.tabletopPanX = vcx - s * (c * cx2 - sn * cy2);
-      this.tabletopPanY = vcy - s * (sn * cx2 + c * cy2);
+      const targetScreenX = (_a = this.tabletopTargetViewportX) != null ? _a : vcx;
+      const targetScreenY = (_b = this.tabletopTargetViewportY) != null ? _b : vcy;
+      this.tabletopPanX = targetScreenX - s * (c * cx2 - sn * cy2);
+      this.tabletopPanY = targetScreenY - s * (sn * cx2 + c * cy2);
     }
     this.clampTabletopPan();
     sled.style.transformOrigin = "0 0";
@@ -60896,6 +61304,7 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
       cls: "dnd-player-map-canvas"
     });
     this.canvas = canvas;
+    this.renderInitiativeOverlay();
     const syncCanvasToImage = () => {
       var _a2;
       if (img.complete && img.naturalWidth > 0) {
@@ -61474,7 +61883,7 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     ctx.setTransform(this._canvasScale, 0, 0, this._canvasScale, 0, 0);
-    if (config.gridType && config.gridType !== "none" && config.gridSize > 0 && config.gridVisible !== false) {
+    if (config.gridType && config.gridType !== "none" && config.gridSize > 0 && config.gridVisible === true) {
       this.drawGrid(ctx, config);
     }
     const isHexcrawlMap = (config.gridType === "hex-horizontal" || config.gridType === "hex-vertical") && (config.type === "world" || config.type === "regional");
@@ -61541,7 +61950,13 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     const playerTokens = [];
     const otherMarkers = [];
     playerMarkers.forEach((m) => {
-      if (m.markerId) {
+      if (this.isTokenGroup(m)) {
+        if (m.visibleToPlayers) {
+          playerTokens.push(m);
+        } else {
+          otherMarkers.push(m);
+        }
+      } else if (m.markerId) {
         const markerDef = this.plugin.markerLibrary.getMarker(m.markerId);
         if (markerDef && (markerDef.type === "player" || m.visibleToPlayers)) {
           playerTokens.push(m);
@@ -62054,8 +62469,10 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     const offsetX = config.gridOffsetX || 0;
     const offsetY = config.gridOffsetY || 0;
     ctx.save();
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.4)";
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.65)";
+    ctx.lineWidth = 3;
+    ctx.lineCap = "square";
+    ctx.lineJoin = "miter";
     if (config.gridType === "square") {
       const sizeW = config.gridSizeW || config.gridSize;
       const sizeH = config.gridSizeH || config.gridSize;
@@ -62979,14 +63396,24 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     let markerDef = marker.markerId ? this.plugin.markerLibrary.getMarker(marker.markerId) : null;
     const config = this.mapConfig;
     if (!markerDef) {
-      const radius2 = 15;
+      const avgGrid = config ? ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2 : 70;
+      const radius2 = this.isTokenGroup(marker) ? Math.max(18, avgGrid * 0.55) : 15;
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, radius2, 0, Math.PI * 2);
-      ctx.fillStyle = "#ff0000";
+      ctx.fillStyle = this.isTokenGroup(marker) ? marker.color || "#3b82f6" : "#ff0000";
       ctx.fill();
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = marker.borderColor || "#ffffff";
+      ctx.lineWidth = Math.max(2, radius2 * 0.1);
       ctx.stroke();
+      if (this.isTokenGroup(marker)) {
+        ctx.fillStyle = "#ffffff";
+        ctx.font = `${Math.max(10, radius2 * 1.2)}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(marker.icon || "\u{1F465}", pos.x, pos.y);
+        ctx.font = `bold ${Math.max(10, radius2 * 0.45)}px sans-serif`;
+        ctx.fillText(String(marker.tokenGroup.members.length), pos.x, pos.y + radius2 * 0.38);
+      }
       return;
     }
     const radius = this.getMarkerRadius(markerDef);
@@ -63300,7 +63727,7 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
    * atlas cache a much higher hit-rate.
    */
   _computeFogDigest(config, w, h, isDragging) {
-    var _a, _b, _c, _d, _e, _f, _g, _h;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i;
     let d = 5381;
     const n = (v) => {
       d = (d << 5) + d + (v | 0) | 0;
@@ -63324,15 +63751,18 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
       n(px2);
       n(py2);
       n(m.darkvision || 0);
-      n(((_c = m.light) == null ? void 0 : _c.bright) || 0);
-      n(((_d = m.light) == null ? void 0 : _d.dim) || 0);
-      if ((_e = m.light) == null ? void 0 : _e.type) s(m.light.type);
+      n(m.truesight || 0);
+      n(this.isTokenGroup(m) ? ((_c = m.tokenGroup.members) == null ? void 0 : _c.length) || 0 : 0);
+      n(((_d = m.light) == null ? void 0 : _d.bright) || 0);
+      n(((_e = m.light) == null ? void 0 : _e.dim) || 0);
+      if ((_f = m.light) == null ? void 0 : _f.type) s(m.light.type);
       n(m.visibleToPlayers ? 1 : 0);
       if (m.elevation) {
         n(m.elevation.height || 0);
         n(m.elevation.depth || 0);
       }
       n(m.tunnelState ? 1 : 0);
+      if (m.layer) s(m.layer);
       if (m.markerId) s(m.markerId);
     }
     const walls = config.walls || [];
@@ -63357,7 +63787,7 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
       n(l.active !== false ? 1 : 0);
       if (l.type) s(l.type);
     }
-    const regions = ((_f = config.fogOfWar) == null ? void 0 : _f.regions) || [];
+    const regions = ((_g = config.fogOfWar) == null ? void 0 : _g.regions) || [];
     n(regions.length);
     for (let i = 0; i < regions.length; i++) {
       const r = regions[i];
@@ -63368,13 +63798,13 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
       n(r.height || 0);
     }
     n(config.gridSize || 0);
-    n(((_g = config.scale) == null ? void 0 : _g.value) || 0);
+    n(((_h = config.scale) == null ? void 0 : _h.value) || 0);
     if (config.selectedVisionTokenId) s(config.selectedVisionTokenId);
     const envAssets = config.envAssets || [];
     n(envAssets.length);
     for (let i = 0; i < envAssets.length; i++) {
       const ea = envAssets[i];
-      if ((_h = ea.scatterConfig) == null ? void 0 : _h.blocksVision) n(1);
+      if ((_i = ea.scatterConfig) == null ? void 0 : _i.blocksVision) n(1);
     }
     return String(d);
   }
@@ -63444,6 +63874,7 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     const _mdMask = canvasPool.acquire(w, h);
     const _mdCtx = _mdMask.getContext("2d");
     if (_mdCtx) {
+      _mdCtx.clearRect(0, 0, w, h);
       for (const region of config.fogOfWar.regions || []) {
         if (region.type === "magic-darkness") {
           _hasMagicDarkness = true;
@@ -63507,23 +63938,24 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker) => {
         var _a2, _b2;
-        if (!marker.markerId) return;
+        if ((marker.layer || "Player") === "DM") return;
         if (marker.tunnelState) {
           return;
         }
-        const markerDef = this.plugin.markerLibrary.getMarker(marker.markerId);
-        if (!markerDef) return;
+        const markerDef = marker.markerId ? this.plugin.markerLibrary.getMarker(marker.markerId) : null;
+        if (!markerDef && !this.isTokenGroup(marker)) return;
         let includeToken = false;
         if (config.selectedVisionTokenId) {
           includeToken = marker.id === config.selectedVisionTokenId;
         } else {
-          includeToken = markerDef.type === "player" || !!marker.visibleToPlayers;
+          includeToken = this.isTokenGroup(marker) && !!marker.visibleToPlayers || (markerDef == null ? void 0 : markerDef.type) === "player" || !!marker.visibleToPlayers;
         }
         if (includeToken) {
           playerTokens.push({
             x: marker.position.x,
             y: marker.position.y,
             darkvision: marker.darkvision || 0,
+            truesight: marker.truesight || 0,
             elevation: (((_a2 = marker.elevation) == null ? void 0 : _a2.height) || 0) - (((_b2 = marker.elevation) == null ? void 0 : _b2.depth) || 0)
           });
         }
@@ -63591,6 +64023,30 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
               }
               playerDarkvisionCtx.closePath();
               playerDarkvisionCtx.fill();
+            }
+          }
+        }
+      });
+    }
+    const playerTruesightCanvas = canvasPool.acquire(w, h);
+    const playerTruesightCtx = playerTruesightCanvas.getContext("2d");
+    if (playerTruesightCtx && playerTokens.length > 0) {
+      playerTruesightCtx.fillStyle = "white";
+      playerTokens.forEach((pt) => {
+        if (pt.truesight > 0) {
+          const radiusPx = pt.truesight * pixelsPerFoot;
+          const visPoly = this.computeVisibilityPolygon(pt.x, pt.y, radiusPx, walls, pt.elevation, wallIndex);
+          if (visPoly.length >= 3) {
+            playerTruesightCtx.beginPath();
+            const first = visPoly[0];
+            if (first) {
+              playerTruesightCtx.moveTo(first.x, first.y);
+              for (let i = 1; i < visPoly.length; i++) {
+                const pt2 = visPoly[i];
+                if (pt2) playerTruesightCtx.lineTo(pt2.x, pt2.y);
+              }
+              playerTruesightCtx.closePath();
+              playerTruesightCtx.fill();
             }
           }
         }
@@ -63717,7 +64173,9 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
             _allLightsMaskCtx.drawImage(lightCanvas, 0, 0);
           }
           fogCtx.globalCompositeOperation = "destination-out";
+          fogCtx.globalAlpha = pvFlicker.alpha;
           fogCtx.drawImage(lightCanvas, 0, 0);
+          fogCtx.globalAlpha = 1;
           fogCtx.globalCompositeOperation = "source-over";
           canvasPool.release(lightCanvas);
         }
@@ -63727,17 +64185,18 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker) => {
         var _a2, _b2;
-        if (!marker.markerId || !marker.darkvision || marker.darkvision <= 0) return;
+        if ((marker.layer || "Player") === "DM") return;
+        if (!marker.darkvision || marker.darkvision <= 0) return;
         if (marker.tunnelState) {
           return;
         }
-        const markerDef = this.plugin.markerLibrary.getMarker(marker.markerId);
-        if (!markerDef) return;
+        const markerDef = marker.markerId ? this.plugin.markerLibrary.getMarker(marker.markerId) : null;
+        if (!markerDef && !this.isTokenGroup(marker)) return;
         let includeToken = false;
         if (config.selectedVisionTokenId) {
           includeToken = marker.id === config.selectedVisionTokenId;
         } else {
-          includeToken = markerDef.type === "player" || !!marker.visibleToPlayers;
+          includeToken = this.isTokenGroup(marker) && !!marker.visibleToPlayers || (markerDef == null ? void 0 : markerDef.type) === "player" || !!marker.visibleToPlayers;
         }
         if (includeToken) {
           darkvisionMarkers.push({
@@ -63768,6 +64227,9 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
       if (_allLightsMask) {
         grayCtx.drawImage(_allLightsMask, 0, 0);
       }
+      if (playerTruesightCtx) {
+        grayCtx.drawImage(playerTruesightCanvas, 0, 0);
+      }
     }
     if (_hasMagicDarkness) {
       fogCtx.globalCompositeOperation = "source-over";
@@ -63781,6 +64243,11 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
         fogCtx.drawImage(mdBlack, 0, 0);
       }
       canvasPool.release(mdBlack);
+    }
+    if (playerTruesightCtx) {
+      fogCtx.globalCompositeOperation = "destination-out";
+      fogCtx.drawImage(playerTruesightCanvas, 0, 0);
+      fogCtx.globalCompositeOperation = "source-over";
     }
     _fogCompCtx.drawImage(fogCanvas, 0, 0);
     canvasPool.release(fogCanvas);
@@ -63930,7 +64397,7 @@ var PlayerMapView = class extends import_obsidian66.ItemView {
     this._fogAtlasH = h;
     canvasPool.release(_fogComp);
     canvasPool.release(_mdMask);
-    canvasPool.releaseAll(playerVisionCanvas, playerDarkvisionCanvas, grayscaleCanvas, _allLightsMask);
+    canvasPool.releaseAll(playerVisionCanvas, playerDarkvisionCanvas, playerTruesightCanvas, grayscaleCanvas, _allLightsMask);
   }
   /**
    * Draw light with wall occlusion using visibility polygon algorithm
@@ -72737,6 +73204,150 @@ var TabletopCalibrationModal = class extends import_obsidian78.Modal {
 // src/map-views/renderMapView.ts
 init_ScreenEnumeration();
 init_EnvAssetTypes();
+var MapEncounterSetupModal = class extends import_obsidian84.Modal {
+  constructor(app, plugin, config, sourceEl, onComplete) {
+    super(app);
+    this.plugin = plugin;
+    this.config = config;
+    this.sourceEl = sourceEl;
+    this.onComplete = onComplete;
+    this.selectedEncounterPath = "";
+    this.encounterFiles = [];
+  }
+  onOpen() {
+    var _a;
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h3", { text: "Link Encounter for Player View" });
+    contentEl.createEl("p", {
+      text: "Linking this map to an encounter lets the Initiative Tracker load the correct combat and keeps turn-based View as selection reliable."
+    });
+    this.encounterFiles = this.plugin.app.vault.getMarkdownFiles().filter((f) => {
+      var _a2, _b;
+      return ((_b = (_a2 = this.plugin.app.metadataCache.getFileCache(f)) == null ? void 0 : _a2.frontmatter) == null ? void 0 : _b.type) === "encounter";
+    }).sort((a, b) => b.stat.mtime - a.stat.mtime);
+    this.selectedEncounterPath = this.config.linkedEncounter || ((_a = this.encounterFiles[0]) == null ? void 0 : _a.path) || "";
+    new import_obsidian84.Setting(contentEl).setName("Encounter").setDesc("Choose the encounter note to link and load.").addDropdown((dropdown) => {
+      for (const file of this.encounterFiles) {
+        const name = this.getEncounterName(file);
+        dropdown.addOption(file.path, name);
+      }
+      dropdown.setValue(this.selectedEncounterPath).onChange((value) => {
+        this.selectedEncounterPath = value;
+      });
+      dropdown.selectEl.disabled = this.encounterFiles.length === 0;
+    });
+    if (this.encounterFiles.length === 0) {
+      contentEl.createEl("p", { text: "No encounter notes were found in the vault." });
+    }
+    new import_obsidian84.Setting(contentEl).addButton(
+      (btn) => btn.setButtonText("Link and Load Combat").setCta().onClick(async () => {
+        if (!this.selectedEncounterPath) {
+          new import_obsidian84.Notice("No encounter selected");
+          return;
+        }
+        await this.linkAndLoad(this.selectedEncounterPath);
+      })
+    ).addButton(
+      (btn) => btn.setButtonText("Show Current Combat").onClick(() => {
+        this.config.showInitiativeInPlayerView = true;
+        this.plugin.saveMapAnnotations(this.config, this.sourceEl);
+        this.onComplete();
+        this.close();
+      })
+    ).addButton(
+      (btn) => btn.setButtonText("Cancel").onClick(() => this.close())
+    );
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+  getEncounterName(file) {
+    var _a;
+    const fm = (_a = this.plugin.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter;
+    return (fm == null ? void 0 : fm.name) || (fm == null ? void 0 : fm.encounter_name) || file.basename;
+  }
+  async linkAndLoad(path) {
+    var _a;
+    const file = this.plugin.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof import_obsidian84.TFile)) {
+      new import_obsidian84.Notice("Encounter file not found");
+      return;
+    }
+    const cache = this.plugin.app.metadataCache.getFileCache(file);
+    const fm = (cache == null ? void 0 : cache.frontmatter) || {};
+    const encounterName = fm.name || fm.encounter_name || file.basename;
+    this.config.linkedEncounter = file.path;
+    this.config.showInitiativeInPlayerView = true;
+    if (this.plugin.combatTracker.hasSavedState(encounterName)) {
+      this.plugin.combatTracker.resumeCombat(encounterName);
+    } else {
+      const mappedCreatures = (fm.creatures || []).map((c) => {
+        var _a2, _b, _c, _d, _e;
+        return {
+          name: c.name,
+          count: (_a2 = c.count) != null ? _a2 : 1,
+          hp: c.hp,
+          ac: c.ac,
+          cr: c.cr,
+          source: c.source,
+          path: c.path && c.path !== "[SRD]" ? c.path : void 0,
+          isFriendly: (_c = (_b = c.isFriendly) != null ? _b : c.is_friendly) != null ? _c : false,
+          isHidden: (_e = (_d = c.isHidden) != null ? _d : c.is_hidden) != null ? _e : false
+        };
+      });
+      const partyMembers = [];
+      const fmParty = fm.party_members;
+      if (Array.isArray(fmParty) && fmParty.length > 0) {
+        for (const m of fmParty) {
+          if (!m || !m.name) continue;
+          const maxHp = typeof m.hp_max === "number" ? m.hp_max : typeof m.hp === "number" ? m.hp : 10;
+          partyMembers.push({
+            name: m.name,
+            level: typeof m.level === "number" ? m.level : 1,
+            hp: typeof m.hp === "number" ? m.hp : maxHp,
+            maxHp,
+            ac: typeof m.ac === "number" ? m.ac : 10,
+            notePath: m.note_path || void 0,
+            tokenId: m.token_id || void 0,
+            initBonus: typeof m.init_bonus === "number" ? m.init_bonus : 0,
+            thp: typeof m.thp === "number" ? m.thp : 0
+          });
+        }
+      } else {
+        const resolvedParty = this.plugin.partyManager.resolvePartyForNote(file.path) || this.plugin.partyManager.getDefaultParty();
+        if (resolvedParty) {
+          const resolved = await this.plugin.partyManager.resolveMembers(resolvedParty.id);
+          for (const m of resolved) {
+            partyMembers.push({
+              name: m.name,
+              level: m.level,
+              hp: m.hp,
+              maxHp: m.maxHp,
+              ac: m.ac,
+              notePath: m.notePath,
+              tokenId: m.tokenId,
+              initBonus: m.initBonus,
+              thp: m.thp
+            });
+          }
+        }
+      }
+      await this.plugin.combatTracker.startFromEncounter(
+        encounterName,
+        mappedCreatures,
+        partyMembers,
+        (_a = fm.use_color_names) != null ? _a : true,
+        file.path
+      );
+    }
+    this.plugin.saveMapAnnotations(this.config, this.sourceEl);
+    await this.plugin.openCombatTracker();
+    this.onComplete();
+    this.close();
+    new import_obsidian84.Notice(`\u2705 Linked and loaded "${encounterName}"`);
+  }
+};
 async function renderMapView(plugin, source, el, ctx) {
   var _a, _b, _c, _d, _e, _f, _g;
   try {
@@ -72772,7 +73383,7 @@ async function renderMapView(plugin, source, el, ctx) {
     config.textAnnotations = savedData.textAnnotations || [];
     config.aoeEffects = [];
     config.tunnels = savedData.tunnels || [];
-    ensureTunnelWalls(config.tunnels, config.gridSize);
+    ensureTunnelWalls(config.tunnels, ((config.gridSizeW || config.gridSize) + (config.gridSizeH || config.gridSize)) / 2);
     config.poiReferences = savedData.poiReferences || [];
     config.hexTerrains = savedData.hexTerrains || [];
     config.hexClimates = savedData.hexClimates || [];
@@ -72785,6 +73396,9 @@ async function renderMapView(plugin, source, el, ctx) {
     config.difficultTerrain = savedData.difficultTerrain || {};
     config.envAssets = savedData.envAssets || [];
     config.activeLayer = savedData.activeLayer || "Player";
+    config.linkedEncounter = savedData.linkedEncounter || "";
+    config.showInitiativeInPlayerView = savedData.showInitiativeInPlayerView === true && !!config.linkedEncounter;
+    config.initiativeOverlaySize = ["compact", "medium", "large", "huge", "fullscreen"].includes(savedData.initiativeOverlaySize) ? savedData.initiativeOverlaySize : "medium";
     const notePath = (ctx == null ? void 0 : ctx.sourcePath) || "";
     if (!config.imageFile) {
       el.createEl("div", {
@@ -72845,6 +73459,7 @@ async function renderMapView(plugin, source, el, ctx) {
     let envAssetTransformHandle = null;
     let envAssetTransformStart = null;
     let envAssetRotateStart = null;
+    let selectedElementForDuplication = null;
     const envAssetImageCache = /* @__PURE__ */ new Map();
     const getEnvAssetImage = (path) => {
       if (envAssetImageCache.has(path)) {
@@ -72973,6 +73588,82 @@ async function renderMapView(plugin, source, el, ctx) {
     let fogDragEnd = null;
     let fogPolygonPoints = [];
     if (!config.fogOfWar) config.fogOfWar = { enabled: true, regions: [] };
+    const pointInFogRegion = (point, region) => {
+      if (!region) return false;
+      if (region.shape === "rect") {
+        const x1 = Math.min(region.x || 0, (region.x || 0) + (region.width || 0));
+        const x2 = Math.max(region.x || 0, (region.x || 0) + (region.width || 0));
+        const y1 = Math.min(region.y || 0, (region.y || 0) + (region.height || 0));
+        const y2 = Math.max(region.y || 0, (region.y || 0) + (region.height || 0));
+        return point.x >= x1 && point.x <= x2 && point.y >= y1 && point.y <= y2;
+      }
+      if (region.shape === "circle") {
+        const dx = point.x - (region.cx || 0);
+        const dy = point.y - (region.cy || 0);
+        const r = region.radius || 0;
+        return dx * dx + dy * dy <= r * r;
+      }
+      if (region.shape === "polygon" && Array.isArray(region.points) && region.points.length >= 3) {
+        let inside = false;
+        for (let i = 0, j = region.points.length - 1; i < region.points.length; j = i++) {
+          const pi = region.points[i];
+          const pj = region.points[j];
+          if (!pi || !pj) continue;
+          const intersects = pi.y > point.y !== pj.y > point.y && point.x < (pj.x - pi.x) * (point.y - pi.y) / (pj.y - pi.y || 1e-9) + pi.x;
+          if (intersects) inside = !inside;
+        }
+        return inside;
+      }
+      return false;
+    };
+    const sampleFogRegion = (region) => {
+      if (!region) return [];
+      if (region.shape === "rect") {
+        const x1 = region.x || 0;
+        const y1 = region.y || 0;
+        const x2 = x1 + (region.width || 0);
+        const y2 = y1 + (region.height || 0);
+        return [
+          { x: x1, y: y1 },
+          { x: x2, y: y1 },
+          { x: x2, y: y2 },
+          { x: x1, y: y2 },
+          { x: (x1 + x2) / 2, y: (y1 + y2) / 2 }
+        ];
+      }
+      if (region.shape === "circle") {
+        const cx2 = region.cx || 0;
+        const cy2 = region.cy || 0;
+        const r = region.radius || 0;
+        const points = [{ x: cx2, y: cy2 }];
+        for (let i = 0; i < 16; i++) {
+          const a = i / 16 * Math.PI * 2;
+          points.push({ x: cx2 + Math.cos(a) * r, y: cy2 + Math.sin(a) * r });
+        }
+        return points;
+      }
+      if (region.shape === "polygon" && Array.isArray(region.points)) {
+        const points = region.points.map((p) => ({ x: p.x || 0, y: p.y || 0 }));
+        if (points.length > 0) {
+          const centroid = points.reduce(
+            (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }),
+            { x: 0, y: 0 }
+          );
+          points.push({ x: centroid.x / points.length, y: centroid.y / points.length });
+        }
+        return points;
+      }
+      return [];
+    };
+    const fogRegionFullyCoveredBy = (older, newer) => {
+      const samples = sampleFogRegion(older);
+      return samples.length > 0 && samples.every((point) => pointInFogRegion(point, newer));
+    };
+    const compactFogRegionsForNewRegion = (newRegion) => {
+      var _a2;
+      const regions = ((_a2 = config.fogOfWar) == null ? void 0 : _a2.regions) || [];
+      config.fogOfWar.regions = regions.filter((existing) => !fogRegionFullyCoveredBy(existing, newRegion));
+    };
     let wallPoints = [];
     let wallPreviewPos = null;
     if (!config.walls) config.walls = [];
@@ -72988,6 +73679,8 @@ async function renderMapView(plugin, source, el, ctx) {
     let mwMaskH = 0;
     let mwImageDataCache = null;
     let selectedVisionTokenId = null;
+    let _autoPanEnabled = false;
+    let _autoPanDebounce = null;
     let draggingWallIndex = -1;
     let wallDragOffsetStartX = 0;
     let wallDragOffsetStartY = 0;
@@ -72996,11 +73689,18 @@ async function renderMapView(plugin, source, el, ctx) {
     let wallSelectionRect = null;
     let selectedWallIndices = [];
     let wallClickStartPos = null;
+    let multiSelectionRect = null;
+    let selectedMarkerIndices = [];
+    let selectedLightIndices = [];
+    let selectedEnvAssetIds = [];
+    let selectedTextAnnotationIds = [];
+    let activeMultiSelectionMenu = null;
+    let activeMultiSelectionOutsideHandler = null;
     const WALL_SNAP_FRACTION = 0.12;
     const WALL_SNAP_MIN_PX = 4;
     const WALL_SNAP_MAX_PX = 20;
     const getWallSnapThreshold = () => {
-      const gs = config.gridSize || 70;
+      const gs = Math.min(config.gridSizeW || config.gridSize || 70, config.gridSizeH || config.gridSize || 70);
       return Math.max(WALL_SNAP_MIN_PX, Math.min(WALL_SNAP_MAX_PX, gs * WALL_SNAP_FRACTION));
     };
     const isDoorLikeType = (t) => t === "door" || t === "pivotDoor" || t === "window" || t === "secret" || t === "secretPivot";
@@ -73235,6 +73935,594 @@ async function renderMapView(plugin, source, el, ctx) {
         document.addEventListener("click", outsideClick);
       }, 50);
     };
+    const closeActiveMultiSelectionMenu = (clearSelection = false) => {
+      if (activeMultiSelectionOutsideHandler) {
+        document.removeEventListener("mousedown", activeMultiSelectionOutsideHandler, true);
+        activeMultiSelectionOutsideHandler = null;
+      }
+      if (activeMultiSelectionMenu == null ? void 0 : activeMultiSelectionMenu.parentNode) {
+        activeMultiSelectionMenu.parentNode.removeChild(activeMultiSelectionMenu);
+      }
+      activeMultiSelectionMenu = null;
+      if (clearSelection) {
+        selectedMarkerIndices = [];
+        selectedLightIndices = [];
+        selectedEnvAssetIds = [];
+        selectedTextAnnotationIds = [];
+        selectedWallIndices = [];
+        multiSelectionRect = null;
+        redrawAnnotations();
+      }
+    };
+    const clearMultiSelection = () => {
+      closeActiveMultiSelectionMenu(false);
+      selectedMarkerIndices = [];
+      selectedLightIndices = [];
+      selectedEnvAssetIds = [];
+      selectedTextAnnotationIds = [];
+      selectedWallIndices = [];
+      redrawAnnotations();
+    };
+    const isTokenGroup = (marker) => {
+      var _a2, _b2;
+      return !!((_b2 = (_a2 = marker == null ? void 0 : marker.tokenGroup) == null ? void 0 : _a2.members) == null ? void 0 : _b2.length);
+    };
+    const getMarkerDisplayName = (marker) => {
+      if (isTokenGroup(marker)) return marker.tokenGroup.name || "Token Group";
+      const def = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
+      return (def == null ? void 0 : def.name) || marker.name || marker.id || "Token";
+    };
+    const markerContributesPlayerVision = (marker) => {
+      if (isTokenGroup(marker)) return !!marker.visibleToPlayers;
+      const def = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
+      return !!def && (def.type === "player" || !!marker.visibleToPlayers);
+    };
+    const markerMovementBlockedByWalls = (marker) => {
+      if ((marker.layer || "Player") === "DM") return false;
+      return isTokenGroup(marker) || markerContributesPlayerVision(marker);
+    };
+    const getPlacedMarkerRadius = (marker) => {
+      if (isTokenGroup(marker)) {
+        const avgGs = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+        return Math.max(18, avgGs * 0.55);
+      }
+      const def = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
+      if (def) {
+        if (["player", "npc", "creature"].includes(def.type) && def.creatureSize && config.gridSize) {
+          const squares = CREATURE_SIZE_SQUARES[def.creatureSize] || 1;
+          const gsW = config.gridSizeW || config.gridSize;
+          const gsH = config.gridSizeH || config.gridSize;
+          return squares * ((gsW + gsH) / 2) * 0.9 / 2;
+        }
+        return (def.pixelSize || 30) / 2;
+      }
+      return (marker.pixelSize || 30) / 2;
+    };
+    const cloneMarkerForGroup = (marker) => {
+      const clone = JSON.parse(JSON.stringify(marker));
+      delete clone.tokenGroup;
+      return clone;
+    };
+    const recomputeTokenGroupVision = (groupMarker) => {
+      var _a2;
+      const members = ((_a2 = groupMarker.tokenGroup) == null ? void 0 : _a2.members) || [];
+      const visionKeys = ["darkvision", "blindsight", "tremorsense", "truesight"];
+      visionKeys.forEach((key) => {
+        const maxRange = members.reduce((max, member) => Math.max(max, member[key] || 0), 0);
+        if (maxRange > 0) groupMarker[key] = maxRange;
+        else delete groupMarker[key];
+      });
+      const strongestLight = members.reduce((best, member) => {
+        if (!member.light) return best;
+        const memberRange = (member.light.bright || 0) + (member.light.dim || 0);
+        const bestRange = best ? (best.bright || 0) + (best.dim || 0) : 0;
+        return memberRange > bestRange ? member.light : best;
+      }, null);
+      if (strongestLight) groupMarker.light = JSON.parse(JSON.stringify(strongestLight));
+      else delete groupMarker.light;
+      groupMarker.visibleToPlayers = members.some(markerContributesPlayerVision);
+      const names = members.map(getMarkerDisplayName);
+      groupMarker.tokenGroup.name = names.length <= 2 ? names.join(" + ") : `Group (${names.length} tokens)`;
+    };
+    const movementWallBlocks = (wall) => {
+      const type = wall.type || "wall";
+      if ((type === "door" || type === "secret" || type === "pivotDoor" || type === "secretPivot") && wall.open) return false;
+      return type !== "window" || !wall.open;
+    };
+    const getMovementWallSegments = () => {
+      return (config.walls || []).filter((wall) => (wall == null ? void 0 : wall.start) && (wall == null ? void 0 : wall.end) && movementWallBlocks(wall)).map((wall) => {
+        if (isPivotType2(wall.type) && wall.open) {
+          const hinge = (wall.pivotEnd || "start") === "start" ? wall.start : wall.end;
+          const free = (wall.pivotEnd || "start") === "start" ? wall.end : wall.start;
+          const dx = free.x - hinge.x;
+          const dy = free.y - hinge.y;
+          const dir = wall.openDirection || 1;
+          const rotated = { x: hinge.x - dy * dir, y: hinge.y + dx * dir };
+          return (wall.pivotEnd || "start") === "start" ? { ...wall, start: hinge, end: rotated } : { ...wall, start: rotated, end: hinge };
+        }
+        return wall;
+      });
+    };
+    const segmentsIntersect = (a, b, c, d) => {
+      const orient = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+      const onSeg = (p, q, r) => Math.min(p.x, r.x) - 1e-3 <= q.x && q.x <= Math.max(p.x, r.x) + 1e-3 && Math.min(p.y, r.y) - 1e-3 <= q.y && q.y <= Math.max(p.y, r.y) + 1e-3;
+      const o1 = orient(a, b, c);
+      const o2 = orient(a, b, d);
+      const o3 = orient(c, d, a);
+      const o4 = orient(c, d, b);
+      if (Math.abs(o1) < 1e-3 && onSeg(a, c, b)) return true;
+      if (Math.abs(o2) < 1e-3 && onSeg(a, d, b)) return true;
+      if (Math.abs(o3) < 1e-3 && onSeg(c, a, d)) return true;
+      if (Math.abs(o4) < 1e-3 && onSeg(c, b, d)) return true;
+      return o1 > 0 !== o2 > 0 && o3 > 0 !== o4 > 0;
+    };
+    const tokenMoveBlocked = (from, to) => {
+      if (Math.abs(from.x - to.x) < 1e-3 && Math.abs(from.y - to.y) < 1e-3) return false;
+      return getMovementWallSegments().some((wall) => segmentsIntersect(from, to, wall.start, wall.end));
+    };
+    const snapPointForGroupRelease = (x, y) => {
+      const gsW = config.gridSizeW || config.gridSize || 70;
+      const gsH = config.gridSizeH || config.gridSize || 70;
+      const ox = config.gridOffsetX || 0;
+      const oy = config.gridOffsetY || 0;
+      return {
+        x: ox + Math.round((x - ox - gsW / 2) / gsW) * gsW + gsW / 2,
+        y: oy + Math.round((y - oy - gsH / 2) / gsH) * gsH + gsH / 2
+      };
+    };
+    const findSafeGroupReleasePosition = (groupMarker, occupied) => {
+      const gsW = config.gridSizeW || config.gridSize || 70;
+      const gsH = config.gridSizeH || config.gridSize || 70;
+      const dirs = [
+        { x: 1, y: 0 },
+        { x: -1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 0, y: -1 },
+        { x: 1, y: 1 },
+        { x: 1, y: -1 },
+        { x: -1, y: 1 },
+        { x: -1, y: -1 }
+      ];
+      for (let ring = 1; ring <= 4; ring++) {
+        for (const dir of dirs) {
+          const candidate = snapPointForGroupRelease(groupMarker.position.x + dir.x * gsW * ring, groupMarker.position.y + dir.y * gsH * ring);
+          if (tokenMoveBlocked(groupMarker.position, candidate)) continue;
+          const occupiedHit = occupied.some((p) => Math.hypot(p.x - candidate.x, p.y - candidate.y) < Math.min(gsW, gsH) * 0.5);
+          if (!occupiedHit) return candidate;
+        }
+      }
+      return null;
+    };
+    const groupSelectedMarkers = () => {
+      var _a2;
+      if (!config.markers || selectedMarkerIndices.length < 2) return;
+      const uniqueIndices = [...new Set(selectedMarkerIndices)].filter((i) => config.markers[i] && !isTokenGroup(config.markers[i])).sort((a, b) => a - b);
+      if (uniqueIndices.length < 2) {
+        new import_obsidian84.Notice("Select at least two normal tokens to create a group");
+        return;
+      }
+      saveToHistory();
+      const members = uniqueIndices.map((i) => cloneMarkerForGroup(config.markers[i]));
+      const avgX = members.reduce((sum2, marker) => sum2 + marker.position.x, 0) / members.length;
+      const avgY = members.reduce((sum2, marker) => sum2 + marker.position.y, 0) / members.length;
+      const groupMarker = {
+        id: `token_group_${Date.now()}`,
+        position: snapPointForGroupRelease(avgX, avgY),
+        placedAt: Date.now(),
+        layer: config.activeLayer === "Background" ? "Player" : ((_a2 = members[0]) == null ? void 0 : _a2.layer) || config.activeLayer || "Player",
+        tokenGroup: { members, createdAt: Date.now(), name: "" },
+        icon: "\u{1F465}",
+        color: "#3b82f6",
+        borderColor: "#ffffff",
+        pixelSize: Math.max(40, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2)
+      };
+      recomputeTokenGroupVision(groupMarker);
+      uniqueIndices.slice().sort((a, b) => b - a).forEach((i) => config.markers.splice(i, 1));
+      config.markers.push(groupMarker);
+      selectedMarkerIndices = [config.markers.length - 1];
+      selectedLightIndices = [];
+      selectedEnvAssetIds = [];
+      selectedTextAnnotationIds = [];
+      selectedWallIndices = [];
+      refreshVisionSelector();
+      redrawAnnotations();
+      plugin.saveMapAnnotations(config, el);
+      if (viewport._syncPlayerView) viewport._syncPlayerView();
+      new import_obsidian84.Notice(`Grouped ${members.length} tokens`);
+    };
+    const getSelectedGroupAddTarget = () => {
+      if (!config.markers || selectedMarkerIndices.length < 2) return null;
+      const uniqueIndices = [...new Set(selectedMarkerIndices)].filter((i) => !!config.markers[i]);
+      const groupIndices = uniqueIndices.filter((i) => isTokenGroup(config.markers[i]));
+      const tokenIndices = uniqueIndices.filter((i) => !isTokenGroup(config.markers[i]));
+      if (groupIndices.length !== 1 || tokenIndices.length < 1) return null;
+      return { groupIndex: groupIndices[0], tokenIndices };
+    };
+    const addSelectedMarkersToGroup = () => {
+      const target = getSelectedGroupAddTarget();
+      if (!target) {
+        new import_obsidian84.Notice("Select one group token and at least one normal token");
+        return;
+      }
+      const groupMarker = config.markers[target.groupIndex];
+      if (!groupMarker || !isTokenGroup(groupMarker)) return;
+      saveToHistory();
+      const tokensToAdd = target.tokenIndices.map((i) => config.markers[i]).filter(Boolean);
+      tokensToAdd.forEach((marker) => {
+        groupMarker.tokenGroup.members.push(cloneMarkerForGroup(marker));
+        if (selectedVisionTokenId === marker.id) selectedVisionTokenId = groupMarker.id;
+      });
+      target.tokenIndices.slice().sort((a, b) => b - a).forEach((i) => config.markers.splice(i, 1));
+      recomputeTokenGroupVision(groupMarker);
+      const nextGroupIndex = config.markers.findIndex((m) => m.id === groupMarker.id);
+      selectedMarkerIndices = nextGroupIndex >= 0 ? [nextGroupIndex] : [];
+      selectedLightIndices = [];
+      selectedEnvAssetIds = [];
+      selectedTextAnnotationIds = [];
+      selectedWallIndices = [];
+      refreshVisionSelector();
+      redrawAnnotations();
+      plugin.saveMapAnnotations(config, el);
+      if (viewport._syncPlayerView) viewport._syncPlayerView();
+      new import_obsidian84.Notice(`Added ${tokensToAdd.length} token${tokensToAdd.length > 1 ? "s" : ""} to ${getMarkerDisplayName(groupMarker)}`);
+    };
+    const releaseTokenFromGroup = (groupMarker, memberIndex) => {
+      var _a2;
+      const members = ((_a2 = groupMarker.tokenGroup) == null ? void 0 : _a2.members) || [];
+      const member = members[memberIndex];
+      if (!member) return false;
+      const occupied = (config.markers || []).filter((m) => m.id !== groupMarker.id && m.position).map((m) => ({ x: m.position.x, y: m.position.y }));
+      const position = findSafeGroupReleasePosition(groupMarker, occupied);
+      if (!position) {
+        new import_obsidian84.Notice("No safe adjacent tile found for this token");
+        return false;
+      }
+      const released = cloneMarkerForGroup(member);
+      released.position = position;
+      released.layer = groupMarker.layer || released.layer || "Player";
+      delete released.tunnelState;
+      config.markers.push(released);
+      members.splice(memberIndex, 1);
+      if (members.length === 0) {
+        const groupIndex = config.markers.findIndex((m) => m.id === groupMarker.id);
+        if (groupIndex >= 0) config.markers.splice(groupIndex, 1);
+        if (selectedVisionTokenId === groupMarker.id) selectedVisionTokenId = null;
+      } else {
+        recomputeTokenGroupVision(groupMarker);
+      }
+      return true;
+    };
+    const releaseAllTokensFromGroup = (groupMarker) => {
+      var _a2, _b2;
+      let released = 0;
+      while ((_b2 = (_a2 = groupMarker.tokenGroup) == null ? void 0 : _a2.members) == null ? void 0 : _b2.length) {
+        if (!releaseTokenFromGroup(groupMarker, 0)) break;
+        released++;
+      }
+      return released;
+    };
+    const showMultiSelectionMenu = () => {
+      const totalSelected = selectedMarkerIndices.length + selectedLightIndices.length + selectedEnvAssetIds.length + selectedWallIndices.length;
+      closeActiveMultiSelectionMenu(false);
+      const popup = document.createElement("div");
+      popup.addClass("dnd-map-context-menu");
+      popup.style.position = "fixed";
+      popup.style.zIndex = "10000";
+      const header = popup.createDiv({ cls: "dnd-map-context-menu-header" });
+      header.textContent = `\u{1F532} Bulk Operations (${totalSelected} selected)`;
+      const summaryRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+      summaryRow.style.padding = "4px 8px";
+      summaryRow.style.fontSize = "11px";
+      summaryRow.style.opacity = "0.8";
+      const summaryParts = [];
+      if (selectedMarkerIndices.length > 0) summaryParts.push(`${selectedMarkerIndices.length} marker${selectedMarkerIndices.length > 1 ? "s" : ""}`);
+      if (selectedLightIndices.length > 0) summaryParts.push(`${selectedLightIndices.length} light${selectedLightIndices.length > 1 ? "s" : ""}`);
+      if (selectedEnvAssetIds.length > 0) summaryParts.push(`${selectedEnvAssetIds.length} asset${selectedEnvAssetIds.length > 1 ? "s" : ""}`);
+      if (selectedWallIndices.length > 0) summaryParts.push(`${selectedWallIndices.length} wall${selectedWallIndices.length > 1 ? "s" : ""}`);
+      summaryRow.textContent = summaryParts.join(", ");
+      if (selectedLightIndices.length > 0) {
+        const lightRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+        lightRow.style.display = "flex";
+        lightRow.style.alignItems = "center";
+        lightRow.style.gap = "6px";
+        lightRow.style.padding = "6px 8px";
+        const lightBtn = lightRow.createEl("button", { text: "\u{1F4A1} Edit Lights", cls: "mod-cta" });
+        lightBtn.addEventListener("click", () => {
+          closeActiveMultiSelectionMenu(false);
+          showBulkLightEditor();
+        });
+      }
+      if (selectedWallIndices.length > 0) {
+        const wallRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+        wallRow.style.display = "flex";
+        wallRow.style.alignItems = "center";
+        wallRow.style.gap = "6px";
+        wallRow.style.padding = "6px 8px";
+        const wallBtn = wallRow.createEl("button", { text: "\u{1F9F1} Set Wall Height", cls: "mod-cta" });
+        wallBtn.addEventListener("click", () => {
+          closeActiveMultiSelectionMenu(false);
+          showWallHeightPopup(selectedWallIndices);
+        });
+      }
+      if (selectedMarkerIndices.length > 0) {
+        const markerRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+        markerRow.style.display = "flex";
+        markerRow.style.alignItems = "center";
+        markerRow.style.gap = "6px";
+        markerRow.style.padding = "6px 8px";
+        const markerBtn2 = markerRow.createEl("button", { text: "\u{1F3AF} Edit Markers", cls: "mod-cta" });
+        markerBtn2.addEventListener("click", () => {
+          closeActiveMultiSelectionMenu(false);
+          showBulkMarkerEditor();
+        });
+      }
+      const groupAddTarget = getSelectedGroupAddTarget();
+      if (groupAddTarget) {
+        const addRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+        addRow.style.display = "flex";
+        addRow.style.alignItems = "center";
+        addRow.style.gap = "6px";
+        addRow.style.padding = "6px 8px";
+        const addBtn = addRow.createEl("button", {
+          text: `\u2795 Add ${groupAddTarget.tokenIndices.length} to Group`,
+          cls: "mod-cta"
+        });
+        addBtn.addEventListener("click", () => {
+          closeActiveMultiSelectionMenu(false);
+          addSelectedMarkersToGroup();
+        });
+      }
+      if (selectedMarkerIndices.length > 1 && !groupAddTarget) {
+        const groupRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+        groupRow.style.display = "flex";
+        groupRow.style.alignItems = "center";
+        groupRow.style.gap = "6px";
+        groupRow.style.padding = "6px 8px";
+        const groupBtn = groupRow.createEl("button", { text: "\u{1F465} Group Tokens", cls: "mod-cta" });
+        groupBtn.addEventListener("click", () => {
+          closeActiveMultiSelectionMenu(false);
+          groupSelectedMarkers();
+        });
+      }
+      if (selectedEnvAssetIds.length > 0) {
+        const assetRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+        assetRow.style.display = "flex";
+        assetRow.style.alignItems = "center";
+        assetRow.style.gap = "6px";
+        assetRow.style.padding = "6px 8px";
+        const assetBtn = assetRow.createEl("button", { text: "\u{1F3DE}\uFE0F Edit Assets", cls: "mod-cta" });
+        assetBtn.addEventListener("click", () => {
+          closeActiveMultiSelectionMenu(false);
+          showBulkAssetEditor();
+        });
+      }
+      const deleteRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+      deleteRow.style.display = "flex";
+      deleteRow.style.alignItems = "center";
+      deleteRow.style.gap = "6px";
+      deleteRow.style.padding = "6px 8px";
+      const deleteBtn2 = deleteRow.createEl("button", { text: "\u{1F5D1}\uFE0F Delete All", cls: "mod-warning" });
+      deleteBtn2.addEventListener("click", () => {
+        closeActiveMultiSelectionMenu(false);
+        deleteSelectedElements();
+      });
+      const cancelRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+      cancelRow.style.display = "flex";
+      cancelRow.style.alignItems = "center";
+      cancelRow.style.gap = "6px";
+      cancelRow.style.padding = "6px 8px";
+      const cancelBtn = cancelRow.createEl("button", { text: "Cancel" });
+      cancelBtn.addEventListener("click", () => {
+        closeActiveMultiSelectionMenu(true);
+      });
+      document.body.appendChild(popup);
+      activeMultiSelectionMenu = popup;
+      setTimeout(() => {
+        if (activeMultiSelectionMenu !== popup) return;
+        activeMultiSelectionOutsideHandler = (ev) => {
+          if (activeMultiSelectionMenu && !activeMultiSelectionMenu.contains(ev.target)) {
+            closeActiveMultiSelectionMenu(true);
+          }
+        };
+        document.addEventListener("mousedown", activeMultiSelectionOutsideHandler, true);
+      }, 0);
+      const popupRect = popup.getBoundingClientRect();
+      popup.style.left = `${Math.max(10, (window.innerWidth - popupRect.width) / 2)}px`;
+      popup.style.top = `${Math.max(10, (window.innerHeight - popupRect.height) / 2)}px`;
+    };
+    const showBulkLightEditor = () => {
+      const popup = document.createElement("div");
+      popup.addClass("dnd-map-context-menu");
+      popup.style.position = "fixed";
+      popup.style.zIndex = "10000";
+      const header = popup.createDiv({ cls: "dnd-map-context-menu-header" });
+      header.textContent = `\u{1F4A1} Edit ${selectedLightIndices.length} Light${selectedLightIndices.length > 1 ? "s" : ""}`;
+      const colorRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+      colorRow.style.display = "flex";
+      colorRow.style.alignItems = "center";
+      colorRow.style.gap = "6px";
+      colorRow.style.padding = "6px 8px";
+      colorRow.createEl("span", { text: "Color:" });
+      const colorInput2 = colorRow.createEl("input", { attr: { type: "color" } });
+      colorInput2.style.width = "40px";
+      colorInput2.style.height = "24px";
+      colorInput2.style.border = "none";
+      colorInput2.style.borderRadius = "3px";
+      const brightRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+      brightRow.style.display = "flex";
+      brightRow.style.alignItems = "center";
+      brightRow.style.gap = "6px";
+      brightRow.style.padding = "6px 8px";
+      brightRow.createEl("span", { text: "Brightness:" });
+      const brightInput = brightRow.createEl("input", {
+        attr: { type: "range", min: "0", max: "100", step: "5" }
+      });
+      brightInput.style.flex = "1";
+      const brightValue = brightRow.createEl("span", { text: "50" });
+      brightValue.style.width = "30px";
+      brightValue.style.textAlign = "right";
+      brightInput.addEventListener("input", () => {
+        brightValue.textContent = brightInput.value;
+      });
+      const btnRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+      btnRow.style.display = "flex";
+      btnRow.style.gap = "6px";
+      btnRow.style.padding = "4px 8px";
+      const applyBtn = btnRow.createEl("button", { text: "Apply", cls: "mod-cta" });
+      const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
+      const closePopup = () => {
+        if (popup.parentNode) document.body.removeChild(popup);
+        clearMultiSelection();
+      };
+      applyBtn.addEventListener("click", () => {
+        saveToHistory();
+        selectedLightIndices.forEach((i) => {
+          if (config.lights[i]) {
+            config.lights[i].color = colorInput2.value;
+            config.lights[i].brightness = parseInt(brightInput.value);
+          }
+        });
+        new import_obsidian84.Notice(`Updated ${selectedLightIndices.length} light${selectedLightIndices.length > 1 ? "s" : ""}`);
+        plugin.saveMapAnnotations(config, el);
+        if (viewport._syncPlayerView) viewport._syncPlayerView();
+        closePopup();
+      });
+      cancelBtn.addEventListener("click", closePopup);
+      document.body.appendChild(popup);
+      const popupRect = popup.getBoundingClientRect();
+      popup.style.left = `${Math.max(10, (window.innerWidth - popupRect.width) / 2)}px`;
+      popup.style.top = `${Math.max(10, (window.innerHeight - popupRect.height) / 2)}px`;
+    };
+    const showBulkMarkerEditor = () => {
+      const popup = document.createElement("div");
+      popup.addClass("dnd-map-context-menu");
+      popup.style.position = "fixed";
+      popup.style.zIndex = "10000";
+      const header = popup.createDiv({ cls: "dnd-map-context-menu-header" });
+      header.textContent = `\u{1F3AF} Edit ${selectedMarkerIndices.length} Marker${selectedMarkerIndices.length > 1 ? "s" : ""}`;
+      const sizeRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+      sizeRow.style.display = "flex";
+      sizeRow.style.alignItems = "center";
+      sizeRow.style.gap = "6px";
+      sizeRow.style.padding = "6px 8px";
+      sizeRow.createEl("span", { text: "Size:" });
+      const sizeInput = sizeRow.createEl("input", {
+        attr: { type: "range", min: "10", max: "200", step: "5" }
+      });
+      sizeInput.style.flex = "1";
+      const sizeValue = sizeRow.createEl("span", { text: "50" });
+      sizeValue.style.width = "35px";
+      sizeValue.style.textAlign = "right";
+      sizeInput.addEventListener("input", () => {
+        sizeValue.textContent = sizeInput.value;
+      });
+      const btnRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+      btnRow.style.display = "flex";
+      btnRow.style.gap = "6px";
+      btnRow.style.padding = "4px 8px";
+      const applyBtn = btnRow.createEl("button", { text: "Apply", cls: "mod-cta" });
+      const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
+      const closePopup = () => {
+        if (popup.parentNode) document.body.removeChild(popup);
+        clearMultiSelection();
+      };
+      applyBtn.addEventListener("click", () => {
+        saveToHistory();
+        selectedMarkerIndices.forEach((i) => {
+          if (config.markers[i]) {
+            config.markers[i].size = parseInt(sizeInput.value);
+          }
+        });
+        new import_obsidian84.Notice(`Updated ${selectedMarkerIndices.length} marker${selectedMarkerIndices.length > 1 ? "s" : ""}`);
+        plugin.saveMapAnnotations(config, el);
+        if (viewport._syncPlayerView) viewport._syncPlayerView();
+        closePopup();
+      });
+      cancelBtn.addEventListener("click", closePopup);
+      document.body.appendChild(popup);
+      const popupRect = popup.getBoundingClientRect();
+      popup.style.left = `${Math.max(10, (window.innerWidth - popupRect.width) / 2)}px`;
+      popup.style.top = `${Math.max(10, (window.innerHeight - popupRect.height) / 2)}px`;
+    };
+    const showBulkAssetEditor = () => {
+      const popup = document.createElement("div");
+      popup.addClass("dnd-map-context-menu");
+      popup.style.position = "fixed";
+      popup.style.zIndex = "10000";
+      const header = popup.createDiv({ cls: "dnd-map-context-menu-header" });
+      header.textContent = `\u{1F3DE}\uFE0F Edit ${selectedEnvAssetIds.length} Asset${selectedEnvAssetIds.length > 1 ? "s" : ""}`;
+      const scaleRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+      scaleRow.style.display = "flex";
+      scaleRow.style.alignItems = "center";
+      scaleRow.style.gap = "6px";
+      scaleRow.style.padding = "6px 8px";
+      scaleRow.createEl("span", { text: "Scale:" });
+      const scaleInput = scaleRow.createEl("input", {
+        attr: { type: "range", min: "0.1", max: "5", step: "0.1" }
+      });
+      scaleInput.style.flex = "1";
+      const scaleValue = scaleRow.createEl("span", { text: "1.0" });
+      scaleValue.style.width = "35px";
+      scaleValue.style.textAlign = "right";
+      scaleInput.addEventListener("input", () => {
+        scaleValue.textContent = parseFloat(scaleInput.value).toFixed(1);
+      });
+      const btnRow = popup.createDiv({ cls: "dnd-map-context-menu-item" });
+      btnRow.style.display = "flex";
+      btnRow.style.gap = "6px";
+      btnRow.style.padding = "4px 8px";
+      const applyBtn = btnRow.createEl("button", { text: "Apply", cls: "mod-cta" });
+      const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
+      const closePopup = () => {
+        if (popup.parentNode) document.body.removeChild(popup);
+        clearMultiSelection();
+      };
+      applyBtn.addEventListener("click", () => {
+        saveToHistory();
+        selectedEnvAssetIds.forEach((id) => {
+          if (config.envAssets[id]) {
+            config.envAssets[id].scale = parseFloat(scaleInput.value);
+          }
+        });
+        new import_obsidian84.Notice(`Updated ${selectedEnvAssetIds.length} asset${selectedEnvAssetIds.length > 1 ? "s" : ""}`);
+        plugin.saveMapAnnotations(config, el);
+        if (viewport._syncPlayerView) viewport._syncPlayerView();
+        closePopup();
+      });
+      cancelBtn.addEventListener("click", closePopup);
+      document.body.appendChild(popup);
+      const popupRect = popup.getBoundingClientRect();
+      popup.style.left = `${Math.max(10, (window.innerWidth - popupRect.width) / 2)}px`;
+      popup.style.top = `${Math.max(10, (window.innerHeight - popupRect.height) / 2)}px`;
+    };
+    const deleteSelectedElements = () => {
+      const confirmDelete = () => {
+        const total = selectedMarkerIndices.length + selectedLightIndices.length + selectedEnvAssetIds.length + selectedWallIndices.length;
+        const confirmed = window.confirm(`Delete ${total} selected element${total > 1 ? "s" : ""}? This cannot be undone.`);
+        if (!confirmed) {
+          clearMultiSelection();
+          return;
+        }
+        saveToHistory();
+        selectedMarkerIndices.sort((a, b) => b - a).forEach((i) => {
+          config.markers.splice(i, 1);
+        });
+        selectedLightIndices.sort((a, b) => b - a).forEach((i) => {
+          config.lights.splice(i, 1);
+        });
+        selectedEnvAssetIds.forEach((id) => {
+          delete config.envAssets[id];
+        });
+        selectedWallIndices.sort((a, b) => b - a).forEach((i) => {
+          config.walls.splice(i, 1);
+        });
+        new import_obsidian84.Notice(`Deleted ${total} element${total > 1 ? "s" : ""}`);
+        plugin.saveMapAnnotations(config, el);
+        if (viewport._syncPlayerView) viewport._syncPlayerView();
+        clearMultiSelection();
+      };
+      confirmDelete();
+    };
     const WALL_TYPES = {
       wall: { name: "Wall", icon: "\u{1F9F1}", color: "#ff4500", style: "solid", blocksSight: true, blocksMovement: true, group: "wall" },
       door: { name: "Door", icon: "\u{1F6AA}", color: "#8B4513", style: "door", blocksSight: true, blocksMovement: true, group: "door" },
@@ -73367,11 +74655,111 @@ async function renderMapView(plugin, source, el, ctx) {
       updateUndoRedoButtons();
       new import_obsidian84.Notice("Redo");
     };
+    const duplicateElement = (type, index) => {
+      saveToHistory();
+      const DUPLICATE_OFFSET = 25;
+      switch (type) {
+        case "marker": {
+          if (!config.markers || index < 0 || index >= config.markers.length) return;
+          const original = config.markers[index];
+          const duplicate = {
+            ...original,
+            id: `marker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            position: {
+              x: original.position.x + DUPLICATE_OFFSET,
+              y: original.position.y + DUPLICATE_OFFSET
+            },
+            placedAt: Date.now()
+          };
+          config.markers.push(duplicate);
+          selectedElementForDuplication = { type: "marker", index: config.markers.length - 1 };
+          new import_obsidian84.Notice("Token duplicated");
+          break;
+        }
+        case "light": {
+          if (!config.lightSources || index < 0 || index >= config.lightSources.length) return;
+          const original = config.lightSources[index];
+          const duplicate = {
+            ...original,
+            x: original.x + DUPLICATE_OFFSET,
+            y: original.y + DUPLICATE_OFFSET
+          };
+          config.lightSources.push(duplicate);
+          selectedElementForDuplication = { type: "light", index: config.lightSources.length - 1 };
+          new import_obsidian84.Notice("Light source duplicated");
+          break;
+        }
+        case "env-asset": {
+          if (!config.envAssets || index < 0 || index >= config.envAssets.length) return;
+          const original = config.envAssets[index];
+          const duplicate = {
+            ...original,
+            id: `env_asset_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            position: {
+              x: original.position.x + DUPLICATE_OFFSET,
+              y: original.position.y + DUPLICATE_OFFSET
+            },
+            placedAt: Date.now()
+          };
+          config.envAssets.push(duplicate);
+          selectedElementForDuplication = { type: "env-asset", index: config.envAssets.length - 1 };
+          selectedEnvAssetInstanceId = duplicate.id;
+          new import_obsidian84.Notice("Environment asset duplicated");
+          break;
+        }
+        case "wall": {
+          if (!config.walls || index < 0 || index >= config.walls.length) return;
+          const original = config.walls[index];
+          const duplicate = {
+            ...original,
+            start: {
+              x: original.start.x + DUPLICATE_OFFSET,
+              y: original.start.y + DUPLICATE_OFFSET
+            },
+            end: {
+              x: original.end.x + DUPLICATE_OFFSET,
+              y: original.end.y + DUPLICATE_OFFSET
+            }
+          };
+          config.walls.push(duplicate);
+          selectedElementForDuplication = { type: "wall", index: config.walls.length - 1 };
+          new import_obsidian84.Notice("Wall duplicated");
+          break;
+        }
+        case "text-annotation": {
+          if (!config.textAnnotations || index < 0 || index >= config.textAnnotations.length) return;
+          const original = config.textAnnotations[index];
+          const duplicate = {
+            ...original,
+            id: `text_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            position: {
+              x: original.position.x + DUPLICATE_OFFSET,
+              y: original.position.y + DUPLICATE_OFFSET
+            }
+          };
+          config.textAnnotations.push(duplicate);
+          selectedElementForDuplication = { type: "text-annotation", index: config.textAnnotations.length - 1 };
+          selectedTextAnnotationId = duplicate.id;
+          new import_obsidian84.Notice("Text annotation duplicated");
+          break;
+        }
+      }
+      redrawAnnotations();
+      plugin.saveMapAnnotations(config, el);
+      if (viewport._syncPlayerView) viewport._syncPlayerView();
+    };
     const viewport = mapContainer.createDiv({ cls: "dnd-map-viewport" });
     viewport.setAttribute("tabindex", "0");
     const mapWrapper = viewport.createDiv({ cls: "dnd-map-wrapper" });
     const resourcePath = plugin.app.vault.getResourcePath(imageFile);
     let img;
+    const onImageError = () => {
+      mapContainer.empty();
+      mapContainer.createEl("div", {
+        text: "\u26A0\uFE0F Failed to load map image. Try a smaller file or check the vault path.",
+        cls: "dnd-map-error"
+      });
+    };
     if (config.isVideo) {
       const video = mapWrapper.createEl("video", {
         cls: "dnd-map-image dnd-map-video",
@@ -73383,6 +74771,7 @@ async function renderMapView(plugin, source, el, ctx) {
           playsinline: ""
         }
       });
+      video.addEventListener("error", onImageError);
       video.autoplay = true;
       video.loop = true;
       video.muted = true;
@@ -73401,6 +74790,7 @@ async function renderMapView(plugin, source, el, ctx) {
           alt: config.name || "Battle Map"
         }
       });
+      img.addEventListener("error", onImageError);
     }
     const toolbarWrapper = viewport.createDiv({ cls: "dnd-map-toolbar-wrapper" });
     const undoRedoBar = viewport.createDiv({ cls: "dnd-map-undoredo-bar" });
@@ -73665,6 +75055,12 @@ async function renderMapView(plugin, source, el, ctx) {
         wallSelectionRect = null;
         draggingWallIndex = -1;
       }
+      selectedMarkerIndices = [];
+      selectedLightIndices = [];
+      selectedEnvAssetIds = [];
+      selectedTextAnnotationIds = [];
+      selectedWallIndices = [];
+      multiSelectionRect = null;
       redrawAnnotations();
     };
     for (const v of bgViews) {
@@ -73729,6 +75125,7 @@ async function renderMapView(plugin, source, el, ctx) {
         visionMenu.removeClass("open");
         refreshVisionSelector();
         if (viewport._syncPlayerView) viewport._syncPlayerView();
+        _applyAutoPan(true);
         new import_obsidian84.Notice(selectedVisionTokenId ? `Vision: ${icon} ${name}` : "Vision: All Players");
       });
       return item;
@@ -73736,21 +75133,18 @@ async function renderMapView(plugin, source, el, ctx) {
     const refreshVisionSelector = () => {
       visionMenu.empty();
       const visionTokens = (config.markers || []).filter((m) => {
-        const markerDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
-        if (!markerDef) return false;
-        return markerDef.type === "player" || m.visibleToPlayers;
+        return markerContributesPlayerVision(m);
       });
       const nameCounts = /* @__PURE__ */ new Map();
       visionTokens.forEach((m) => {
-        const markerDef = plugin.markerLibrary.getMarker(m.markerId);
-        const name = (markerDef == null ? void 0 : markerDef.name) || m.id;
+        const name = getMarkerDisplayName(m);
         nameCounts.set(name, (nameCounts.get(name) || 0) + 1);
       });
       buildVisionOption(visionMenu, "\u{1F465}", "All Players", "");
       visionTokens.forEach((m) => {
-        const markerDef = plugin.markerLibrary.getMarker(m.markerId);
-        const icon = (markerDef == null ? void 0 : markerDef.type) === "player" ? "\u{1F464}" : (markerDef == null ? void 0 : markerDef.type) === "creature" ? "\u{1F479}" : "\u{1F9D1}";
-        let name = (markerDef == null ? void 0 : markerDef.name) || m.id;
+        const markerDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
+        const icon = isTokenGroup(m) ? "\u{1F465}" : (markerDef == null ? void 0 : markerDef.type) === "player" ? "\u{1F464}" : (markerDef == null ? void 0 : markerDef.type) === "creature" ? "\u{1F479}" : "\u{1F9D1}";
+        let name = getMarkerDisplayName(m);
         const isDupe = (nameCounts.get(name) || 0) > 1;
         if (isDupe && (markerDef == null ? void 0 : markerDef.campaign)) {
           name = `${name} (${markerDef.campaign})`;
@@ -73765,9 +75159,9 @@ async function renderMapView(plugin, source, el, ctx) {
       } else {
         const selMarker = visionTokens.find((m) => m.id === selectedVisionTokenId);
         if (selMarker) {
-          const selDef = plugin.markerLibrary.getMarker(selMarker.markerId);
-          const selIcon = (selDef == null ? void 0 : selDef.type) === "player" ? "\u{1F464}" : (selDef == null ? void 0 : selDef.type) === "creature" ? "\u{1F479}" : "\u{1F9D1}";
-          const selName = (selDef == null ? void 0 : selDef.name) || selMarker.id;
+          const selDef = selMarker.markerId ? plugin.markerLibrary.getMarker(selMarker.markerId) : null;
+          const selIcon = isTokenGroup(selMarker) ? "\u{1F465}" : (selDef == null ? void 0 : selDef.type) === "player" ? "\u{1F464}" : (selDef == null ? void 0 : selDef.type) === "creature" ? "\u{1F479}" : "\u{1F9D1}";
+          const selName = getMarkerDisplayName(selMarker);
           const isDupe = (nameCounts.get(selName) || 0) > 1;
           visionSelected.createEl("span", { text: selIcon, cls: "dnd-map-vision-item-icon" });
           visionSelected.createEl("span", { text: selName, cls: "dnd-map-vision-item-name" });
@@ -73802,14 +75196,14 @@ async function renderMapView(plugin, source, el, ctx) {
         const combatant = state.combatants[state.turnIndex];
         if (!combatant) return;
         const visionTokens = (config.markers || []).filter((m) => {
-          const markerDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
-          if (!markerDef) return false;
-          return markerDef.type === "player" || m.visibleToPlayers;
+          return markerContributesPlayerVision(m);
         });
         let matchedMarker = null;
         if (combatant.player || combatant.friendly) {
           if (combatant.tokenId) {
-            matchedMarker = visionTokens.find((m) => m.markerId === combatant.tokenId);
+            matchedMarker = visionTokens.find(
+              (m) => m.markerId === combatant.tokenId || isTokenGroup(m) && (m.tokenGroup.members || []).some((member) => member.markerId === combatant.tokenId)
+            );
           }
           if (!matchedMarker && combatant.notePath) {
             const noteFile = plugin.app.vault.getAbstractFileByPath(combatant.notePath);
@@ -73817,12 +75211,23 @@ async function renderMapView(plugin, source, el, ctx) {
               const noteCache = plugin.app.metadataCache.getFileCache(noteFile);
               const noteTokenId = (_a2 = noteCache == null ? void 0 : noteCache.frontmatter) == null ? void 0 : _a2.token_id;
               if (noteTokenId) {
-                matchedMarker = visionTokens.find((m) => m.markerId === noteTokenId);
+                matchedMarker = visionTokens.find(
+                  (m) => m.markerId === noteTokenId || isTokenGroup(m) && (m.tokenGroup.members || []).some((member) => member.markerId === noteTokenId)
+                );
               }
             }
           }
           if (!matchedMarker) {
             matchedMarker = visionTokens.find((m) => {
+              if (isTokenGroup(m)) {
+                const displayName2 = (combatant.display || "").toLowerCase();
+                const baseName2 = (combatant.name || "").toLowerCase();
+                return (m.tokenGroup.members || []).some((member) => {
+                  const memberDef = member.markerId ? plugin.markerLibrary.getMarker(member.markerId) : null;
+                  const memberName = ((memberDef == null ? void 0 : memberDef.name) || member.name || "").toLowerCase();
+                  return !!memberName && (displayName2 === memberName || baseName2 === memberName || displayName2.startsWith(memberName));
+                });
+              }
               const markerDef = plugin.markerLibrary.getMarker(m.markerId);
               if (!markerDef) return false;
               const markerName = markerDef.name.toLowerCase();
@@ -73836,13 +75241,15 @@ async function renderMapView(plugin, source, el, ctx) {
           selectedVisionTokenId = matchedMarker.id;
           refreshVisionSelector();
           if (viewport._syncPlayerView) viewport._syncPlayerView();
-          const markerDef = plugin.markerLibrary.getMarker(matchedMarker.markerId);
-          const icon = (markerDef == null ? void 0 : markerDef.type) === "player" ? "\u{1F464}" : (markerDef == null ? void 0 : markerDef.type) === "creature" ? "\u{1F479}" : "\u{1F9D1}";
-          new import_obsidian84.Notice(`Vision synced: ${icon} ${(markerDef == null ? void 0 : markerDef.name) || matchedMarker.id}`);
+          _applyAutoPan(true);
+          const markerDef = matchedMarker.markerId ? plugin.markerLibrary.getMarker(matchedMarker.markerId) : null;
+          const icon = isTokenGroup(matchedMarker) ? "\u{1F465}" : (markerDef == null ? void 0 : markerDef.type) === "player" ? "\u{1F464}" : (markerDef == null ? void 0 : markerDef.type) === "creature" ? "\u{1F479}" : "\u{1F9D1}";
+          new import_obsidian84.Notice(`Vision synced: ${icon} ${getMarkerDisplayName(matchedMarker)}`);
         } else if (!matchedMarker && selectedVisionTokenId !== null) {
           selectedVisionTokenId = null;
           refreshVisionSelector();
           if (viewport._syncPlayerView) viewport._syncPlayerView();
+          _applyAutoPan(true);
           new import_obsidian84.Notice("Vision synced: \u{1F465} All Players");
         }
       });
@@ -74574,6 +75981,109 @@ async function renderMapView(plugin, source, el, ctx) {
         setActiveTool("player-view");
       }
     });
+    pvDropdown.createDiv({ cls: "dnd-map-pv-dropdown-label", text: "Display" });
+    const pvAutoPanBtn = pvDropdown.createEl("button", {
+      cls: "dnd-map-pv-toggle-item",
+      attr: {
+        title: "Auto-pan: keep the projected player view centered on the selected token(s)",
+        type: "button"
+      }
+    });
+    pvAutoPanBtn.createEl("span", { text: "Auto-Pan", cls: "dnd-map-pv-toggle-label" });
+    pvAutoPanBtn.createEl("span", { cls: "dnd-map-pv-toggle-switch" });
+    const updateAutoPanBtnState = () => {
+      pvAutoPanBtn.toggleClass("active", _autoPanEnabled);
+    };
+    updateAutoPanBtnState();
+    pvAutoPanBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      _autoPanEnabled = !_autoPanEnabled;
+      updateAutoPanBtnState();
+      if (_autoPanEnabled) {
+        _applyAutoPan();
+      }
+    });
+    const pvInitiativeOverlayBtn = pvDropdown.createEl("button", {
+      cls: "dnd-map-pv-toggle-item",
+      attr: {
+        title: "Show a compact initiative tracker in the projected player map view",
+        type: "button"
+      }
+    });
+    pvInitiativeOverlayBtn.createEl("span", { text: "Initiative Tracker", cls: "dnd-map-pv-toggle-label" });
+    pvInitiativeOverlayBtn.createEl("span", { cls: "dnd-map-pv-toggle-switch" });
+    const getLinkedEncounterLabel = () => {
+      var _a2, _b2;
+      if (!config.linkedEncounter) return "Not linked";
+      const file = plugin.app.vault.getAbstractFileByPath(config.linkedEncounter);
+      if (file instanceof import_obsidian84.TFile) {
+        const fm = (_a2 = plugin.app.metadataCache.getFileCache(file)) == null ? void 0 : _a2.frontmatter;
+        return (fm == null ? void 0 : fm.name) || (fm == null ? void 0 : fm.encounter_name) || file.basename;
+      }
+      return ((_b2 = config.linkedEncounter.split("/").pop()) == null ? void 0 : _b2.replace(".md", "")) || "Linked";
+    };
+    const updateInitiativeOverlayBtnState = () => {
+      pvInitiativeOverlayBtn.toggleClass("active", config.showInitiativeInPlayerView === true);
+    };
+    updateInitiativeOverlayBtnState();
+    const pvEncounterStatus = pvDropdown.createDiv({ cls: "dnd-map-pv-encounter-status" });
+    const updateEncounterStatus = () => {
+      pvEncounterStatus.textContent = `Encounter: ${getLinkedEncounterLabel()}`;
+    };
+    updateEncounterStatus();
+    pvInitiativeOverlayBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (config.showInitiativeInPlayerView !== true && !config.linkedEncounter) {
+        new MapEncounterSetupModal(plugin.app, plugin, config, el, () => {
+          updateInitiativeOverlayBtnState();
+          updateEncounterStatus();
+          if (viewport._syncPlayerView) {
+            viewport._syncPlayerView();
+          }
+        }).open();
+        return;
+      }
+      config.showInitiativeInPlayerView = config.showInitiativeInPlayerView !== true;
+      updateInitiativeOverlayBtnState();
+      plugin.saveMapAnnotations(config, el);
+      if (viewport._syncPlayerView) {
+        viewport._syncPlayerView();
+      }
+      new import_obsidian84.Notice(config.showInitiativeInPlayerView ? "Initiative shown in Player View" : "Initiative hidden from Player View");
+    });
+    const pvInitiativeSizeBtn = pvDropdown.createEl("button", {
+      cls: "dnd-map-pv-toggle-item",
+      attr: {
+        title: "Resize the initiative tracker overlay in the projected player map view",
+        type: "button"
+      }
+    });
+    pvInitiativeSizeBtn.createEl("span", { text: "Initiative Size", cls: "dnd-map-pv-toggle-label" });
+    const pvInitiativeSizeValue = pvInitiativeSizeBtn.createEl("span", { cls: "dnd-map-pv-value-pill" });
+    const initiativeSizes = ["compact", "medium", "large", "huge", "fullscreen"];
+    const initiativeSizeLabels = {
+      compact: "Compact",
+      medium: "Medium",
+      large: "Large",
+      huge: "Huge",
+      fullscreen: "Fullscreen"
+    };
+    const updateInitiativeSizeBtnState = () => {
+      const size = initiativeSizes.includes(config.initiativeOverlaySize) ? config.initiativeOverlaySize : "medium";
+      pvInitiativeSizeValue.textContent = initiativeSizeLabels[size] || "Medium";
+    };
+    updateInitiativeSizeBtnState();
+    pvInitiativeSizeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const currentSize = initiativeSizes.includes(config.initiativeOverlaySize) ? config.initiativeOverlaySize : "medium";
+      const nextSize = initiativeSizes[(initiativeSizes.indexOf(currentSize) + 1) % initiativeSizes.length];
+      config.initiativeOverlaySize = nextSize;
+      updateInitiativeSizeBtnState();
+      plugin.saveMapAnnotations(config, el);
+      if (viewport._syncPlayerView) {
+        viewport._syncPlayerView();
+      }
+    });
     const pvSep = pvDropdown.createDiv({ cls: "dnd-map-pv-dropdown-sep" });
     const pvCalBtn = pvDropdown.createEl("button", { cls: "dnd-map-pv-dropdown-item" });
     pvCalBtn.innerHTML = "\u{1F3AF} Calibrate";
@@ -74587,7 +76097,7 @@ async function renderMapView(plugin, source, el, ctx) {
               if (pv.mapId !== mapId) return;
               try {
                 const cal = plugin.settings.tabletopCalibration;
-                const gridSize = (config == null ? void 0 : config.gridSize) || 0;
+                const gridSize = (((config == null ? void 0 : config.gridSizeW) || (config == null ? void 0 : config.gridSize) || 0) + ((config == null ? void 0 : config.gridSizeH) || (config == null ? void 0 : config.gridSize) || 0)) / 2;
                 if (cal && gridSize > 0) {
                   const calibratedScale = cal.pixelsPerMm * cal.miniBaseMm / gridSize;
                   const safeScale = Math.max(1e-3, Math.min(100, calibratedScale));
@@ -74620,7 +76130,10 @@ async function renderMapView(plugin, source, el, ctx) {
       scale: config.scale,
       name: config.name,
       isVideo: config.isVideo,
-      type: config.type
+      type: config.type,
+      showInitiativeInPlayerView: config.showInitiativeInPlayerView === true,
+      initiativeOverlaySize: config.initiativeOverlaySize || "medium",
+      combatState: config.showInitiativeInPlayerView === true ? plugin.combatTracker.getState() : null
     });
     const launchProjection = async (mode, mouseEvent) => {
       pvDropdown.addClass("hidden");
@@ -74752,6 +76265,10 @@ async function renderMapView(plugin, source, el, ctx) {
       pvViewModeBtn.toggleClass("hidden", !showViewMode);
       const showCalibrate = !thisMapProj || projMode === "battle";
       pvCalBtn.toggleClass("hidden", !showCalibrate);
+      updateAutoPanBtnState();
+      updateInitiativeOverlayBtnState();
+      updateInitiativeSizeBtnState();
+      updateEncounterStatus();
       buildProjectionActions();
     };
     playerViewBtn.addEventListener("click", (e) => {
@@ -74765,6 +76282,229 @@ async function renderMapView(plugin, source, el, ctx) {
         pvDropdown.addClass("hidden");
       }
     });
+    const _applyAutoPan = (immediate = false) => {
+      if (!_autoPanEnabled) return;
+      if (_autoPanDebounce !== null) {
+        clearTimeout(_autoPanDebounce);
+        _autoPanDebounce = null;
+      }
+      const run = () => {
+        var _a2, _b2;
+        const pm = plugin.projectionManager;
+        if (!pm) return;
+        const currentMapId = config.mapId || resourcePath;
+        const proj = pm.getProjectionForMap(currentMapId);
+        if (!proj || ((_a2 = proj.state) == null ? void 0 : _a2.mode) !== "free") return;
+        const pv = Array.from(plugin._playerMapViews).find(
+          (v) => {
+            var _a3;
+            return ((_a3 = v.getMapId) == null ? void 0 : _a3.call(v)) === currentMapId || v.mapId === currentMapId;
+          }
+        );
+        if (!pv) return;
+        const avgGridSize = ((config.gridSizeW || config.gridSize || 50) + (config.gridSizeH || config.gridSize || 50)) / 2;
+        if (avgGridSize <= 0) return;
+        const pixelsPerFoot = avgGridSize / Math.max(1, ((_b2 = config.scale) == null ? void 0 : _b2.value) || 5);
+        const isAutoPanEligible = (marker) => {
+          return !!(marker == null ? void 0 : marker.position) && (marker.layer || "Player") !== "DM" && markerContributesPlayerVision(marker);
+        };
+        const raySegmentDistance = (rayX, rayY, rayDx, rayDy, segX1, segY1, segX2, segY2) => {
+          const sdx = segX2 - segX1;
+          const sdy = segY2 - segY1;
+          const denom = rayDx * sdy - rayDy * sdx;
+          if (Math.abs(denom) < 1e-10) return null;
+          const t = ((segX1 - rayX) * sdy - (segY1 - rayY) * sdx) / denom;
+          const u = ((segX1 - rayX) * rayDy - (segY1 - rayY) * rayDx) / denom;
+          if (t > 0 && u >= 0 && u <= 1) return t;
+          return null;
+        };
+        const getBlockingWallSegments = () => {
+          return (config.walls || []).filter((wall) => (wall == null ? void 0 : wall.start) && (wall == null ? void 0 : wall.end) && !wall.open && wall.type !== "window").map((wall) => {
+            try {
+              const effective = getPivotDoorEndpoints2(wall);
+              return { start: effective.start, end: effective.end };
+            } catch (e) {
+              return { start: wall.start, end: wall.end };
+            }
+          });
+        };
+        const getMarkerVisionRadiusPx = (marker) => {
+          var _a3, _b3, _c2, _d2;
+          const markerDef = (marker == null ? void 0 : marker.markerId) ? plugin.markerLibrary.getMarker(marker.markerId) : null;
+          const visionKeys = ["darkvision", "blindsight", "tremorsense", "truesight"];
+          let visionFeet = 0;
+          for (const key of visionKeys) {
+            visionFeet = Math.max(visionFeet, Number((marker == null ? void 0 : marker[key]) || 0), Number((markerDef == null ? void 0 : markerDef[key]) || 0));
+          }
+          const lightFeet = Math.max(
+            Number(((_a3 = marker == null ? void 0 : marker.light) == null ? void 0 : _a3.bright) || 0),
+            Number(((_b3 = marker == null ? void 0 : marker.light) == null ? void 0 : _b3.dim) || 0),
+            Number(((_c2 = markerDef == null ? void 0 : markerDef.light) == null ? void 0 : _c2.bright) || 0),
+            Number(((_d2 = markerDef == null ? void 0 : markerDef.light) == null ? void 0 : _d2.dim) || 0)
+          );
+          const radiusFeet = Math.max(visionFeet, lightFeet, 30);
+          return Math.max(5 * avgGridSize, radiusFeet * pixelsPerFoot);
+        };
+        const getSingleTokenAutoPanBox = (marker) => {
+          const origin = marker.position;
+          const maxRadius = getMarkerVisionRadiusPx(marker);
+          const blockingWalls = getBlockingWallSegments();
+          const points = [origin];
+          const samples = 72;
+          for (let i = 0; i < samples; i++) {
+            const angle = i / samples * Math.PI * 2;
+            const dx = Math.cos(angle);
+            const dy = Math.sin(angle);
+            let dist = maxRadius;
+            for (const wall of blockingWalls) {
+              const hit = raySegmentDistance(origin.x, origin.y, dx, dy, wall.start.x, wall.start.y, wall.end.x, wall.end.y);
+              if (hit !== null && hit < dist) dist = hit;
+            }
+            points.push({ x: origin.x + dx * dist, y: origin.y + dy * dist });
+          }
+          let minX = Infinity, maxX = -Infinity;
+          let minY = Infinity, maxY = -Infinity;
+          for (const point of points) {
+            minX = Math.min(minX, point.x);
+            maxX = Math.max(maxX, point.x);
+            minY = Math.min(minY, point.y);
+            maxY = Math.max(maxY, point.y);
+          }
+          const padding = Math.max(1.5 * avgGridSize, Math.min(3 * avgGridSize, maxRadius * 0.18));
+          minX -= padding;
+          maxX += padding;
+          minY -= padding;
+          maxY += padding;
+          const minSpan = 7 * avgGridSize;
+          const boxW = Math.max(minSpan, maxX - minX);
+          const boxH = Math.max(minSpan, maxY - minY);
+          return {
+            cx: (minX + maxX) / 2,
+            cy: (minY + maxY) / 2,
+            w: boxW,
+            h: boxH
+          };
+        };
+        const visionTokens = (config.markers || []).filter((m) => {
+          return isAutoPanEligible(m);
+        });
+        const vpSize = typeof pv.getViewportSize === "function" ? pv.getViewportSize() : { width: 1920, height: 1080 };
+        const vpW = vpSize.width;
+        const vpH = vpSize.height;
+        const getAutoPanSafeViewport = () => {
+          const padding = 24;
+          const full = { x: 0, y: 0, w: vpW, h: vpH };
+          if (config.showInitiativeInPlayerView !== true || typeof pv.getInitiativeOverlayRect !== "function") {
+            return full;
+          }
+          const overlay = pv.getInitiativeOverlayRect();
+          if (!overlay) return full;
+          const rightArea = {
+            x: Math.min(vpW - 120, overlay.right + padding),
+            y: 0,
+            w: Math.max(120, vpW - (overlay.right + padding)),
+            h: vpH
+          };
+          if (rightArea.w >= vpW * 0.35) return rightArea;
+          const bottomArea = {
+            x: 0,
+            y: Math.min(vpH - 120, overlay.bottom + padding),
+            w: vpW,
+            h: Math.max(120, vpH - (overlay.bottom + padding))
+          };
+          if (bottomArea.h >= vpH * 0.35) return bottomArea;
+          return full;
+        };
+        const safeViewport = getAutoPanSafeViewport();
+        let targetCx;
+        let targetCy;
+        let targetScale;
+        const fitScaleForBox = (boxW, boxH) => {
+          return Math.min(safeViewport.w / boxW, safeViewport.h / boxH);
+        };
+        if (selectedVisionTokenId) {
+          const marker = (config.markers || []).find((m) => m.id === selectedVisionTokenId);
+          if (isAutoPanEligible(marker)) {
+            const box = getSingleTokenAutoPanBox(marker);
+            targetCx = box.cx;
+            targetCy = box.cy;
+            targetScale = fitScaleForBox(box.w, box.h);
+          } else {
+            const playerTokens = visionTokens.filter((m) => m.position);
+            if (playerTokens.length === 0) return;
+            if (playerTokens.length === 1) {
+              const box = getSingleTokenAutoPanBox(playerTokens[0]);
+              targetCx = box.cx;
+              targetCy = box.cy;
+              targetScale = fitScaleForBox(box.w, box.h);
+            } else {
+              let minX = Infinity, maxX = -Infinity;
+              let minY = Infinity, maxY = -Infinity;
+              for (const m of playerTokens) {
+                minX = Math.min(minX, m.position.x);
+                maxX = Math.max(maxX, m.position.x);
+                minY = Math.min(minY, m.position.y);
+                maxY = Math.max(maxY, m.position.y);
+              }
+              const padding = 6 * avgGridSize;
+              minX -= padding;
+              maxX += padding;
+              minY -= padding;
+              maxY += padding;
+              const boxW = maxX - minX;
+              const boxH = maxY - minY;
+              targetCx = (minX + maxX) / 2;
+              targetCy = (minY + maxY) / 2;
+              targetScale = fitScaleForBox(boxW, boxH);
+            }
+          }
+        } else {
+          const playerTokens = visionTokens.filter((m) => m.position);
+          if (playerTokens.length === 0) return;
+          if (playerTokens.length === 1) {
+            const box = getSingleTokenAutoPanBox(playerTokens[0]);
+            targetCx = box.cx;
+            targetCy = box.cy;
+            targetScale = fitScaleForBox(box.w, box.h);
+          } else {
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+            for (const m of playerTokens) {
+              minX = Math.min(minX, m.position.x);
+              maxX = Math.max(maxX, m.position.x);
+              minY = Math.min(minY, m.position.y);
+              maxY = Math.max(maxY, m.position.y);
+            }
+            const padding = 6 * avgGridSize;
+            minX -= padding;
+            maxX += padding;
+            minY -= padding;
+            maxY += padding;
+            const boxW = maxX - minX;
+            const boxH = maxY - minY;
+            targetCx = (minX + maxX) / 2;
+            targetCy = (minY + maxY) / 2;
+            targetScale = fitScaleForBox(boxW, boxH);
+          }
+        }
+        targetScale = Math.max(0.05, Math.min(5, targetScale));
+        const safeCenterX = safeViewport.x + safeViewport.w / 2;
+        const safeCenterY = safeViewport.y + safeViewport.h / 2;
+        if (typeof pv.smoothPanAndZoomToViewportPoint === "function") {
+          pv.smoothPanAndZoomToViewportPoint(targetCx, targetCy, targetScale, safeCenterX, safeCenterY, 600);
+        } else if (typeof pv.smoothPanAndZoomTo === "function") {
+          pv.smoothPanAndZoomTo(targetCx, targetCy, targetScale, 600);
+        } else {
+          if (typeof pv.setTabletopScale === "function") pv.setTabletopScale(targetScale);
+          if (typeof pv.smoothPanToImageCoords === "function") pv.smoothPanToImageCoords(targetCx, targetCy, 600);
+        }
+      };
+      if (immediate) {
+        run();
+      } else {
+        _autoPanDebounce = setTimeout(run, 150);
+      }
+    };
     let _pvSyncScheduled = false;
     const _syncPlayerViewImmediate = () => {
       var _a2, _b2, _c2, _d2, _e2, _f2;
@@ -74773,17 +76513,19 @@ async function renderMapView(plugin, source, el, ctx) {
         let dragRuler = null;
         if (markerDragOrigin && draggingMarkerIndex >= 0 && config.markers[draggingMarkerIndex]) {
           const draggedMarker = config.markers[draggingMarkerIndex];
-          const currentPos = draggedMarker.position;
-          const pathResult = computeGridMovePath(markerDragOrigin, currentPos);
-          dragRuler = {
-            origin: { x: markerDragOrigin.x, y: markerDragOrigin.y },
-            current: { x: currentPos.x, y: currentPos.y },
-            pathCells: pathResult.cells,
-            totalDist: pathResult.totalDist,
-            climbDist: pathResult.climbDist,
-            markerId: draggedMarker.markerId,
-            visibleToPlayers: !!draggedMarker.visibleToPlayers
-          };
+          if ((draggedMarker.layer || "Player") !== "DM") {
+            const currentPos = draggedMarker.position;
+            const pathResult = computeGridMovePath(markerDragOrigin, currentPos);
+            dragRuler = {
+              origin: { x: markerDragOrigin.x, y: markerDragOrigin.y },
+              current: { x: currentPos.x, y: currentPos.y },
+              pathCells: pathResult.cells,
+              totalDist: pathResult.totalDist,
+              climbDist: pathResult.climbDist,
+              markerId: draggedMarker.markerId,
+              visibleToPlayers: markerContributesPlayerVision(draggedMarker)
+            };
+          }
         }
         let measureRuler = null;
         if (rulerStart && rulerEnd && rulerComplete) {
@@ -74827,6 +76569,9 @@ async function renderMapView(plugin, source, el, ctx) {
           scale: config.scale,
           name: config.name,
           type: config.type,
+          showInitiativeInPlayerView: config.showInitiativeInPlayerView === true,
+          initiativeOverlaySize: config.initiativeOverlaySize || "medium",
+          combatState: config.showInitiativeInPlayerView === true ? plugin.combatTracker.getState() : null,
           dragRuler,
           measureRuler,
           targetDistRuler,
@@ -74834,6 +76579,8 @@ async function renderMapView(plugin, source, el, ctx) {
             if (!selectedVisionTokenId) return null;
             const selMarker = (config.markers || []).find((m) => m.id === selectedVisionTokenId);
             if (!selMarker) return null;
+            if ((selMarker.layer || "Player") === "DM") return null;
+            if (isTokenGroup(selMarker) && selMarker.visibleToPlayers) return selectedVisionTokenId;
             const selDef = selMarker.markerId ? plugin.markerLibrary.getMarker(selMarker.markerId) : null;
             if (selDef && selDef.type === "player") return selectedVisionTokenId;
             if (selMarker.visibleToPlayers) return selectedVisionTokenId;
@@ -74877,6 +76624,20 @@ async function renderMapView(plugin, source, el, ctx) {
       const ownerWin = (_b2 = (_a2 = viewport.ownerDocument) == null ? void 0 : _a2.defaultView) != null ? _b2 : window;
       ownerWin.requestAnimationFrame(() => _syncPlayerViewImmediate());
     };
+    const initiativeOverlayUnsub = plugin.combatTracker.onChange(() => {
+      if (config.showInitiativeInPlayerView === true && viewport._syncPlayerView) {
+        viewport._syncPlayerView();
+      }
+    });
+    const initiativeOverlayObserver = new MutationObserver(() => {
+      if (!viewport.isConnected) {
+        initiativeOverlayUnsub();
+        initiativeOverlayObserver.disconnect();
+      }
+    });
+    if (viewport.parentElement) {
+      initiativeOverlayObserver.observe(viewport.parentElement, { childList: true });
+    }
     let projStatusEl = null;
     const updateProjectionStatus = () => {
       var _a2;
@@ -74941,7 +76702,10 @@ async function renderMapView(plugin, source, el, ctx) {
             scale: config.scale,
             name: config.name,
             isVideo: config.isVideo,
-            type: config.type
+            type: config.type,
+            showInitiativeInPlayerView: config.showInitiativeInPlayerView === true,
+            initiativeOverlaySize: config.initiativeOverlaySize || "medium",
+            combatState: config.showInitiativeInPlayerView === true ? plugin.combatTracker.getState() : null
           },
           imageResourcePath: resourcePath
         }
@@ -75053,7 +76817,19 @@ async function renderMapView(plugin, source, el, ctx) {
     let gridCanvas = null;
     let terrainCanvas = null;
     let annotationCanvas = null;
-    const _canvasScale = Math.max(1, Math.min(4, (_d = plugin.settings.mapCanvasScale) != null ? _d : 2));
+    const getSafeCanvasScale = (naturalWidth, naturalHeight, requestedScale) => {
+      const maxSide = 16384;
+      const maxArea = 268435456;
+      const sideScale = Math.min(
+        naturalWidth ? maxSide / naturalWidth : requestedScale,
+        naturalHeight ? maxSide / naturalHeight : requestedScale
+      );
+      const areaScale = Math.sqrt(
+        naturalWidth && naturalHeight ? maxArea / (naturalWidth * naturalHeight) : requestedScale
+      );
+      return Math.max(0.1, Math.min(requestedScale, sideScale, areaScale));
+    };
+    let _canvasScale = Math.max(1, Math.min(4, (_d = plugin.settings.mapCanvasScale) != null ? _d : 2));
     let _panRedrawRafId = 0;
     const schedulePanRedraw = () => {
       if (_panRedrawRafId) return;
@@ -75126,7 +76902,7 @@ async function renderMapView(plugin, source, el, ctx) {
           const dist = Math.sqrt(
             Math.pow(aoe.origin.x - px2, 2) + Math.pow(aoe.origin.y - py2, 2)
           );
-          if (dist < (config.gridSize || 70)) {
+          if (dist < ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2) {
             config.aoeEffects.splice(i, 1);
             removed = true;
           }
@@ -75236,8 +77012,9 @@ async function renderMapView(plugin, source, el, ctx) {
         const sizeX = horiz / Math.sqrt(3);
         return { horiz, vert, sizeX, sizeY };
       } else {
-        const s = config.gridSize;
-        return { horiz: s, vert: s, sizeX: s, sizeY: s };
+        const sW = config.gridSizeW || config.gridSize;
+        const sH = config.gridSizeH || config.gridSize;
+        return { horiz: sW, vert: sH, sizeX: sW, sizeY: sH };
       }
     };
     const hexToPixel = (col, row) => {
@@ -75389,8 +77166,15 @@ async function renderMapView(plugin, source, el, ctx) {
       if (_dragRedrawRafId) return;
       _dragRedrawRafId = requestAnimationFrame(() => {
         _dragRedrawRafId = 0;
-        _dragRedrawFast();
-        if (viewport._syncPlayerView) viewport._syncPlayerView();
+        if (draggingMarkerIndex >= 0) {
+          _dragRedrawFast();
+          if (viewport._syncPlayerView) viewport._syncPlayerView();
+        } else {
+          redrawAnnotations();
+          if ((draggingLightIndex >= 0 || draggingWallIndex >= 0 || envAssetDragOffset || envAssetTransformHandle) && viewport._syncPlayerView) {
+            viewport._syncPlayerView();
+          }
+        }
       });
     };
     const _dragRedrawFast = () => {
@@ -75427,7 +77211,8 @@ async function renderMapView(plugin, source, el, ctx) {
       const draggedMarker = config.markers[draggingMarkerIndex];
       if (!draggedMarker) return;
       if (draggedMarker.light && draggedMarker.light.bright !== void 0) {
-        const pxPerFt = config.gridSize && ((_a2 = config.scale) == null ? void 0 : _a2.value) ? config.gridSize / config.scale.value : 1;
+        const _gsAvgLight = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+        const pxPerFt = _gsAvgLight && ((_a2 = config.scale) == null ? void 0 : _a2.value) ? _gsAvgLight / config.scale.value : 1;
         const baseBrightPx = draggedMarker.light.bright * pxPerFt;
         const baseDimPx = draggedMarker.light.dim * pxPerFt;
         const flickerKey = `marker_${draggedMarker.id || draggingMarkerIndex}`;
@@ -75474,7 +77259,8 @@ async function renderMapView(plugin, source, el, ctx) {
         }
       }
       if (draggedMarker.auras && draggedMarker.auras.length > 0) {
-        const pxPerFt = config.gridSize && ((_b2 = config.scale) == null ? void 0 : _b2.value) ? config.gridSize / config.scale.value : 1;
+        const _gsAvgAura = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+        const pxPerFt = _gsAvgAura && ((_b2 = config.scale) == null ? void 0 : _b2.value) ? _gsAvgAura / config.scale.value : 1;
         draggedMarker.auras.forEach((aura) => {
           const radiusPx = (aura.radius || 0) * pxPerFt;
           if (radiusPx > 0) {
@@ -75506,7 +77292,8 @@ async function renderMapView(plugin, source, el, ctx) {
             (t) => t.creatorMarkerId === draggedMarker.id && t.active
           );
           if (activeTunnel && activeTunnel.path.length > 0) {
-            const tunnelWidth = getTunnelWidth(activeTunnel, config.gridSize);
+            const _gsAvgTunnel = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+            const tunnelWidth = getTunnelWidth(activeTunnel, _gsAvgTunnel);
             ctx2.save();
             ctx2.globalAlpha = 0.6;
             ctx2.strokeStyle = "#8B4513";
@@ -75556,7 +77343,8 @@ async function renderMapView(plugin, source, el, ctx) {
         return backgroundEditView === group ? 1 : bgViewDimAlpha;
       };
       if (config.tileElevations && Object.keys(config.tileElevations).length > 0) {
-        const gs = config.gridSize || 70;
+        const _teGsW = config.gridSizeW || config.gridSize || 70;
+        const _teGsH = config.gridSizeH || config.gridSize || 70;
         const ox = config.gridOffsetX || 0;
         const oy = config.gridOffsetY || 0;
         const isBackgroundLayer = config.activeLayer === "Background";
@@ -75570,28 +77358,29 @@ async function renderMapView(plugin, source, el, ctx) {
           const parts = key.split(",");
           const col = parseInt((_a2 = parts[0]) != null ? _a2 : "0");
           const row = parseInt((_b2 = parts[1]) != null ? _b2 : "0");
-          const cellX = col * gs + ox;
-          const cellY = row * gs + oy;
-          if (!_inViewRect(cellX, cellY, gs, gs)) continue;
+          const cellX = col * _teGsW + ox;
+          const cellY = row * _teGsH + oy;
+          if (!_inViewRect(cellX, cellY, _teGsW, _teGsH)) continue;
           const elev = elevation;
           ctx2.fillStyle = getElevationColor(elev);
-          ctx2.fillRect(cellX, cellY, gs, gs);
+          ctx2.fillRect(cellX, cellY, _teGsW, _teGsH);
           ctx2.strokeStyle = getElevationColor(elev, 0.5);
           ctx2.lineWidth = 1.5;
-          ctx2.strokeRect(cellX + 0.5, cellY + 0.5, gs - 1, gs - 1);
+          ctx2.strokeRect(cellX + 0.5, cellY + 0.5, _teGsW - 1, _teGsH - 1);
           if (isBackgroundLayer) {
             const label = elev > 0 ? `+${elev}` : `${elev}`;
             ctx2.font = "bold 10px sans-serif";
             ctx2.textAlign = "right";
             ctx2.textBaseline = "top";
             ctx2.fillStyle = getElevationColor(elev, 1);
-            ctx2.fillText(label, cellX + gs - 3, cellY + 2);
+            ctx2.fillText(label, cellX + _teGsW - 3, cellY + 2);
           }
         }
         ctx2.restore();
       }
       if (config.difficultTerrain && Object.keys(config.difficultTerrain).length > 0) {
-        const gs = config.gridSize || 70;
+        const _dtGsW = config.gridSizeW || config.gridSize || 70;
+        const _dtGsH = config.gridSizeH || config.gridSize || 70;
         const ox = config.gridOffsetX || 0;
         const oy = config.gridOffsetY || 0;
         const isBackgroundLayer = config.activeLayer === "Background";
@@ -75605,29 +77394,32 @@ async function renderMapView(plugin, source, el, ctx) {
           const parts = key.split(",");
           const col = parseInt((_c2 = parts[0]) != null ? _c2 : "0");
           const row = parseInt((_d2 = parts[1]) != null ? _d2 : "0");
-          const cellX = col * gs + ox;
-          const cellY = row * gs + oy;
-          if (!_inViewRect(cellX, cellY, gs, gs)) continue;
+          const cellX = col * _dtGsW + ox;
+          const cellY = row * _dtGsH + oy;
+          if (!_inViewRect(cellX, cellY, _dtGsW, _dtGsH)) continue;
           ctx2.fillStyle = "rgba(139, 90, 43, 0.25)";
-          ctx2.fillRect(cellX, cellY, gs, gs);
+          ctx2.fillRect(cellX, cellY, _dtGsW, _dtGsH);
           ctx2.strokeStyle = "rgba(139, 90, 43, 0.4)";
           ctx2.lineWidth = 1;
-          const step = gs / 4;
+          const stepW = _dtGsW / 4;
+          const stepH = _dtGsH / 4;
+          const step = Math.min(stepW, stepH);
+          const maxDim = Math.max(_dtGsW, _dtGsH);
           ctx2.beginPath();
-          for (let d = -gs; d <= gs; d += step) {
+          for (let d = -maxDim; d <= maxDim; d += step) {
             ctx2.moveTo(cellX + Math.max(0, d), cellY + Math.max(0, -d));
-            ctx2.lineTo(cellX + Math.min(gs, d + gs), cellY + Math.min(gs, gs - d));
+            ctx2.lineTo(cellX + Math.min(_dtGsW, d + _dtGsH), cellY + Math.min(_dtGsH, _dtGsH - d));
           }
           ctx2.stroke();
           ctx2.strokeStyle = "rgba(139, 90, 43, 0.5)";
           ctx2.lineWidth = 1.5;
-          ctx2.strokeRect(cellX + 0.5, cellY + 0.5, gs - 1, gs - 1);
+          ctx2.strokeRect(cellX + 0.5, cellY + 0.5, _dtGsW - 1, _dtGsH - 1);
           if (isBackgroundLayer) {
             ctx2.font = "bold 9px sans-serif";
             ctx2.textAlign = "left";
             ctx2.textBaseline = "bottom";
             ctx2.fillStyle = "rgba(139, 90, 43, 0.9)";
-            ctx2.fillText("DT", cellX + 3, cellY + gs - 2);
+            ctx2.fillText("DT", cellX + 3, cellY + _dtGsH - 2);
           }
         }
         ctx2.restore();
@@ -75650,7 +77442,8 @@ async function renderMapView(plugin, source, el, ctx) {
         });
       }
       if (config.markers) {
-        const pixelsPerFoot = config.gridSize && ((_f2 = config.scale) == null ? void 0 : _f2.value) ? config.gridSize / config.scale.value : 1;
+        const _gsAvgLights = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+        const pixelsPerFoot = _gsAvgLights && ((_f2 = config.scale) == null ? void 0 : _f2.value) ? _gsAvgLights / config.scale.value : 1;
         config.markers.forEach((marker, mIdx) => {
           if (_buildingStaticLayer && mIdx === draggingMarkerIndex) return;
           if (marker.light && marker.light.bright !== void 0) {
@@ -75706,7 +77499,7 @@ async function renderMapView(plugin, source, el, ctx) {
       if (config.tunnels && config.tunnels.length > 0) {
         config.tunnels.forEach((tunnel) => {
           if (!tunnel.visible) return;
-          const radius = getTunnelPortalRadius(tunnel.creatureSize, config.gridSize);
+          const radius = getTunnelPortalRadius(tunnel.creatureSize, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2);
           const entrance = tunnel.entrancePosition;
           const _tunExit = tunnel.path && tunnel.path.length > 1 ? tunnel.path[tunnel.path.length - 1] : entrance;
           if (!_inViewCircle(entrance.x, entrance.y, radius) && !_inViewCircle(_tunExit.x, _tunExit.y, radius)) return;
@@ -75826,7 +77619,8 @@ async function renderMapView(plugin, source, el, ctx) {
         });
       }
       if (config.markers) {
-        const pixelsPerFoot = config.gridSize && ((_g2 = config.scale) == null ? void 0 : _g2.value) ? config.gridSize / config.scale.value : 1;
+        const _gsAvgAuras = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+        const pixelsPerFoot = _gsAvgAuras && ((_g2 = config.scale) == null ? void 0 : _g2.value) ? _gsAvgAuras / config.scale.value : 1;
         config.markers.forEach((marker, _auraIdx) => {
           if (_buildingStaticLayer && _auraIdx === draggingMarkerIndex) return;
           if (marker.auras && marker.auras.length > 0) {
@@ -75854,7 +77648,7 @@ async function renderMapView(plugin, source, el, ctx) {
           if (_buildingStaticLayer && _mIdx === draggingMarkerIndex) return;
           if (marker.tunnelState) return;
           const _mDef = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
-          const _mR = _mDef && _mDef.creatureSize ? (_CULL_SIZE_SQ[_mDef.creatureSize] || 1) * (config.gridSize || 70) / 2 : 30;
+          const _mR = _mDef && _mDef.creatureSize ? (_CULL_SIZE_SQ[_mDef.creatureSize] || 1) * Math.max(config.gridSizeW || config.gridSize || 70, config.gridSizeH || config.gridSize || 70) / 2 : 30;
           if (!_inViewCircle(marker.position.x, marker.position.y, _mR)) return;
           drawMarker(ctx2, marker);
         });
@@ -75864,7 +77658,7 @@ async function renderMapView(plugin, source, el, ctx) {
         const baseAlpha = isSubLayer ? 0.6 : 0.25;
         config.tunnels.forEach((tunnel) => {
           if (!tunnel.path || tunnel.path.length < 2) return;
-          const tunnelWidth = getTunnelWidth(tunnel, config.gridSize);
+          const tunnelWidth = getTunnelWidth(tunnel, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2);
           ctx2.save();
           ctx2.lineCap = "round";
           ctx2.lineJoin = "round";
@@ -75904,7 +77698,7 @@ async function renderMapView(plugin, source, el, ctx) {
           if (_buildingStaticLayer && _tIdx === draggingMarkerIndex) return;
           if (!marker.tunnelState) return;
           const _mDef = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
-          const _mR = _mDef && _mDef.creatureSize ? (_CULL_SIZE_SQ[_mDef.creatureSize] || 1) * (config.gridSize || 70) / 2 : 30;
+          const _mR = _mDef && _mDef.creatureSize ? (_CULL_SIZE_SQ[_mDef.creatureSize] || 1) * Math.max(config.gridSizeW || config.gridSize || 70, config.gridSizeH || config.gridSize || 70) / 2 : 30;
           if (!_inViewCircle(marker.position.x, marker.position.y, _mR)) return;
           drawMarker(ctx2, marker);
         });
@@ -76372,6 +78166,22 @@ async function renderMapView(plugin, source, el, ctx) {
         ctx2.setLineDash([]);
         ctx2.restore();
       }
+      if (multiSelectionRect && activeTool === "select") {
+        const sr = multiSelectionRect;
+        const srMinX = Math.min(sr.startX, sr.endX);
+        const srMinY = Math.min(sr.startY, sr.endY);
+        const srW = Math.abs(sr.endX - sr.startX);
+        const srH = Math.abs(sr.endY - sr.startY);
+        ctx2.save();
+        ctx2.strokeStyle = "#ff6b35";
+        ctx2.lineWidth = 2 / scale2;
+        ctx2.setLineDash([6 / scale2, 4 / scale2]);
+        ctx2.strokeRect(srMinX, srMinY, srW, srH);
+        ctx2.fillStyle = "rgba(255, 107, 53, 0.12)";
+        ctx2.fillRect(srMinX, srMinY, srW, srH);
+        ctx2.setLineDash([]);
+        ctx2.restore();
+      }
       if (selectedWallIndices.length > 0 && config.walls) {
         ctx2.save();
         selectedWallIndices.forEach((wi) => {
@@ -76384,6 +78194,45 @@ async function renderMapView(plugin, source, el, ctx) {
           ctx2.lineWidth = 6;
           ctx2.lineCap = "round";
           ctx2.stroke();
+        });
+        ctx2.restore();
+      }
+      if (selectedMarkerIndices.length > 0 && config.markers) {
+        ctx2.save();
+        selectedMarkerIndices.forEach((i) => {
+          const marker = config.markers[i];
+          if (!marker) return;
+          const radius = getPlacedMarkerRadius(marker);
+          ctx2.beginPath();
+          ctx2.arc(marker.position.x, marker.position.y, radius + 4, 0, 2 * Math.PI);
+          ctx2.strokeStyle = "#ff6b35";
+          ctx2.lineWidth = 3;
+          ctx2.stroke();
+        });
+        ctx2.restore();
+      }
+      if (selectedLightIndices.length > 0 && config.lights) {
+        ctx2.save();
+        selectedLightIndices.forEach((i) => {
+          const light = config.lights[i];
+          if (!light) return;
+          ctx2.beginPath();
+          ctx2.arc(light.position.x, light.position.y, 8, 0, 2 * Math.PI);
+          ctx2.strokeStyle = "#ff6b35";
+          ctx2.lineWidth = 3;
+          ctx2.stroke();
+        });
+        ctx2.restore();
+      }
+      if (selectedEnvAssetIds.length > 0 && config.envAssets) {
+        ctx2.save();
+        selectedEnvAssetIds.forEach((id) => {
+          const asset = config.envAssets[id];
+          if (!asset) return;
+          const size = 32 * (asset.scale || 1);
+          ctx2.strokeStyle = "#ff6b35";
+          ctx2.lineWidth = 3;
+          ctx2.strokeRect(asset.position.x - size / 2, asset.position.y - size / 2, size, size);
         });
         ctx2.restore();
       }
@@ -76500,7 +78349,8 @@ async function renderMapView(plugin, source, el, ctx) {
       if (config.activeLayer === "Background" && config.lightSources && config.lightSources.length > 0) {
         const lightAlpha = bgViewAlpha("lights");
         const la = (a) => a * lightAlpha;
-        const pixelsPerFoot = config.gridSize && ((_h = config.scale) == null ? void 0 : _h.value) ? config.gridSize / config.scale.value : 1;
+        const _gsAvgDynLight = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+        const pixelsPerFoot = _gsAvgDynLight && ((_h = config.scale) == null ? void 0 : _h.value) ? _gsAvgDynLight / config.scale.value : 1;
         config.lightSources.forEach((light, idx) => {
           const isActive = light.active !== false;
           const isDragging2 = draggingLightIndex === idx;
@@ -76847,7 +78697,7 @@ async function renderMapView(plugin, source, el, ctx) {
             (t) => t.creatorMarkerId === draggedMarker.id && t.active
           );
           if (activeTunnel && activeTunnel.path.length > 0) {
-            const tunnelWidth = getTunnelWidth(activeTunnel, config.gridSize);
+            const tunnelWidth = getTunnelWidth(activeTunnel, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2);
             ctx2.save();
             ctx2.globalAlpha = 0.6;
             ctx2.strokeStyle = "#8B4513";
@@ -76874,10 +78724,11 @@ async function renderMapView(plugin, source, el, ctx) {
         ctx2.lineTo(rulerEnd.x, rulerEnd.y);
         ctx2.stroke();
         ctx2.setLineDash([]);
-        const distance = Math.sqrt(
-          Math.pow(rulerEnd.x - rulerStart.x, 2) + Math.pow(rulerEnd.y - rulerStart.y, 2)
-        );
-        const gridDistance = distance / config.gridSize;
+        const _rulerDx = rulerEnd.x - rulerStart.x;
+        const _rulerDy = rulerEnd.y - rulerStart.y;
+        const _rulerGsW = config.gridSizeW || config.gridSize || 70;
+        const _rulerGsH = config.gridSizeH || config.gridSize || 70;
+        const gridDistance = Math.sqrt((_rulerDx / _rulerGsW) ** 2 + (_rulerDy / _rulerGsH) ** 2);
         const horizontalFeet = gridDistance * config.scale.value;
         const rulerStartElev = getTileElevationAt(rulerStart.x, rulerStart.y);
         const rulerEndElev = getTileElevationAt(rulerEnd.x, rulerEnd.y);
@@ -76929,14 +78780,19 @@ async function renderMapView(plugin, source, el, ctx) {
           ctx2.restore();
           const originSizeSquares = (originDef == null ? void 0 : originDef.creatureSize) ? CREATURE_SIZE_SQUARES[originDef.creatureSize] || 1 : 1;
           const targetSizeSquares = (targetDef == null ? void 0 : targetDef.creatureSize) ? CREATURE_SIZE_SQUARES[targetDef.creatureSize] || 1 : 1;
-          const originHalf = originSizeSquares * config.gridSize / 2;
-          const targetHalf = targetSizeSquares * config.gridSize / 2;
+          const _tdGsW = config.gridSizeW || config.gridSize || 70;
+          const _tdGsH = config.gridSizeH || config.gridSize || 70;
+          const originHalfW = originSizeSquares * _tdGsW / 2;
+          const originHalfH = originSizeSquares * _tdGsH / 2;
+          const targetHalfW = targetSizeSquares * _tdGsW / 2;
+          const targetHalfH = targetSizeSquares * _tdGsH / 2;
           const dx = targetPos.x - originPos.x;
           const dy = targetPos.y - originPos.y;
-          const edgeDx = Math.max(0, Math.abs(dx) - originHalf - targetHalf);
-          const edgeDy = Math.max(0, Math.abs(dy) - originHalf - targetHalf);
-          const horizontalPixelDist = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
-          const horizontalGridDist = horizontalPixelDist / config.gridSize;
+          const edgeDx = Math.max(0, Math.abs(dx) - originHalfW - targetHalfW);
+          const edgeDy = Math.max(0, Math.abs(dy) - originHalfH - targetHalfH);
+          const edgeGridX = edgeDx / _tdGsW;
+          const edgeGridY = edgeDy / _tdGsH;
+          const horizontalGridDist = Math.sqrt(edgeGridX * edgeGridX + edgeGridY * edgeGridY);
           const horizontalFeet = horizontalGridDist * config.scale.value;
           const originElevation = originMarker.elevation;
           const targetElevation = targetMarker.elevation;
@@ -77101,19 +78957,25 @@ async function renderMapView(plugin, source, el, ctx) {
     const getMarkerRadius = (markerDef) => {
       if (["player", "npc", "creature"].includes(markerDef.type) && markerDef.creatureSize && config.gridSize) {
         const squares = CREATURE_SIZE_SQUARES[markerDef.creatureSize] || 1;
-        return squares * config.gridSize * 0.9 / 2;
+        const gsW = config.gridSizeW || config.gridSize;
+        const gsH = config.gridSizeH || config.gridSize;
+        const avgGs = (gsW + gsH) / 2;
+        return squares * avgGs * 0.9 / 2;
       }
       return (markerDef.pixelSize || 30) / 2;
     };
     const snapTokenToGrid = (posX, posY, sizeSquares) => {
-      const gs = config.gridSize || 70;
+      const gsW = config.gridSizeW || config.gridSize || 70;
+      const gsH = config.gridSizeH || config.gridSize || 70;
       const ox = config.gridOffsetX || 0;
       const oy = config.gridOffsetY || 0;
-      const step = sizeSquares < 1 ? gs * sizeSquares : gs;
-      const halfToken = sizeSquares * gs / 2;
-      const col = Math.round((posX - ox - halfToken) / step);
-      const row = Math.round((posY - oy - halfToken) / step);
-      return { x: ox + col * step + halfToken, y: oy + row * step + halfToken };
+      const stepX = sizeSquares < 1 ? gsW * sizeSquares : gsW;
+      const stepY = sizeSquares < 1 ? gsH * sizeSquares : gsH;
+      const halfTokenW = sizeSquares * gsW / 2;
+      const halfTokenH = sizeSquares * gsH / 2;
+      const col = Math.round((posX - ox - halfTokenW) / stepX);
+      const row = Math.round((posY - oy - halfTokenH) / stepY);
+      return { x: ox + col * stepX + halfTokenW, y: oy + row * stepY + halfTokenH };
     };
     const markerImageCache = /* @__PURE__ */ new Map();
     const loadMarkerImage = (path) => {
@@ -77147,6 +79009,18 @@ async function renderMapView(plugin, source, el, ctx) {
         if (!markerDef) {
           return;
         }
+      } else if (isTokenGroup(marker)) {
+        markerDef = {
+          id: marker.id || "token-group",
+          name: marker.tokenGroup.name || "Token Group",
+          type: "player",
+          icon: marker.icon || "\u{1F465}",
+          backgroundColor: marker.color || "#3b82f6",
+          borderColor: marker.borderColor || "#ffffff",
+          pixelSize: marker.pixelSize || Math.max(40, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2),
+          createdAt: marker.placedAt || 0,
+          updatedAt: Date.now()
+        };
       } else {
         markerDef = {
           id: marker.id || "legacy",
@@ -77155,7 +79029,7 @@ async function renderMapView(plugin, source, el, ctx) {
           icon: marker.icon || "",
           backgroundColor: marker.color || "#ff0000",
           borderColor: "#ffffff",
-          pixelSize: 30,
+          pixelSize: marker.pixelSize || 30,
           createdAt: 0,
           updatedAt: 0
         };
@@ -77229,6 +79103,13 @@ async function renderMapView(plugin, source, el, ctx) {
         ctx2.textAlign = "center";
         ctx2.textBaseline = "middle";
         ctx2.fillText(markerDef.icon, position.x, position.y);
+      }
+      if (isTokenGroup(marker)) {
+        ctx2.fillStyle = "#ffffff";
+        ctx2.font = `bold ${Math.max(10, radius * 0.45)}px sans-serif`;
+        ctx2.textAlign = "center";
+        ctx2.textBaseline = "middle";
+        ctx2.fillText(String(marker.tokenGroup.members.length), position.x, position.y + radius * 0.38);
       }
       ctx2.restore();
       if (elevation && (elevation.height || elevation.depth)) {
@@ -77589,6 +79470,15 @@ async function renderMapView(plugin, source, el, ctx) {
       });
       menu.addSeparator();
       menu.addItem((item) => {
+        item.setTitle("\u{1F4CB} Duplicate");
+        item.onClick(() => {
+          const idx = config.textAnnotations.indexOf(ta);
+          if (idx >= 0) {
+            duplicateElement("text-annotation", idx);
+          }
+        });
+      });
+      menu.addItem((item) => {
         item.setTitle("\u{1F5D1}\uFE0F Delete");
         item.onClick(() => {
           saveToHistory();
@@ -77606,8 +79496,10 @@ async function renderMapView(plugin, source, el, ctx) {
       const oy = config.gridOffsetY || 0;
       const gs = config.gridSize || 70;
       if (config.gridType === "square") {
-        const snappedX = Math.round((x - ox) / gs) * gs + ox;
-        const snappedY = Math.round((y - oy) / gs) * gs + oy;
+        const gsW = config.gridSizeW || gs;
+        const gsH = config.gridSizeH || gs;
+        const snappedX = Math.round((x - ox) / gsW) * gsW + ox;
+        const snappedY = Math.round((y - oy) / gsH) * gsH + oy;
         return { x: snappedX, y: snappedY };
       }
       const hex = pixelToHex(x, y);
@@ -77631,8 +79523,10 @@ async function renderMapView(plugin, source, el, ctx) {
       const oy = config.gridOffsetY || 0;
       const gs = config.gridSize || 70;
       if (config.gridType === "square") {
-        const snappedX = Math.floor((x - ox) / gs) * gs + ox + gs / 2;
-        const snappedY = Math.floor((y - oy) / gs) * gs + oy + gs / 2;
+        const gsW = config.gridSizeW || gs;
+        const gsH = config.gridSizeH || gs;
+        const snappedX = Math.floor((x - ox) / gsW) * gsW + ox + gsW / 2;
+        const snappedY = Math.floor((y - oy) / gsH) * gsH + oy + gsH / 2;
         return { x: snappedX, y: snappedY };
       }
       const hex = pixelToHex(x, y);
@@ -77653,11 +79547,12 @@ async function renderMapView(plugin, source, el, ctx) {
     };
     const getTileElevationAt = (x, y) => {
       if (!config.tileElevations) return 0;
-      const gs = config.gridSize || 70;
+      const gsW = config.gridSizeW || config.gridSize || 70;
+      const gsH = config.gridSizeH || config.gridSize || 70;
       const ox = config.gridOffsetX || 0;
       const oy = config.gridOffsetY || 0;
-      const col = Math.floor((x - ox) / gs);
-      const row = Math.floor((y - oy) / gs);
+      const col = Math.floor((x - ox) / gsW);
+      const row = Math.floor((y - oy) / gsH);
       const key = `${col},${row}`;
       return config.tileElevations[key] || 0;
     };
@@ -77698,19 +79593,20 @@ async function renderMapView(plugin, source, el, ctx) {
       }
     };
     const snapDistanceToGrid = (pixelDist) => {
-      const gs = config.gridSize || 70;
+      const gs = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
       return Math.max(gs, Math.round(pixelDist / gs) * gs);
     };
     const computeGridMovePath = (originPx, currentPx) => {
       var _a2;
-      const gs = config.gridSize || 70;
+      const gsW = config.gridSizeW || config.gridSize || 70;
+      const gsH = config.gridSizeH || config.gridSize || 70;
       const ox = config.gridOffsetX || 0;
       const oy = config.gridOffsetY || 0;
       const scaleVal = ((_a2 = config.scale) == null ? void 0 : _a2.value) || 5;
-      const startCol = Math.floor((originPx.x - ox) / gs);
-      const startRow = Math.floor((originPx.y - oy) / gs);
-      const endCol = Math.floor((currentPx.x - ox) / gs);
-      const endRow = Math.floor((currentPx.y - oy) / gs);
+      const startCol = Math.floor((originPx.x - ox) / gsW);
+      const startRow = Math.floor((originPx.y - oy) / gsH);
+      const endCol = Math.floor((currentPx.x - ox) / gsW);
+      const endRow = Math.floor((currentPx.y - oy) / gsH);
       if (startCol === endCol && startRow === endRow) {
         return { cells: [], totalDist: 0, climbDist: 0 };
       }
@@ -77794,7 +79690,8 @@ async function renderMapView(plugin, source, el, ctx) {
     };
     const drawMovementPath = (ctx2, originPx, currentPx, pathData) => {
       var _a2, _b2;
-      const gs = config.gridSize || 70;
+      const gsW = config.gridSizeW || config.gridSize || 70;
+      const gsH = config.gridSizeH || config.gridSize || 70;
       const ox = config.gridOffsetX || 0;
       const oy = config.gridOffsetY || 0;
       const scaleUnit = ((_a2 = config.scale) == null ? void 0 : _a2.unit) || "feet";
@@ -77806,10 +79703,10 @@ async function renderMapView(plugin, source, el, ctx) {
       ctx2.strokeStyle = "rgba(255, 255, 0, 0.35)";
       ctx2.lineWidth = 1.5;
       for (const cell of path.cells) {
-        const cellX = cell.col * gs + ox;
-        const cellY = cell.row * gs + oy;
-        ctx2.fillRect(cellX, cellY, gs, gs);
-        ctx2.strokeRect(cellX + 0.5, cellY + 0.5, gs - 1, gs - 1);
+        const cellX = cell.col * gsW + ox;
+        const cellY = cell.row * gsH + oy;
+        ctx2.fillRect(cellX, cellY, gsW, gsH);
+        ctx2.strokeRect(cellX + 0.5, cellY + 0.5, gsW - 1, gsH - 1);
       }
       ctx2.strokeStyle = "#ffff00";
       ctx2.lineWidth = 3;
@@ -77835,7 +79732,7 @@ async function renderMapView(plugin, source, el, ctx) {
       ctx2.textAlign = "center";
       ctx2.textBaseline = "middle";
       const labelX = currentPx.x;
-      const labelY = currentPx.y - gs * 0.8;
+      const labelY = currentPx.y - gsH * 0.8;
       const metrics = ctx2.measureText(labelText);
       const pillPadX = 10;
       const pillPadY = 5;
@@ -77930,7 +79827,7 @@ async function renderMapView(plugin, source, el, ctx) {
     };
     const drawAoeShape = (ctx2, origin, end, shape, color, isPreview, centered = false) => {
       var _a2, _b2;
-      const gs = config.gridSize || 70;
+      const gs = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
       const dx = end.x - origin.x;
       const dy = end.y - origin.y;
       const rawDist = Math.sqrt(dx * dx + dy * dy);
@@ -78179,7 +80076,8 @@ async function renderMapView(plugin, source, el, ctx) {
         }
         return wall;
       });
-      const pixelsPerFoot = config.gridSize && ((_c2 = config.scale) == null ? void 0 : _c2.value) ? config.gridSize / config.scale.value : 1;
+      const _gsAvgFog = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+      const pixelsPerFoot = _gsAvgFog && ((_c2 = config.scale) == null ? void 0 : _c2.value) ? _gsAvgFog / config.scale.value : 1;
       const fogCanvas = canvasPool.acquire(w, h);
       const fogCtx = fogCanvas.getContext("2d");
       if (!fogCtx) {
@@ -78339,7 +80237,8 @@ async function renderMapView(plugin, source, el, ctx) {
         fogCtx.fill();
       });
       if (isPlayerView && config.lightSources && config.lightSources.length > 0) {
-        const pixelsPerFoot = config.gridSize && ((_a2 = config.scale) == null ? void 0 : _a2.value) ? config.gridSize / config.scale.value : 1;
+        const _gsAvgFogLight = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+        const pixelsPerFoot = _gsAvgFogLight && ((_a2 = config.scale) == null ? void 0 : _a2.value) ? _gsAvgFogLight / config.scale.value : 1;
         fogCtx.globalCompositeOperation = "destination-out";
         fogCtx.fillStyle = "#ffffff";
         config.lightSources.forEach((light, fogLightIdx) => {
@@ -78421,6 +80320,7 @@ async function renderMapView(plugin, source, el, ctx) {
       const _gmMdMask = canvasPool.acquire(w, h);
       const _gmMdCtx = _gmMdMask.getContext("2d");
       if (_gmMdCtx) {
+        _gmMdCtx.clearRect(0, 0, w, h);
         for (const region of config.fogOfWar.regions || []) {
           if (region.type === "magic-darkness") {
             _gmHasMD = true;
@@ -78556,6 +80456,7 @@ async function renderMapView(plugin, source, el, ctx) {
       var _a2;
       activeTool = tool;
       viewport.focus();
+      closeActiveMultiSelectionMenu(true);
       const bgToolViewMap = {
         "walls": "walls",
         "magic-wand": "walls",
@@ -78609,6 +80510,12 @@ async function renderMapView(plugin, source, el, ctx) {
         textAnnotDragOffset = null;
         textAnnotTransformHandle = null;
       }
+      selectedMarkerIndices = [];
+      selectedLightIndices = [];
+      selectedEnvAssetIds = [];
+      selectedTextAnnotationIds = [];
+      selectedWallIndices = [];
+      multiSelectionRect = null;
       if (tool !== "walls" && tool !== "magic-wand") {
         wallPoints = [];
         wallPreviewPos = null;
@@ -78874,6 +80781,8 @@ async function renderMapView(plugin, source, el, ctx) {
     });
     if (!hasGrid) moveGridBtn.addClass("hidden");
     const onMediaReady = () => {
+      var _a2;
+      _canvasScale = getSafeCanvasScale(img.naturalWidth, img.naturalHeight, Math.max(1, Math.min(4, (_a2 = plugin.settings.mapCanvasScale) != null ? _a2 : 2)));
       if (config.gridType && config.gridType !== "none" && config.gridSize) {
         redrawGridOverlays();
       }
@@ -78980,11 +80889,13 @@ async function renderMapView(plugin, source, el, ctx) {
           new GridCalibrationModal(
             plugin.app,
             config,
-            async (gs, gw, gh) => {
+            async (gs, gw, gh, ox, oy) => {
               saveToHistory();
               config.gridSize = gs;
               config.gridSizeW = gw;
               config.gridSizeH = gh;
+              config.gridOffsetX = ox;
+              config.gridOffsetY = oy;
               gridSlider.value = String(gs);
               gridSliderLabel.textContent = `${Math.round(gs * 10) / 10}px`;
               gridWInput.value = String(Math.round((gw || gs) * 10) / 10);
@@ -79028,8 +80939,7 @@ async function renderMapView(plugin, source, el, ctx) {
         let foundMarker = false;
         for (let i = config.markers.length - 1; i >= 0; i--) {
           const m = config.markers[i];
-          const mDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
-          const r = mDef ? getMarkerRadius(mDef) : 15;
+          const r = getPlacedMarkerRadius(m);
           const dist = Math.sqrt(Math.pow(m.position.x - mapPos.x, 2) + Math.pow(m.position.y - mapPos.y, 2));
           if (dist <= r) {
             saveToHistory();
@@ -79038,6 +80948,7 @@ async function renderMapView(plugin, source, el, ctx) {
             dragOffsetY = m.position.y - mapPos.y;
             markerDragOrigin = { x: m.position.x, y: m.position.y };
             viewport.style.cursor = "grabbing";
+            selectedElementForDuplication = { type: "marker", index: i };
             foundMarker = true;
             break;
           }
@@ -79072,6 +80983,8 @@ async function renderMapView(plugin, source, el, ctx) {
             const hitInst = findEnvAssetAtPoint(mapPos.x, mapPos.y);
             if (hitInst) {
               selectedEnvAssetInstanceId = hitInst.id;
+              const index = config.envAssets.findIndex((a) => a.id === hitInst.id);
+              selectedElementForDuplication = { type: "env-asset", index };
               foundEnvAsset = true;
               if (!hitInst.locked) {
                 saveToHistory();
@@ -79118,6 +81031,8 @@ async function renderMapView(plugin, source, el, ctx) {
             const hitTa = findTextAnnotationAtPoint(mapPos.x, mapPos.y);
             if (hitTa) {
               selectedTextAnnotationId = hitTa.id;
+              const index = config.textAnnotations.findIndex((t) => t.id === hitTa.id);
+              selectedElementForDuplication = { type: "text-annotation", index };
               saveToHistory();
               textAnnotDragOffset = {
                 x: mapPos.x - hitTa.position.x,
@@ -79144,6 +81059,7 @@ async function renderMapView(plugin, source, el, ctx) {
             if (dist <= lightClickRadius) {
               saveToHistory();
               draggingLightIndex = i;
+              selectedElementForDuplication = { type: "light", index: i };
               lightDragOffsetX = light.x - mapPos.x;
               lightDragOffsetY = light.y - mapPos.y;
               lightDragOrigin = { x: light.x, y: light.y };
@@ -79174,6 +81090,7 @@ async function renderMapView(plugin, source, el, ctx) {
             if (dist <= wallClickRadius || lineDist <= wallClickRadius) {
               saveToHistory();
               draggingWallIndex = i;
+              selectedElementForDuplication = { type: "wall", index: i };
               wallDragOffsetStartX = wall.start.x - mapPos.x;
               wallDragOffsetStartY = wall.start.y - mapPos.y;
               wallDragOffsetEndX = wall.end.x - mapPos.x;
@@ -79185,8 +81102,12 @@ async function renderMapView(plugin, source, el, ctx) {
             }
           }
         }
-        if (!foundMarker && !foundEnvAsset && !foundTextAnnot && draggingLightIndex < 0 && draggingWallIndex < 0 && canInteractWalls) {
-          wallSelectionRect = { startX: mapPos.x, startY: mapPos.y, endX: mapPos.x, endY: mapPos.y };
+        if (!foundMarker && !foundEnvAsset && !foundTextAnnot && draggingLightIndex < 0 && draggingWallIndex < 0) {
+          multiSelectionRect = { startX: mapPos.x, startY: mapPos.y, endX: mapPos.x, endY: mapPos.y };
+          selectedMarkerIndices = [];
+          selectedLightIndices = [];
+          selectedEnvAssetIds = [];
+          selectedTextAnnotationIds = [];
           selectedWallIndices = [];
           viewport.style.cursor = "crosshair";
         }
@@ -79417,8 +81338,19 @@ async function renderMapView(plugin, source, el, ctx) {
           placedAt: Date.now(),
           layer: config.activeLayer || "Player"
         };
-        if (mDef && mDef.darkvision && mDef.darkvision > 0) {
-          markerRef.darkvision = mDef.darkvision;
+        if (mDef) {
+          if (mDef.darkvision && mDef.darkvision > 0) {
+            markerRef.darkvision = mDef.darkvision;
+          }
+          if (mDef.blindsight && mDef.blindsight > 0) {
+            markerRef.blindsight = mDef.blindsight;
+          }
+          if (mDef.tremorsense && mDef.tremorsense > 0) {
+            markerRef.tremorsense = mDef.tremorsense;
+          }
+          if (mDef.truesight && mDef.truesight > 0) {
+            markerRef.truesight = mDef.truesight;
+          }
         }
         if (mDef && ["player", "npc", "creature"].includes(mDef.type)) {
           applyTileElevation(markerRef);
@@ -79809,11 +81741,12 @@ async function renderMapView(plugin, source, el, ctx) {
           hcLang
         ).open();
       } else if (activeTool === "elevation-paint") {
-        const gs = config.gridSize || 70;
+        const _epGsW = config.gridSizeW || config.gridSize || 70;
+        const _epGsH = config.gridSizeH || config.gridSize || 70;
         const ox = config.gridOffsetX || 0;
         const oy = config.gridOffsetY || 0;
-        const col = Math.floor((mapPos.x - ox) / gs);
-        const row = Math.floor((mapPos.y - oy) / gs);
+        const col = Math.floor((mapPos.x - ox) / _epGsW);
+        const row = Math.floor((mapPos.y - oy) / _epGsH);
         const key = `${col},${row}`;
         saveToHistory();
         if (!config.tileElevations) config.tileElevations = {};
@@ -79826,11 +81759,12 @@ async function renderMapView(plugin, source, el, ctx) {
         redrawAnnotations();
         plugin.saveMapAnnotations(config, el);
       } else if (activeTool === "difficult-terrain") {
-        const gs = config.gridSize || 70;
+        const _dtpGsW = config.gridSizeW || config.gridSize || 70;
+        const _dtpGsH = config.gridSizeH || config.gridSize || 70;
         const ox = config.gridOffsetX || 0;
         const oy = config.gridOffsetY || 0;
-        const col = Math.floor((mapPos.x - ox) / gs);
-        const row = Math.floor((mapPos.y - oy) / gs);
+        const col = Math.floor((mapPos.x - ox) / _dtpGsW);
+        const row = Math.floor((mapPos.y - oy) / _dtpGsH);
         const key = `${col},${row}`;
         saveToHistory();
         if (!config.difficultTerrain) config.difficultTerrain = {};
@@ -79924,7 +81858,8 @@ async function renderMapView(plugin, source, el, ctx) {
                 const cal = (_a2 = plugin.settings) == null ? void 0 : _a2.tabletopCalibration;
                 if (cal && cal.pixelsPerMm && config.gridSize > 0) {
                   const miniBaseMm = cal.miniBaseMm || 25;
-                  targetScale = cal.pixelsPerMm * miniBaseMm / config.gridSize;
+                  const _gsAvgCal = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+                  targetScale = cal.pixelsPerMm * miniBaseMm / _gsAvgCal;
                 } else {
                 }
                 rectW = Math.max(100, Math.round(viewRect.width / targetScale));
@@ -79996,10 +81931,10 @@ async function renderMapView(plugin, source, el, ctx) {
         updateTransform();
         schedulePanRedraw();
       } else if (activeTool === "move-grid" && isDragging) {
-        const rect = viewport.getBoundingClientRect();
         const scaleX = img.naturalWidth / img.width;
+        const scaleY = img.naturalHeight / img.height;
         const dx = (e.clientX - startX) / scale2 * scaleX;
-        const dy = (e.clientY - startY) / scale2 * scaleX;
+        const dy = (e.clientY - startY) / scale2 * scaleY;
         config.gridOffsetX = (config.gridOffsetX || 0) + dx;
         config.gridOffsetY = (config.gridOffsetY || 0) + dy;
         startX = e.clientX;
@@ -80036,7 +81971,7 @@ async function renderMapView(plugin, source, el, ctx) {
             const _tMarkerDef = draggedMarker.markerId ? plugin.markerLibrary.getMarker(draggedMarker.markerId) : null;
             const _tSizeSq = (_tMarkerDef == null ? void 0 : _tMarkerDef.creatureSize) ? CREATURE_SIZE_SQUARES[_tMarkerDef.creatureSize] || 1 : 1;
             const _tSnapped = snapTokenToGrid(_tpRaw.x, _tpRaw.y, _tSizeSq);
-            const gs = config.gridSize || 70;
+            const gs = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
             const maxLat = computeMaxLateral(tunnel, _tSizeSq, gs);
             if (maxLat > 0) {
               const perp = getPathPerpendicular(tunnel.path, closestIndex);
@@ -80062,16 +81997,22 @@ async function renderMapView(plugin, source, el, ctx) {
               draggedMarker.elevation.depth = pathElevation;
             }
           } else {
-            draggedMarker.position = {
+            const desiredPosition = {
               x: mapPos.x + dragOffsetX,
               y: mapPos.y + dragOffsetY
             };
+            if (!markerMovementBlockedByWalls(draggedMarker) || !tokenMoveBlocked(draggedMarker.position, desiredPosition)) {
+              draggedMarker.position = desiredPosition;
+            }
           }
         } else {
-          draggedMarker.position = {
+          const desiredPosition = {
             x: mapPos.x + dragOffsetX,
             y: mapPos.y + dragOffsetY
           };
+          if (!markerMovementBlockedByWalls(draggedMarker) || !tokenMoveBlocked(draggedMarker.position, desiredPosition)) {
+            draggedMarker.position = desiredPosition;
+          }
         }
         if (((_a2 = draggedMarker.elevation) == null ? void 0 : _a2.isBurrowing) && ((_b2 = draggedMarker.elevation) == null ? void 0 : _b2.leaveTunnel) && config.tunnels) {
           const activeTunnel = config.tunnels.find(
@@ -80103,7 +82044,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 });
               }
               if (activeTunnel.path.length >= 2) {
-                const tunnelWidth = getTunnelWidth(activeTunnel, config.gridSize);
+                const tunnelWidth = getTunnelWidth(activeTunnel, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2);
                 activeTunnel.walls = generateTunnelWalls(activeTunnel.path, tunnelWidth);
               }
             }
@@ -80243,6 +82184,9 @@ async function renderMapView(plugin, source, el, ctx) {
       } else if (activeTool === "select" && wallSelectionRect) {
         wallSelectionRect.endX = mapPos.x;
         wallSelectionRect.endY = mapPos.y;
+      } else if (activeTool === "select" && multiSelectionRect) {
+        multiSelectionRect.endX = mapPos.x;
+        multiSelectionRect.endY = mapPos.y;
         _requestDragRedraw();
       } else if (activeTool === "draw" && activeDrawSubTool === "pen" && isDrawing) {
         currentPath.push({ x: mapPos.x, y: mapPos.y });
@@ -80302,11 +82246,12 @@ async function renderMapView(plugin, source, el, ctx) {
         fogDragEnd = { x: mapPos.x, y: mapPos.y };
         redrawAnnotations();
       } else if (activeTool === "elevation-paint" && isPaintingElevation) {
-        const gs = config.gridSize || 70;
+        const _epDragGsW = config.gridSizeW || config.gridSize || 70;
+        const _epDragGsH = config.gridSizeH || config.gridSize || 70;
         const ox = config.gridOffsetX || 0;
         const oy = config.gridOffsetY || 0;
-        const col = Math.floor((mapPos.x - ox) / gs);
-        const row = Math.floor((mapPos.y - oy) / gs);
+        const col = Math.floor((mapPos.x - ox) / _epDragGsW);
+        const row = Math.floor((mapPos.y - oy) / _epDragGsH);
         const key = `${col},${row}`;
         if (!config.tileElevations) config.tileElevations = {};
         if (elevationPaintValue === 0) {
@@ -80321,11 +82266,12 @@ async function renderMapView(plugin, source, el, ctx) {
           }
         }
       } else if (activeTool === "difficult-terrain" && isPaintingDifficultTerrain) {
-        const gs = config.gridSize || 70;
+        const _dtDragGsW = config.gridSizeW || config.gridSize || 70;
+        const _dtDragGsH = config.gridSizeH || config.gridSize || 70;
         const ox = config.gridOffsetX || 0;
         const oy = config.gridOffsetY || 0;
-        const col = Math.floor((mapPos.x - ox) / gs);
-        const row = Math.floor((mapPos.y - oy) / gs);
+        const col = Math.floor((mapPos.x - ox) / _dtDragGsW);
+        const row = Math.floor((mapPos.y - oy) / _dtDragGsH);
         const key = `${col},${row}`;
         if (!config.difficultTerrain) config.difficultTerrain = {};
         if (isDifficultTerrainEraser) {
@@ -80502,6 +82448,7 @@ async function renderMapView(plugin, source, el, ctx) {
         };
         saveToHistory();
         config.fogOfWar.enabled = true;
+        compactFogRegionsForNewRegion(region);
         config.fogOfWar.regions.push(region);
         fogPolygonPoints = [];
         redrawAnnotations();
@@ -80605,6 +82552,7 @@ async function renderMapView(plugin, source, el, ctx) {
           if (region) {
             saveToHistory();
             config.fogOfWar.enabled = true;
+            compactFogRegionsForNewRegion(region);
             config.fogOfWar.regions.push(region);
             redrawAnnotations();
             plugin.saveMapAnnotations(config, el);
@@ -80635,13 +82583,23 @@ async function renderMapView(plugin, source, el, ctx) {
       } else if (activeTool === "select" && draggingMarkerIndex >= 0) {
         const m = config.markers[draggingMarkerIndex];
         const mDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
+        if (isTokenGroup(m) && config.gridSize) {
+          const snapped = snapPointForGroupRelease(m.position.x, m.position.y);
+          if (!tokenMoveBlocked(m.position, snapped)) {
+            m.position.x = snapped.x;
+            m.position.y = snapped.y;
+          }
+        }
         if (mDef && ["player", "npc", "creature"].includes(mDef.type) && config.gridSize) {
           const squares = CREATURE_SIZE_SQUARES[mDef.creatureSize || "medium"] || 1;
           const snapped = snapTokenToGrid(m.position.x, m.position.y, squares);
-          const snapDx = snapped.x - m.position.x;
-          const snapDy = snapped.y - m.position.y;
-          m.position.x = snapped.x;
-          m.position.y = snapped.y;
+          const snapAllowed = !markerMovementBlockedByWalls(m) || !tokenMoveBlocked(m.position, snapped);
+          const snapDx = snapAllowed ? snapped.x - m.position.x : 0;
+          const snapDy = snapAllowed ? snapped.y - m.position.y : 0;
+          if (snapAllowed) {
+            m.position.x = snapped.x;
+            m.position.y = snapped.y;
+          }
           if (snapDx !== 0 || snapDy !== 0) {
             config.aoeEffects.forEach((aoe) => {
               if (aoe.anchorMarkerId === m.id) {
@@ -80684,6 +82642,7 @@ async function renderMapView(plugin, source, el, ctx) {
         if (viewport._syncPlayerView) {
           viewport._syncPlayerView();
         }
+        _applyAutoPan();
       } else if (activeTool === "select" && draggingLightIndex >= 0) {
         draggingLightIndex = -1;
         lightDragOrigin = null;
@@ -80747,6 +82706,71 @@ async function renderMapView(plugin, source, el, ctx) {
           viewport.style.cursor = "default";
           redrawAnnotations();
         }
+      } else if (activeTool === "select" && multiSelectionRect) {
+        const rect = multiSelectionRect;
+        const minX = Math.min(rect.startX, rect.endX);
+        const maxX = Math.max(rect.startX, rect.endX);
+        const minY = Math.min(rect.startY, rect.endY);
+        const maxY = Math.max(rect.startY, rect.endY);
+        const rectWidth = maxX - minX;
+        const rectHeight = maxY - minY;
+        if (rectWidth > 5 && rectHeight > 5) {
+          const canSelectMarkers = config.activeLayer !== "Background";
+          const canSelectLights = config.activeLayer === "Background" && (backgroundEditView === "all" || backgroundEditView === "lights");
+          const canSelectEnvAssets = config.activeLayer === "Background" && (backgroundEditView === "all" || backgroundEditView === "env-assets");
+          const canSelectWalls = config.activeLayer === "Background" && (backgroundEditView === "all" || backgroundEditView === "walls");
+          if (canSelectMarkers && config.markers) {
+            selectedMarkerIndices = [];
+            for (let i = 0; i < config.markers.length; i++) {
+              const marker = config.markers[i];
+              if (marker.position.x >= minX && marker.position.x <= maxX && marker.position.y >= minY && marker.position.y <= maxY) {
+                selectedMarkerIndices.push(i);
+              }
+            }
+          }
+          if (canSelectLights && config.lights) {
+            selectedLightIndices = [];
+            for (let i = 0; i < config.lights.length; i++) {
+              const light = config.lights[i];
+              if (light.position.x >= minX && light.position.x <= maxX && light.position.y >= minY && light.position.y <= maxY) {
+                selectedLightIndices.push(i);
+              }
+            }
+          }
+          if (canSelectEnvAssets && config.envAssets) {
+            selectedEnvAssetIds = [];
+            for (const [id, asset] of Object.entries(config.envAssets)) {
+              if (asset.position.x >= minX && asset.position.x <= maxX && asset.position.y >= minY && asset.position.y <= maxY) {
+                selectedEnvAssetIds.push(id);
+              }
+            }
+          }
+          if (canSelectWalls && config.walls) {
+            selectedWallIndices = [];
+            for (let wi = 0; wi < config.walls.length; wi++) {
+              const w = config.walls[wi];
+              const startInside = w.start.x >= minX && w.start.x <= maxX && w.start.y >= minY && w.start.y <= maxY;
+              const endInside = w.end.x >= minX && w.end.x <= maxX && w.end.y >= minY && w.end.y <= maxY;
+              const midX = (w.start.x + w.end.x) / 2;
+              const midY = (w.start.y + w.end.y) / 2;
+              const midInside = midX >= minX && midX <= maxX && midY >= minY && midY <= maxY;
+              if (startInside || endInside || midInside) {
+                selectedWallIndices.push(wi);
+              }
+            }
+          }
+          const totalSelected = selectedMarkerIndices.length + selectedLightIndices.length + selectedEnvAssetIds.length + selectedWallIndices.length;
+          if (totalSelected > 0) {
+            showMultiSelectionMenu();
+          } else {
+            clearMultiSelection();
+          }
+        } else {
+          clearMultiSelection();
+        }
+        multiSelectionRect = null;
+        viewport.style.cursor = "default";
+        redrawAnnotations();
       } else if (activeTool === "move-grid" && isDragging) {
         isDragging = false;
         viewport.style.cursor = "move";
@@ -80845,6 +82869,7 @@ async function renderMapView(plugin, source, el, ctx) {
         viewport.style.cursor = "default";
         redrawAnnotations();
         plugin.saveMapAnnotations(config, el);
+        _applyAutoPan();
       } else if (activeTool === "select" && draggingLightIndex >= 0) {
         draggingLightIndex = -1;
         lightDragOrigin = null;
@@ -80937,6 +82962,12 @@ async function renderMapView(plugin, source, el, ctx) {
           redo();
           return;
         }
+        if (e.key === "d" && selectedElementForDuplication) {
+          e.preventDefault();
+          e.stopPropagation();
+          duplicateElement(selectedElementForDuplication.type, selectedElementForDuplication.index);
+          return;
+        }
       }
       if (!e.ctrlKey && !e.metaKey && !e.altKey && activeTool !== "player-view") {
         const toolMap = {
@@ -80980,7 +83011,7 @@ async function renderMapView(plugin, source, el, ctx) {
             e.preventDefault();
             saveToHistory();
             let newIndex = marker.tunnelState.pathIndex;
-            const gs = config.gridSize || 70;
+            const gs = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
             const _akMarkerDef = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
             const _akSizeSq = (_akMarkerDef == null ? void 0 : _akMarkerDef.creatureSize) ? CREATURE_SIZE_SQUARES[_akMarkerDef.creatureSize] || 1 : 1;
             const maxLat = computeMaxLateral(tunnel, _akSizeSq, gs);
@@ -81281,6 +83312,12 @@ async function renderMapView(plugin, source, el, ctx) {
                   plugin.saveMapAnnotations(config, el);
                   if (viewport._syncPlayerView) viewport._syncPlayerView();
                 },
+                onDuplicate: (inst) => {
+                  const idx = config.envAssets.findIndex((a) => a.id === inst.id);
+                  if (idx >= 0) {
+                    duplicateElement("env-asset", idx);
+                  }
+                },
                 onRedraw: () => redrawAnnotations(),
                 onSave: () => {
                   plugin.saveMapAnnotations(config, el);
@@ -81377,7 +83414,7 @@ async function renderMapView(plugin, source, el, ctx) {
       for (let i = config.markers.length - 1; i >= 0; i--) {
         const m = config.markers[i];
         const mDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
-        const r = mDef ? getMarkerRadius(mDef) : 15;
+        const r = getPlacedMarkerRadius(m);
         const dist = Math.sqrt(Math.pow(m.position.x - mapPos.x, 2) + Math.pow(m.position.y - mapPos.y, 2));
         if (dist <= r) {
           e.preventDefault();
@@ -81406,11 +83443,47 @@ async function renderMapView(plugin, source, el, ctx) {
               m.layer = layer;
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
+              refreshVisionSelector();
+              if (viewport._syncPlayerView) viewport._syncPlayerView();
+              _applyAutoPan(true);
               if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
               new import_obsidian84.Notice(`Marker moved to ${layer} layer`);
             });
           });
           contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
+          if (isTokenGroup(m)) {
+            const groupHeader = contextMenu.createDiv({ cls: "dnd-map-context-menu-header" });
+            groupHeader.textContent = `Token Group (${m.tokenGroup.members.length})`;
+            m.tokenGroup.members.forEach((member, memberIndex) => {
+              const memberRow = contextMenu.createDiv({ cls: "dnd-map-context-menu-item" });
+              memberRow.textContent = `\u2197 Release ${getMarkerDisplayName(member)}`;
+              memberRow.addEventListener("click", () => {
+                saveToHistory();
+                const ok = releaseTokenFromGroup(m, memberIndex);
+                if (ok) {
+                  refreshVisionSelector();
+                  redrawAnnotations();
+                  plugin.saveMapAnnotations(config, el);
+                  if (viewport._syncPlayerView) viewport._syncPlayerView();
+                  new import_obsidian84.Notice(`${getMarkerDisplayName(member)} released from group`);
+                }
+                if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
+              });
+            });
+            const releaseAllRow = contextMenu.createDiv({ cls: "dnd-map-context-menu-item" });
+            releaseAllRow.textContent = "\u2197 Release All Tokens";
+            releaseAllRow.addEventListener("click", () => {
+              saveToHistory();
+              const count = releaseAllTokensFromGroup(m);
+              refreshVisionSelector();
+              redrawAnnotations();
+              plugin.saveMapAnnotations(config, el);
+              if (viewport._syncPlayerView) viewport._syncPlayerView();
+              if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
+              new import_obsidian84.Notice(count > 0 ? `Released ${count} tokens` : "No safe adjacent tile found");
+            });
+            contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
+          }
           if (mDef && mDef.type !== "player") {
             const visibilityRow = contextMenu.createDiv({ cls: "dnd-map-context-aoe-row" });
             visibilityRow.style.cursor = "pointer";
@@ -81604,6 +83677,108 @@ async function renderMapView(plugin, source, el, ctx) {
                 darkInput.blur();
               }
             });
+            const blindRow = contextMenu.createDiv({ cls: "dnd-map-context-aoe-row" });
+            blindRow.createEl("span", { cls: "dnd-map-context-aoe-label", text: "Blindsight:" });
+            const blindInput = blindRow.createEl("input", {
+              cls: "dnd-map-darkvision-input",
+              attr: {
+                type: "number",
+                min: "0",
+                max: "300",
+                step: "5",
+                placeholder: "0",
+                value: m.blindsight || ""
+              }
+            });
+            blindRow.createEl("span", { text: "ft" });
+            blindInput.addEventListener("change", () => {
+              saveToHistory();
+              const value = parseInt(blindInput.value) || 0;
+              if (value > 0) {
+                m.blindsight = value;
+              } else {
+                delete m.blindsight;
+              }
+              redrawAnnotations();
+              plugin.saveMapAnnotations(config, el);
+              if (viewport._syncPlayerView) viewport._syncPlayerView();
+              refreshVisionSelector();
+              new import_obsidian84.Notice(value > 0 ? `Blindsight set to ${value} ft` : "Blindsight removed");
+            });
+            blindInput.addEventListener("click", (e2) => e2.stopPropagation());
+            blindInput.addEventListener("keydown", (e2) => {
+              if (e2.key === "Enter") {
+                blindInput.blur();
+              }
+            });
+            const tremRow = contextMenu.createDiv({ cls: "dnd-map-context-aoe-row" });
+            tremRow.createEl("span", { cls: "dnd-map-context-aoe-label", text: "Tremorsense:" });
+            const tremInput = tremRow.createEl("input", {
+              cls: "dnd-map-darkvision-input",
+              attr: {
+                type: "number",
+                min: "0",
+                max: "300",
+                step: "5",
+                placeholder: "0",
+                value: m.tremorsense || ""
+              }
+            });
+            tremRow.createEl("span", { text: "ft" });
+            tremInput.addEventListener("change", () => {
+              saveToHistory();
+              const value = parseInt(tremInput.value) || 0;
+              if (value > 0) {
+                m.tremorsense = value;
+              } else {
+                delete m.tremorsense;
+              }
+              redrawAnnotations();
+              plugin.saveMapAnnotations(config, el);
+              if (viewport._syncPlayerView) viewport._syncPlayerView();
+              refreshVisionSelector();
+              new import_obsidian84.Notice(value > 0 ? `Tremorsense set to ${value} ft` : "Tremorsense removed");
+            });
+            tremInput.addEventListener("click", (e2) => e2.stopPropagation());
+            tremInput.addEventListener("keydown", (e2) => {
+              if (e2.key === "Enter") {
+                tremInput.blur();
+              }
+            });
+            const trueRow = contextMenu.createDiv({ cls: "dnd-map-context-aoe-row" });
+            trueRow.createEl("span", { cls: "dnd-map-context-aoe-label", text: "Truesight:" });
+            const trueInput = trueRow.createEl("input", {
+              cls: "dnd-map-darkvision-input",
+              attr: {
+                type: "number",
+                min: "0",
+                max: "300",
+                step: "5",
+                placeholder: "0",
+                value: m.truesight || ""
+              }
+            });
+            trueRow.createEl("span", { text: "ft" });
+            trueInput.addEventListener("change", () => {
+              saveToHistory();
+              const value = parseInt(trueInput.value) || 0;
+              if (value > 0) {
+                m.truesight = value;
+              } else {
+                delete m.truesight;
+              }
+              redrawAnnotations();
+              plugin.saveMapAnnotations(config, el);
+              if (viewport._syncPlayerView) viewport._syncPlayerView();
+              refreshVisionSelector();
+              new import_obsidian84.Notice(value > 0 ? `Truesight set to ${value} ft` : "Truesight removed");
+            });
+            trueInput.addEventListener("click", (e2) => e2.stopPropagation());
+            trueInput.addEventListener("keydown", (e2) => {
+              if (e2.key === "Enter") {
+                trueInput.blur();
+              }
+            });
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
             const borderHeader = contextMenu.createDiv({ cls: "dnd-map-context-menu-header" });
             borderHeader.innerHTML = "\u{1F3A8} Appearance";
@@ -81735,7 +83910,7 @@ async function renderMapView(plugin, source, el, ctx) {
                     const creatureSize = mDef.creatureSize || "medium";
                     const sizeInSquares = CREATURE_SIZE_SQUARES[creatureSize] || 1;
                     const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
-                    tunnel = createTunnelSegment(m.id, snapped, creatureSize, value, config.gridSize || 70);
+                    tunnel = createTunnelSegment(m.id, snapped, creatureSize, value, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2);
                     config.tunnels.push(tunnel);
                   }
                 }
@@ -81797,7 +83972,7 @@ async function renderMapView(plugin, source, el, ctx) {
                   const creatureSize = mDef.creatureSize || "medium";
                   const sizeInSquares = CREATURE_SIZE_SQUARES[creatureSize] || 1;
                   const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
-                  tunnel = createTunnelSegment(m.id, snapped, creatureSize, depthValue, config.gridSize || 70);
+                  tunnel = createTunnelSegment(m.id, snapped, creatureSize, depthValue, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2);
                   config.tunnels.push(tunnel);
                 }
                 updateTokenLayer(m);
@@ -81832,8 +84007,9 @@ async function renderMapView(plugin, source, el, ctx) {
               }
             });
             burrowCheckbox.addEventListener("click", (e2) => e2.stopPropagation());
-            const nearEntrance = findNearTunnelEntrance(config.tunnels, m.position, config.gridSize);
-            const nearExit = findNearTunnelExit(config.tunnels, m.position, config.gridSize);
+            const _gsAvgTunProx = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+            const nearEntrance = findNearTunnelEntrance(config.tunnels, m.position, _gsAvgTunProx);
+            const nearExit = findNearTunnelExit(config.tunnels, m.position, _gsAvgTunProx);
             const isInTunnel = m.tunnelState !== void 0;
             const isNearTunnelAccess = nearEntrance || nearExit;
             if (isNearTunnelAccess || isInTunnel) {
@@ -81896,7 +84072,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 const tunnel = (_e2 = config.tunnels) == null ? void 0 : _e2.find((t) => t.id === m.tunnelState.tunnelId);
                 let isAtEntranceOrExit = false;
                 if (tunnel && tunnel.path.length > 0) {
-                  const gs = config.gridSize || 70;
+                  const gs = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
                   const portalR = getTunnelPortalRadius(tunnel.creatureSize || "medium", gs);
                   const exitThresh = Math.max(gs * 1.5, portalR + gs * 0.5);
                   const ent = tunnel.entrancePosition;
@@ -81998,12 +84174,19 @@ async function renderMapView(plugin, source, el, ctx) {
             });
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
           }
+          const duplicateOption = contextMenu.createDiv({ cls: "dnd-map-context-menu-item" });
+          duplicateOption.innerHTML = `<span>\u{1F4CB}</span> Duplicate`;
+          duplicateOption.addEventListener("click", () => {
+            duplicateElement("marker", i);
+            if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
+          });
           const deleteOption = contextMenu.createDiv({ cls: "dnd-map-context-menu-item delete" });
           deleteOption.innerHTML = `<span>\u{1F5D1}\uFE0F</span> Delete`;
           deleteOption.addEventListener("click", () => {
             saveToHistory();
             deactivateTunnelsForMarker(config.tunnels, config.markers, m.id);
             config.markers.splice(i, 1);
+            if (selectedVisionTokenId === m.id) selectedVisionTokenId = null;
             redrawAnnotations();
             plugin.saveMapAnnotations(config, el);
             updateGridToolsVisibility();
@@ -82252,6 +84435,12 @@ async function renderMapView(plugin, source, el, ctx) {
               });
             }
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
+            const duplicateOption = contextMenu.createDiv({ cls: "dnd-map-context-menu-item" });
+            duplicateOption.innerHTML = `<span>\u{1F4CB}</span> Duplicate`;
+            duplicateOption.addEventListener("click", () => {
+              duplicateElement("light", i);
+              if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
+            });
             const deleteOption = contextMenu.createDiv({ cls: "dnd-map-context-menu-item delete" });
             deleteOption.innerHTML = `<span>\u{1F5D1}\uFE0F</span> Delete`;
             deleteOption.addEventListener("click", () => {
@@ -82427,6 +84616,12 @@ async function renderMapView(plugin, source, el, ctx) {
               });
             });
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
+            const duplicateOption = contextMenu.createDiv({ cls: "dnd-map-context-menu-item" });
+            duplicateOption.innerHTML = `<span>\u{1F4CB}</span> Duplicate`;
+            duplicateOption.addEventListener("click", () => {
+              duplicateElement("wall", i);
+              if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
+            });
             const deleteOption = contextMenu.createDiv({ cls: "dnd-map-context-menu-item delete" });
             deleteOption.innerHTML = `<span>\u{1F5D1}\uFE0F</span> Delete`;
             deleteOption.addEventListener("click", () => {
@@ -82621,9 +84816,13 @@ async function renderMapView(plugin, source, el, ctx) {
         menu.addItem(
           (item) => item.setTitle("\u2715 Unlink Encounter").setIcon("x").onClick(() => {
             config.linkedEncounter = "";
+            config.showInitiativeInPlayerView = false;
             plugin.saveMapAnnotations(config, el);
             linkEncounterBtn.textContent = "\u{1F517} Link Encounter";
             linkEncounterBtn.title = "Link an encounter note to this map";
+            if (viewport._syncPlayerView) {
+              viewport._syncPlayerView();
+            }
             new import_obsidian84.Notice("Encounter unlinked from map");
           })
         );
@@ -82709,13 +84908,14 @@ async function renderMapView(plugin, source, el, ctx) {
         }
         creaturesByName.get(baseName).push(c);
       }
-      const gridPx = config.gridSize || 70;
+      const _ciGsW = config.gridSizeW || config.gridSize || 70;
+      const _ciGsH = config.gridSizeH || config.gridSize || 70;
       const ox = config.gridOffsetX || 0;
       const oy = config.gridOffsetY || 0;
       const mapW = ((_a2 = config.dimensions) == null ? void 0 : _a2.width) || 1e3;
       const mapH = ((_b2 = config.dimensions) == null ? void 0 : _b2.height) || 800;
-      const totalCols = Math.floor(mapW / gridPx);
-      const totalRows = Math.floor(mapH / gridPx);
+      const totalCols = Math.floor(mapW / _ciGsW);
+      const totalRows = Math.floor(mapH / _ciGsH);
       let placementCol = 1;
       let placementRow = 1;
       const maxCol = Math.max(2, totalCols - 1);
@@ -82724,7 +84924,7 @@ async function renderMapView(plugin, source, el, ctx) {
       let skippedCount = 0;
       let errorCount = 0;
       saveToHistory();
-      console.log(`[DnD-Map] Import Encounter Tokens: ${creatures.length} creatures in IT state, map=${mapW}x${mapH}, grid=${gridPx}px (${totalCols}x${totalRows} cells)`);
+      console.log(`[DnD-Map] Import Encounter Tokens: ${creatures.length} creatures in IT state, map=${mapW}x${mapH}, grid=${_ciGsW}x${_ciGsH}px (${totalCols}x${totalRows} cells)`);
       for (const [name, insts] of creaturesByName) {
         console.log(`[DnD-Map]   Group "${name}": ${insts.length} instance(s)`);
       }
@@ -82816,10 +85016,11 @@ async function renderMapView(plugin, source, el, ctx) {
               console.log(`[DnD-Map]   Created new marker def "${baseName}" (size=${creatureSize})`);
             }
             const sizeSquares = CREATURE_SIZE_SQUARES[markerDef.creatureSize || "medium"] || 1;
-            const halfToken = sizeSquares * gridPx / 2;
+            const halfTokenW = sizeSquares * _ciGsW / 2;
+            const halfTokenH = sizeSquares * _ciGsH / 2;
             const colAdvance = Math.max(1, Math.ceil(sizeSquares)) + 1;
-            const posX = ox + placementCol * gridPx + halfToken;
-            const posY = oy + placementRow * gridPx + halfToken;
+            const posX = ox + placementCol * _ciGsW + halfTokenW;
+            const posY = oy + placementRow * _ciGsH + halfTokenH;
             const tokenLayer = !isPlayer && !isFriendly ? "DM" : "Player";
             const markerRef = {
               id: `marker_inst_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -82833,6 +85034,15 @@ async function renderMapView(plugin, source, el, ctx) {
             }
             if (markerDef.darkvision && markerDef.darkvision > 0) {
               markerRef.darkvision = markerDef.darkvision;
+            }
+            if (markerDef.blindsight && markerDef.blindsight > 0) {
+              markerRef.blindsight = markerDef.blindsight;
+            }
+            if (markerDef.tremorsense && markerDef.tremorsense > 0) {
+              markerRef.tremorsense = markerDef.tremorsense;
+            }
+            if (markerDef.truesight && markerDef.truesight > 0) {
+              markerRef.truesight = markerDef.truesight;
             }
             config.markers.push(markerRef);
             existingMarkerNames.add(dupeKey);
@@ -83490,6 +85700,7 @@ function drawGridOverlay(container, img, config, offsetX = 0, offsetY = 0, reuse
     }
     canvas.style.width = `${img.width}px`;
     canvas.style.height = `${img.height}px`;
+    canvas.style.imageRendering = "pixelated";
   } else {
     const existingCanvas = container.querySelector(".dnd-map-grid-overlay");
     if (existingCanvas) {
@@ -83505,16 +85716,20 @@ function drawGridOverlay(container, img, config, offsetX = 0, offsetY = 0, reuse
     canvas.style.width = `${img.width}px`;
     canvas.style.height = `${img.height}px`;
     canvas.style.pointerEvents = "none";
+    canvas.style.imageRendering = "pixelated";
   }
   const ctx = canvas.getContext("2d");
   if (!ctx) return canvas;
+  ctx.imageSmoothingEnabled = false;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.setTransform(canvasScale, 0, 0, canvasScale, 0, 0);
   const logicalW = img.naturalWidth;
   const logicalH = img.naturalHeight;
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.4)";
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.65)";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "square";
+  ctx.lineJoin = "miter";
   if (config.gridType === "square") {
     const sizeW = config.gridSizeW || config.gridSize;
     const sizeH = config.gridSizeH || config.gridSize;
