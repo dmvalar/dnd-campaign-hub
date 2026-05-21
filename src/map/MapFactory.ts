@@ -11,7 +11,7 @@
 
 // ── Schema version ───────────────────────────────────────────────────
 /** Bump this whenever the annotation shape changes. */
-export const MAP_SCHEMA_VERSION = 1;
+export const MAP_SCHEMA_VERSION = 2;
 
 // ── Canonical defaults ───────────────────────────────────────────────
 /**
@@ -37,6 +37,8 @@ export function getMapAnnotationDefaults(): Record<string, any> {
     gridVisible: true,
     scale: { value: 5, unit: 'feet' },
     activeLayer: 'Player',
+    showInitiativeInPlayerView: false,
+    initiativeOverlaySize: 'medium',
     // Annotations
     highlights: [],
     markers: [],

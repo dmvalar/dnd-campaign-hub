@@ -13,6 +13,7 @@ import type { EnvAssetInstance } from '../envasset/EnvAssetTypes';
 import { HexcrawlTracker } from '../hexcrawl';
 import { getTunnelWidth, getTunnelPortalRadius, drawTunnelPortal } from './tunnelUtils';
 import { WallSpatialIndex } from '../utils/WallSpatialIndex';
+import type { CombatState, Combatant } from "../combat/types";
 
 /** Returns true for wall types that use pivot-hinge rotation. */
 function isPivotType(t: string): boolean { return t === 'pivotDoor' || t === 'secretPivot'; }
@@ -66,7 +67,12 @@ export class PlayerMapView extends ItemView {
   private tabletopRotation: number = 0; // degrees, clockwise
   private tabletopTargetX: number | null = null; // desired image top-left X (natural px)
   private tabletopTargetY: number | null = null; // desired image top-left Y (natural px)
+  private tabletopTargetViewportX: number | null = null;
+  private tabletopTargetViewportY: number | null = null;
   private mapContainer: HTMLDivElement | null = null;
+  private initiativeOverlayEl: HTMLDivElement | null = null;
+  private prevInitiativeState: Map<string, { hp: number; maxHP: number; tempHP: number; ac: number; statuses: string }> = new Map();
+  private prevInitiativeActiveId: string | null = null;
   private syncCanvasToImage: (() => void) | null = null;
   private isFullscreen: boolean = false; // Track fullscreen state
   private _pvFlickerFrameId: number | null = null; // Flicker animation loop for player view
@@ -188,6 +194,7 @@ export class PlayerMapView extends ItemView {
     this._lastConfigDigest = digest;
 
     this.mapConfig = config;
+    this.renderInitiativeOverlay();
 
     if (changed) {
       this.redrawAnnotations();
@@ -432,6 +439,206 @@ export class PlayerMapView extends ItemView {
     return h;
   }
 
+  private getVisibleInitiativeCombatants(state: CombatState): Combatant[] {
+    return state.combatants.filter((c) => c && !c.hidden && (c.enabled ?? true));
+  }
+
+  private hpColor(pct: number): string {
+    const r = pct > 0.5 ? Math.round(92 + (224 - 92) * (1 - (pct - 0.5) * 2)) : Math.round(224 + (201 - 224) * (1 - pct * 2));
+    const g = pct > 0.5 ? Math.round(184 + (160 - 184) * (1 - (pct - 0.5) * 2)) : Math.round(160 * pct * 2 + 48 * (1 - pct * 2));
+    const b = pct > 0.5 ? Math.round(92 + (48 - 92) * (1 - (pct - 0.5) * 2)) : Math.round(48 * pct * 2 + 44 * (1 - pct * 2));
+    return `rgb(${r},${g},${b})`;
+  }
+
+  private hpCondition(pct: number): string {
+    if (pct <= 0) return "Dead";
+    if (pct <= 0.25) return "Critical";
+    if (pct <= 0.5) return "Bloodied";
+    if (pct <= 0.75) return "Hurt";
+    if (pct < 1) return "Scratched";
+    return "Uninjured";
+  }
+
+  private initiativeStatusSignature(combatant: Combatant): string {
+    return combatant.statuses
+      .map((s) => `${s.name}:${s.duration ?? ''}:${s.note ?? ''}`)
+      .join('|');
+  }
+
+  private renderInitiativeHP(parent: HTMLElement, combatant: Combatant, isAlly: boolean): HTMLElement {
+    const hpWrap = parent.createDiv({ cls: 'dnd-player-initiative-hp' });
+    const pct = combatant.maxHP > 0 ? Math.max(0, Math.min(1, combatant.currentHP / combatant.maxHP)) : 0;
+    const color = this.hpColor(pct);
+
+    if (isAlly) {
+      const bar = hpWrap.createDiv({ cls: 'dnd-player-initiative-hp-bar' });
+      const fill = bar.createDiv({ cls: 'dnd-player-initiative-hp-fill' });
+      fill.style.width = `${pct * 100}%`;
+      fill.style.background = color;
+      if (combatant.tempHP > 0 && combatant.maxHP > 0) {
+        const temp = bar.createDiv({ cls: 'dnd-player-initiative-hp-temp' });
+        temp.style.width = `${Math.min(1, combatant.tempHP / combatant.maxHP) * 100}%`;
+      }
+      let hpText = `${combatant.currentHP}/${combatant.maxHP}`;
+      if (combatant.tempHP > 0) hpText += ` (+${combatant.tempHP})`;
+      hpWrap.createEl('span', { cls: 'dnd-player-initiative-hp-text', text: hpText });
+    } else {
+      const condition = hpWrap.createEl('span', {
+        cls: 'dnd-player-initiative-hp-condition',
+        text: this.hpCondition(pct),
+      });
+      condition.style.color = color;
+    }
+    return hpWrap;
+  }
+
+  private renderInitiativeOverlay() {
+    const container = this.containerEl.children[1] as HTMLElement | undefined;
+    if (!container || !container.isConnected) return;
+
+    const state = this.mapConfig?.combatState as CombatState | null | undefined;
+    const showOverlay = this.mapConfig?.showInitiativeInPlayerView === true && !!state;
+    if (!showOverlay) {
+      if (this.initiativeOverlayEl) {
+        this.initiativeOverlayEl.remove();
+        this.initiativeOverlayEl = null;
+      }
+      this.prevInitiativeState.clear();
+      this.prevInitiativeActiveId = null;
+      return;
+    }
+
+    const visibleCombatants = this.getVisibleInitiativeCombatants(state);
+    if (visibleCombatants.length === 0) {
+      if (this.initiativeOverlayEl) {
+        this.initiativeOverlayEl.remove();
+        this.initiativeOverlayEl = null;
+      }
+      return;
+    }
+
+    if (!this.initiativeOverlayEl || !this.initiativeOverlayEl.isConnected) {
+      this.initiativeOverlayEl = container.createDiv({ cls: 'dnd-player-initiative-overlay' });
+    }
+
+    const overlay = this.initiativeOverlayEl;
+    const sizes = ['compact', 'medium', 'large', 'huge', 'fullscreen'];
+    const size = sizes.includes(this.mapConfig?.initiativeOverlaySize)
+      ? this.mapConfig.initiativeOverlaySize
+      : 'medium';
+    overlay.removeClass('size-compact', 'size-medium', 'size-large', 'size-huge', 'size-fullscreen');
+    overlay.addClass(`size-${size}`);
+    overlay.empty();
+
+    const header = overlay.createDiv({ cls: 'dnd-player-initiative-header' });
+    header.createEl('span', { cls: 'dnd-player-initiative-title', text: 'Initiative' });
+    header.createEl('span', {
+      cls: 'dnd-player-initiative-round',
+      text: state.started ? `Round ${state.round}` : 'Not started',
+    });
+
+    const list = overlay.createDiv({ cls: 'dnd-player-initiative-list' });
+    const activeId = state.started ? state.combatants[state.turnIndex]?.id : null;
+    const activeChanged = activeId !== this.prevInitiativeActiveId;
+    const activeVisibleIndex = activeId ? visibleCombatants.findIndex((c) => c.id === activeId) : -1;
+    const ordered = activeVisibleIndex >= 0
+      ? [...visibleCombatants.slice(activeVisibleIndex), ...visibleCombatants.slice(0, activeVisibleIndex)]
+      : visibleCombatants;
+    const maxRows = size === 'fullscreen' ? 18 : size === 'huge' ? 14 : size === 'large' ? 10 : size === 'compact' ? 4 : 6;
+    const shown = ordered.slice(0, maxRows);
+
+    for (const combatant of shown) {
+      const isActive = !!activeId && combatant.id === activeId;
+      const isAlly = combatant.player || combatant.friendly;
+      const isDead = combatant.dead ?? combatant.currentHP <= 0;
+      const previous = this.prevInitiativeState.get(combatant.id);
+      const statusSignature = this.initiativeStatusSignature(combatant);
+      const rowClasses = ['dnd-player-initiative-row'];
+      if (isActive) rowClasses.push('is-active');
+      if (isAlly) rowClasses.push('is-ally');
+      else rowClasses.push('is-enemy');
+      if (isDead) rowClasses.push('is-dead');
+      if (previous) {
+        if (combatant.currentHP < previous.hp) rowClasses.push('is-damaged');
+        else if (combatant.currentHP > previous.hp) rowClasses.push('is-healed');
+        if (combatant.tempHP !== previous.tempHP) rowClasses.push('is-temp-changed');
+        if (combatant.currentAC !== previous.ac) rowClasses.push('is-ac-changed');
+        if (statusSignature !== previous.statuses) rowClasses.push('is-status-changed');
+      }
+      if (isActive && activeChanged && this.prevInitiativeActiveId !== null) {
+        rowClasses.push('is-turn-changed');
+      }
+      const row = list.createDiv({
+        cls: rowClasses.join(' '),
+      });
+      row.createEl('span', {
+        cls: 'dnd-player-initiative-score',
+        text: state.started ? String(combatant.initiative) : '-',
+      });
+      const nameWrap = row.createDiv({ cls: 'dnd-player-initiative-name-wrap' });
+      nameWrap.createEl('span', { cls: 'dnd-player-initiative-name', text: combatant.display });
+      const metaRow = nameWrap.createDiv({ cls: 'dnd-player-initiative-meta' });
+      if (isAlly) {
+        metaRow.createEl('span', { cls: 'dnd-player-initiative-ac', text: `AC ${combatant.currentAC}` });
+      }
+      if (combatant.deathSaves && isAlly) {
+        const deathSaves = metaRow.createEl('span', { cls: 'dnd-player-initiative-death-saves' });
+        deathSaves.createEl('span', { cls: 'dnd-player-initiative-ds-success', text: `S${combatant.deathSaves.successes}` });
+        deathSaves.createEl('span', { cls: 'dnd-player-initiative-ds-failure', text: `F${combatant.deathSaves.failures}` });
+      }
+      if (combatant.statuses.length > 0) {
+        const statuses = nameWrap.createDiv({ cls: 'dnd-player-initiative-statuses' });
+        const maxStatuses = size === 'compact' ? 2 : 4;
+        for (const status of combatant.statuses.slice(0, maxStatuses)) {
+          statuses.createEl('span', {
+            cls: 'dnd-player-initiative-status',
+            text: status.duration !== undefined ? `${status.name} (${status.duration})` : status.name,
+            attr: { title: status.note ? `${status.name}: ${status.note}` : status.name },
+          });
+        }
+        if (combatant.statuses.length > maxStatuses) {
+          statuses.createEl('span', {
+            cls: 'dnd-player-initiative-status',
+            text: `+${combatant.statuses.length - maxStatuses}`,
+          });
+        }
+      }
+      const hpWrap = this.renderInitiativeHP(row, combatant, isAlly);
+      if (previous && combatant.currentHP !== previous.hp) {
+        const delta = combatant.currentHP - previous.hp;
+        hpWrap.createEl('span', {
+          cls: `dnd-player-initiative-hp-delta ${delta > 0 ? 'is-heal' : 'is-damage'}`,
+          text: `${delta > 0 ? '+' : ''}${delta}`,
+        });
+      } else if (previous && combatant.tempHP !== previous.tempHP) {
+        const delta = combatant.tempHP - previous.tempHP;
+        hpWrap.createEl('span', {
+          cls: `dnd-player-initiative-hp-delta ${delta > 0 ? 'is-temp-gain' : 'is-temp-loss'}`,
+          text: `${delta > 0 ? '+' : ''}${delta} THP`,
+        });
+      }
+      if (isActive) {
+        row.createEl('span', { cls: 'dnd-player-initiative-turn', text: 'Turn' });
+      }
+
+      this.prevInitiativeState.set(combatant.id, {
+        hp: combatant.currentHP,
+        maxHP: combatant.maxHP,
+        tempHP: combatant.tempHP,
+        ac: combatant.currentAC,
+        statuses: statusSignature,
+      });
+    }
+    this.prevInitiativeActiveId = activeId || null;
+
+    if (ordered.length > shown.length) {
+      overlay.createDiv({
+        cls: 'dnd-player-initiative-more',
+        text: `+${ordered.length - shown.length} more`,
+      });
+    }
+  }
+
   /**
    * Set tabletop pan to show given image coordinates at top-left of viewport.
    * Called by GM when dragging the player-view region rectangle.
@@ -449,8 +656,18 @@ export class PlayerMapView extends ItemView {
     // Store the desired center point
     this.tabletopTargetX = centerX;
     this.tabletopTargetY = centerY;
+    this.tabletopTargetViewportX = null;
+    this.tabletopTargetViewportY = null;
 
     // Apply transform which will center this point in the viewport
+    this.applyTabletopTransform();
+  }
+
+  setTabletopPanFromImageCoordsAtViewportPoint(centerX: number, centerY: number, viewportX: number, viewportY: number) {
+    this.tabletopTargetX = centerX;
+    this.tabletopTargetY = centerY;
+    this.tabletopTargetViewportX = viewportX;
+    this.tabletopTargetViewportY = viewportY;
     this.applyTabletopTransform();
   }
 
@@ -528,11 +745,51 @@ export class PlayerMapView extends ItemView {
     }, durationMs + 50);
   }
 
+  smoothPanAndZoomToViewportPoint(centerX: number, centerY: number, scale: number, viewportX: number, viewportY: number, durationMs: number = 600) {
+    if (!this.mapContainer || !this.mapImage) {
+      this.tabletopScale = scale || 1;
+      this.setTabletopPanFromImageCoordsAtViewportPoint(centerX, centerY, viewportX, viewportY);
+      return;
+    }
+    const sled = this.mapContainer.querySelector('.dnd-player-map-sled') as HTMLElement;
+    if (!sled) {
+      this.tabletopScale = scale || 1;
+      this.setTabletopPanFromImageCoordsAtViewportPoint(centerX, centerY, viewportX, viewportY);
+      return;
+    }
+
+    if (this._smoothPanTimer !== null) {
+      clearTimeout(this._smoothPanTimer);
+      this._smoothPanTimer = null;
+    }
+
+    sled.style.transition = `transform ${durationMs}ms cubic-bezier(0.33, 1, 0.68, 1)`;
+    this.tabletopScale = scale || 1;
+    this.setTabletopPanFromImageCoordsAtViewportPoint(centerX, centerY, viewportX, viewportY);
+
+    this._smoothPanTimer = setTimeout(() => {
+      sled.style.transition = '';
+      this._smoothPanTimer = null;
+    }, durationMs + 50);
+  }
+
   /** Get the viewport dimensions for external callers (e.g. auto-pan). */
   getViewportSize(): { width: number; height: number } {
     if (!this.mapContainer) return { width: 1920, height: 1080 };
     const rect = this.mapContainer.getBoundingClientRect();
     return { width: rect.width || 1920, height: rect.height || 1080 };
+  }
+
+  getInitiativeOverlayRect(): { left: number; top: number; right: number; bottom: number; width: number; height: number } | null {
+    if (!this.mapContainer || !this.initiativeOverlayEl || !this.initiativeOverlayEl.isConnected) return null;
+    const viewportRect = this.mapContainer.getBoundingClientRect();
+    const overlayRect = this.initiativeOverlayEl.getBoundingClientRect();
+    const left = Math.max(0, overlayRect.left - viewportRect.left);
+    const top = Math.max(0, overlayRect.top - viewportRect.top);
+    const right = Math.min(viewportRect.width, overlayRect.right - viewportRect.left);
+    const bottom = Math.min(viewportRect.height, overlayRect.bottom - viewportRect.top);
+    if (right <= left || bottom <= top) return null;
+    return { left, top, right, bottom, width: right - left, height: bottom - top };
   }
 
   /**
@@ -620,9 +877,12 @@ export class PlayerMapView extends ItemView {
       // After scale: (cx*s, cy*s)
       // After rotate by +deg around origin: (cx*s*cos - cy*s*sin, cx*s*sin + cy*s*cos)  
       // After translate: add panX, panY
-      // Want result at viewport center (vcx, vcy):
-      this.tabletopPanX = vcx - s * (c * cx - sn * cy);
-      this.tabletopPanY = vcy - s * (sn * cx + c * cy);
+      const targetScreenX = this.tabletopTargetViewportX ?? vcx;
+      const targetScreenY = this.tabletopTargetViewportY ?? vcy;
+
+      // Want result at target screen point:
+      this.tabletopPanX = targetScreenX - s * (c * cx - sn * cy);
+      this.tabletopPanY = targetScreenY - s * (sn * cx + c * cy);
 
     }
 
@@ -993,6 +1253,7 @@ export class PlayerMapView extends ItemView {
       cls: 'dnd-player-map-canvas'
     });
     this.canvas = canvas;
+    this.renderInitiativeOverlay();
 
     // Helper to sync canvas CSS size and position to match displayed image exactly
     const syncCanvasToImage = () => {

@@ -1,4 +1,4 @@
-import { App, Menu, Modal, Notice, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
+import { App, Menu, Modal, Notice, Setting, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import type { MapMediaElement } from "../constants";
 import { PLAYER_MAP_VIEW_TYPE, GM_MAP_VIEW_TYPE } from "../constants";
@@ -53,6 +53,177 @@ import {
   EncounterBattlemapModal,
 } from "../hexcrawl";
 import type { TerrainType, HexTerrain, HexcrawlState, TerrainPickerState, HexcrawlBridge, ClimateType, HexClimate } from "../hexcrawl";
+
+class MapEncounterSetupModal extends Modal {
+	private selectedEncounterPath = '';
+	private encounterFiles: TFile[] = [];
+
+	constructor(
+		app: App,
+		private plugin: DndCampaignHubPlugin,
+		private config: any,
+		private sourceEl: HTMLElement,
+		private onComplete: () => void,
+	) {
+		super(app);
+	}
+
+	onOpen() {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.createEl('h3', { text: 'Link Encounter for Player View' });
+		contentEl.createEl('p', {
+			text: 'Linking this map to an encounter lets the Initiative Tracker load the correct combat and keeps turn-based View as selection reliable.',
+		});
+
+		this.encounterFiles = this.plugin.app.vault.getMarkdownFiles()
+			.filter((f: TFile) => this.plugin.app.metadataCache.getFileCache(f)?.frontmatter?.type === 'encounter')
+			.sort((a: TFile, b: TFile) => b.stat.mtime - a.stat.mtime);
+
+		this.selectedEncounterPath = this.config.linkedEncounter || this.encounterFiles[0]?.path || '';
+
+		new Setting(contentEl)
+			.setName('Encounter')
+			.setDesc('Choose the encounter note to link and load.')
+			.addDropdown((dropdown) => {
+				for (const file of this.encounterFiles) {
+					const name = this.getEncounterName(file);
+					dropdown.addOption(file.path, name);
+				}
+				dropdown
+					.setValue(this.selectedEncounterPath)
+					.onChange((value) => {
+						this.selectedEncounterPath = value;
+					});
+				dropdown.selectEl.disabled = this.encounterFiles.length === 0;
+			});
+
+		if (this.encounterFiles.length === 0) {
+			contentEl.createEl('p', { text: 'No encounter notes were found in the vault.' });
+		}
+
+		new Setting(contentEl)
+			.addButton((btn) =>
+				btn
+					.setButtonText('Link and Load Combat')
+					.setCta()
+					.onClick(async () => {
+						if (!this.selectedEncounterPath) {
+							new Notice('No encounter selected');
+							return;
+						}
+						await this.linkAndLoad(this.selectedEncounterPath);
+					}),
+			)
+			.addButton((btn) =>
+				btn
+					.setButtonText('Show Current Combat')
+					.onClick(() => {
+						this.config.showInitiativeInPlayerView = true;
+						this.plugin.saveMapAnnotations(this.config, this.sourceEl);
+						this.onComplete();
+						this.close();
+					}),
+			)
+			.addButton((btn) =>
+				btn
+					.setButtonText('Cancel')
+					.onClick(() => this.close()),
+			);
+	}
+
+	onClose() {
+		this.contentEl.empty();
+	}
+
+	private getEncounterName(file: TFile): string {
+		const fm = this.plugin.app.metadataCache.getFileCache(file)?.frontmatter;
+		return fm?.name || fm?.encounter_name || file.basename;
+	}
+
+	private async linkAndLoad(path: string) {
+		const file = this.plugin.app.vault.getAbstractFileByPath(path);
+		if (!(file instanceof TFile)) {
+			new Notice('Encounter file not found');
+			return;
+		}
+
+		const cache = this.plugin.app.metadataCache.getFileCache(file);
+		const fm = cache?.frontmatter || {};
+		const encounterName = fm.name || fm.encounter_name || file.basename;
+
+		this.config.linkedEncounter = file.path;
+		this.config.showInitiativeInPlayerView = true;
+
+		if (this.plugin.combatTracker.hasSavedState(encounterName)) {
+			this.plugin.combatTracker.resumeCombat(encounterName);
+		} else {
+			const mappedCreatures = (fm.creatures || []).map((c: any) => ({
+				name: c.name,
+				count: c.count ?? 1,
+				hp: c.hp,
+				ac: c.ac,
+				cr: c.cr,
+				source: c.source,
+				path: c.path && c.path !== '[SRD]' ? c.path : undefined,
+				isFriendly: c.isFriendly ?? c.is_friendly ?? false,
+				isHidden: c.isHidden ?? c.is_hidden ?? false,
+			}));
+
+			const partyMembers: Array<{ name: string; level: number; hp: number; maxHp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }> = [];
+			const fmParty: any[] | undefined = fm.party_members;
+			if (Array.isArray(fmParty) && fmParty.length > 0) {
+				for (const m of fmParty) {
+					if (!m || !m.name) continue;
+					const maxHp = typeof m.hp_max === 'number' ? m.hp_max : (typeof m.hp === 'number' ? m.hp : 10);
+					partyMembers.push({
+						name: m.name,
+						level: typeof m.level === 'number' ? m.level : 1,
+						hp: typeof m.hp === 'number' ? m.hp : maxHp,
+						maxHp,
+						ac: typeof m.ac === 'number' ? m.ac : 10,
+						notePath: m.note_path || undefined,
+						tokenId: m.token_id || undefined,
+						initBonus: typeof m.init_bonus === 'number' ? m.init_bonus : 0,
+						thp: typeof m.thp === 'number' ? m.thp : 0,
+					});
+				}
+			} else {
+				const resolvedParty = this.plugin.partyManager.resolvePartyForNote(file.path) || this.plugin.partyManager.getDefaultParty();
+				if (resolvedParty) {
+					const resolved = await this.plugin.partyManager.resolveMembers(resolvedParty.id);
+					for (const m of resolved) {
+						partyMembers.push({
+							name: m.name,
+							level: m.level,
+							hp: m.hp,
+							maxHp: m.maxHp,
+							ac: m.ac,
+							notePath: m.notePath,
+							tokenId: m.tokenId,
+							initBonus: m.initBonus,
+							thp: m.thp,
+						});
+					}
+				}
+			}
+
+			await this.plugin.combatTracker.startFromEncounter(
+				encounterName,
+				mappedCreatures,
+				partyMembers,
+				fm.use_color_names ?? true,
+				file.path,
+			);
+		}
+
+		this.plugin.saveMapAnnotations(this.config, this.sourceEl);
+		await this.plugin.openCombatTracker();
+		this.onComplete();
+		this.close();
+		new Notice(`✅ Linked and loaded "${encounterName}"`);
+	}
+}
 
 /**
  * Renders the GM map view for a dnd-map code block.
@@ -135,6 +306,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 			// Load active layer (defaults to Player)
 			config.activeLayer = savedData.activeLayer || 'Player';
+			config.linkedEncounter = savedData.linkedEncounter || '';
+			config.showInitiativeInPlayerView = savedData.showInitiativeInPlayerView === true && !!config.linkedEncounter;
+			config.initiativeOverlaySize = ['compact', 'medium', 'large', 'huge', 'fullscreen'].includes(savedData.initiativeOverlaySize)
+				? savedData.initiativeOverlaySize
+				: 'medium';
 
 			// Store the source note path for campaign detection
 			const notePath = ctx?.sourcePath || '';
@@ -2111,25 +2287,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		visionSelected.setAttribute('title', 'Select which token\'s vision to show in Player View');
 		const visionMenu = visionDropdown.createDiv({ cls: 'dnd-map-vision-menu' });
 
-		// ── Auto-Pan toggle button (next to the View as dropdown) ──
-		const autoPanRow = tokenVisionContent.createDiv({ cls: 'dnd-map-autopan-row' });
-		const autoPanBtn = autoPanRow.createEl('button', {
-			cls: 'dnd-map-autopan-btn',
-			attr: { title: 'Auto-pan: keep the projected player view centered on the selected token(s)' },
-		});
-		autoPanBtn.innerHTML = '🎯 Auto-Pan';
-		const updateAutoPanBtnState = () => {
-			autoPanBtn.toggleClass('active', _autoPanEnabled);
-		};
-		updateAutoPanBtnState();
-		autoPanBtn.addEventListener('click', () => {
-			_autoPanEnabled = !_autoPanEnabled;
-			updateAutoPanBtnState();
-			if (_autoPanEnabled) {
-				_applyAutoPan();
-			}
-		});
-
 		// Toggle menu open/close
 		visionSelected.addEventListener('click', (e) => {
 			e.stopPropagation();
@@ -3195,6 +3352,111 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			}
 		});
 
+		pvDropdown.createDiv({ cls: 'dnd-map-pv-dropdown-label', text: 'Display' });
+		const pvAutoPanBtn = pvDropdown.createEl('button', {
+			cls: 'dnd-map-pv-toggle-item',
+			attr: {
+				title: 'Auto-pan: keep the projected player view centered on the selected token(s)',
+				type: 'button',
+			},
+		});
+		pvAutoPanBtn.createEl('span', { text: 'Auto-Pan', cls: 'dnd-map-pv-toggle-label' });
+		pvAutoPanBtn.createEl('span', { cls: 'dnd-map-pv-toggle-switch' });
+		const updateAutoPanBtnState = () => {
+			pvAutoPanBtn.toggleClass('active', _autoPanEnabled);
+		};
+		updateAutoPanBtnState();
+		pvAutoPanBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			_autoPanEnabled = !_autoPanEnabled;
+			updateAutoPanBtnState();
+			if (_autoPanEnabled) {
+				_applyAutoPan();
+			}
+		});
+
+		const pvInitiativeOverlayBtn = pvDropdown.createEl('button', {
+			cls: 'dnd-map-pv-toggle-item',
+			attr: {
+				title: 'Show a compact initiative tracker in the projected player map view',
+				type: 'button',
+			},
+		});
+		pvInitiativeOverlayBtn.createEl('span', { text: 'Initiative Tracker', cls: 'dnd-map-pv-toggle-label' });
+		pvInitiativeOverlayBtn.createEl('span', { cls: 'dnd-map-pv-toggle-switch' });
+		const getLinkedEncounterLabel = () => {
+			if (!config.linkedEncounter) return 'Not linked';
+			const file = plugin.app.vault.getAbstractFileByPath(config.linkedEncounter);
+			if (file instanceof TFile) {
+				const fm = plugin.app.metadataCache.getFileCache(file)?.frontmatter;
+				return fm?.name || fm?.encounter_name || file.basename;
+			}
+			return config.linkedEncounter.split('/').pop()?.replace('.md', '') || 'Linked';
+		};
+		const updateInitiativeOverlayBtnState = () => {
+			pvInitiativeOverlayBtn.toggleClass('active', config.showInitiativeInPlayerView === true);
+		};
+		updateInitiativeOverlayBtnState();
+		const pvEncounterStatus = pvDropdown.createDiv({ cls: 'dnd-map-pv-encounter-status' });
+		const updateEncounterStatus = () => {
+			pvEncounterStatus.textContent = `Encounter: ${getLinkedEncounterLabel()}`;
+		};
+		updateEncounterStatus();
+		pvInitiativeOverlayBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			if (config.showInitiativeInPlayerView !== true && !config.linkedEncounter) {
+				new MapEncounterSetupModal(plugin.app, plugin, config, el, () => {
+					updateInitiativeOverlayBtnState();
+					updateEncounterStatus();
+					if ((viewport as any)._syncPlayerView) {
+						(viewport as any)._syncPlayerView();
+					}
+				}).open();
+				return;
+			}
+			config.showInitiativeInPlayerView = config.showInitiativeInPlayerView !== true;
+			updateInitiativeOverlayBtnState();
+			plugin.saveMapAnnotations(config, el);
+			if ((viewport as any)._syncPlayerView) {
+				(viewport as any)._syncPlayerView();
+			}
+			new Notice(config.showInitiativeInPlayerView ? 'Initiative shown in Player View' : 'Initiative hidden from Player View');
+		});
+
+		const pvInitiativeSizeBtn = pvDropdown.createEl('button', {
+			cls: 'dnd-map-pv-toggle-item',
+			attr: {
+				title: 'Resize the initiative tracker overlay in the projected player map view',
+				type: 'button',
+			},
+		});
+		pvInitiativeSizeBtn.createEl('span', { text: 'Initiative Size', cls: 'dnd-map-pv-toggle-label' });
+		const pvInitiativeSizeValue = pvInitiativeSizeBtn.createEl('span', { cls: 'dnd-map-pv-value-pill' });
+		const initiativeSizes = ['compact', 'medium', 'large', 'huge', 'fullscreen'];
+		const initiativeSizeLabels: Record<string, string> = {
+			compact: 'Compact',
+			medium: 'Medium',
+			large: 'Large',
+			huge: 'Huge',
+			fullscreen: 'Fullscreen',
+		};
+		const updateInitiativeSizeBtnState = () => {
+			const size = initiativeSizes.includes(config.initiativeOverlaySize) ? config.initiativeOverlaySize : 'medium';
+			pvInitiativeSizeValue.textContent = initiativeSizeLabels[size] || 'Medium';
+		};
+		updateInitiativeSizeBtnState();
+		pvInitiativeSizeBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			const currentSize = initiativeSizes.includes(config.initiativeOverlaySize) ? config.initiativeOverlaySize : 'medium';
+			const nextSize = initiativeSizes[(initiativeSizes.indexOf(currentSize) + 1) % initiativeSizes.length];
+			config.initiativeOverlaySize = nextSize;
+			updateInitiativeSizeBtnState();
+			plugin.saveMapAnnotations(config, el);
+			if ((viewport as any)._syncPlayerView) {
+				(viewport as any)._syncPlayerView();
+			}
+		});
+
 		// -- Separator --
 		const pvSep = pvDropdown.createDiv({ cls: 'dnd-map-pv-dropdown-sep' });
 
@@ -3235,7 +3497,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			poiReferences: config.poiReferences, gridType: config.gridType,
 			gridSize: config.gridSize, gridOffsetX: config.gridOffsetX || 0,
 			gridOffsetY: config.gridOffsetY || 0, scale: config.scale,
-			name: config.name, isVideo: config.isVideo, type: config.type
+			name: config.name, isVideo: config.isVideo, type: config.type,
+			showInitiativeInPlayerView: config.showInitiativeInPlayerView === true,
+			initiativeOverlaySize: config.initiativeOverlaySize || 'medium',
+			combatState: config.showInitiativeInPlayerView === true ? plugin.combatTracker.getState() : null
 		});
 
 		/** Launch a projection in the given mode, picking a screen first if needed. */
@@ -3407,6 +3672,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			// Calibrate: relevant for Battle Mode or no projection
 			const showCalibrate = !thisMapProj || projMode === 'battle';
 			pvCalBtn.toggleClass('hidden', !showCalibrate);
+			updateAutoPanBtnState();
+			updateInitiativeOverlayBtnState();
+			updateInitiativeSizeBtnState();
+			updateEncounterStatus();
 
 			// Rebuild dynamic projection actions
 			buildProjectionActions();
@@ -3460,9 +3729,95 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const avgGridSize = ((config.gridSizeW || config.gridSize || 50)
 					+ (config.gridSizeH || config.gridSize || 50)) / 2;
 				if (avgGridSize <= 0) return;
+				const pixelsPerFoot = avgGridSize / Math.max(1, config.scale?.value || 5);
 
 				const isAutoPanEligible = (marker: any): boolean => {
 					return !!marker?.position && (marker.layer || 'Player') !== 'DM' && markerContributesPlayerVision(marker);
+				};
+
+				const raySegmentDistance = (
+					rayX: number, rayY: number, rayDx: number, rayDy: number,
+					segX1: number, segY1: number, segX2: number, segY2: number,
+				): number | null => {
+					const sdx = segX2 - segX1;
+					const sdy = segY2 - segY1;
+					const denom = rayDx * sdy - rayDy * sdx;
+					if (Math.abs(denom) < 1e-10) return null;
+					const t = ((segX1 - rayX) * sdy - (segY1 - rayY) * sdx) / denom;
+					const u = ((segX1 - rayX) * rayDy - (segY1 - rayY) * rayDx) / denom;
+					if (t > 0 && u >= 0 && u <= 1) return t;
+					return null;
+				};
+
+				const getBlockingWallSegments = () => {
+					return (config.walls || [])
+						.filter((wall: any) => wall?.start && wall?.end && !wall.open && wall.type !== 'window')
+						.map((wall: any) => {
+							try {
+								const effective = getPivotDoorEndpoints(wall);
+								return { start: effective.start, end: effective.end };
+							} catch (e) {
+								return { start: wall.start, end: wall.end };
+							}
+						});
+				};
+
+				const getMarkerVisionRadiusPx = (marker: any): number => {
+					const markerDef = marker?.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
+					const visionKeys = ['darkvision', 'blindsight', 'tremorsense', 'truesight'] as const;
+					let visionFeet = 0;
+					for (const key of visionKeys) {
+						visionFeet = Math.max(visionFeet, Number(marker?.[key] || 0), Number((markerDef as any)?.[key] || 0));
+					}
+					const lightFeet = Math.max(
+						Number(marker?.light?.bright || 0),
+						Number(marker?.light?.dim || 0),
+						Number((markerDef as any)?.light?.bright || 0),
+						Number((markerDef as any)?.light?.dim || 0),
+					);
+					const radiusFeet = Math.max(visionFeet, lightFeet, 30);
+					return Math.max(5 * avgGridSize, radiusFeet * pixelsPerFoot);
+				};
+
+				const getSingleTokenAutoPanBox = (marker: any) => {
+					const origin = marker.position;
+					const maxRadius = getMarkerVisionRadiusPx(marker);
+					const blockingWalls = getBlockingWallSegments();
+					const points: { x: number; y: number }[] = [origin];
+					const samples = 72;
+					for (let i = 0; i < samples; i++) {
+						const angle = (i / samples) * Math.PI * 2;
+						const dx = Math.cos(angle);
+						const dy = Math.sin(angle);
+						let dist = maxRadius;
+						for (const wall of blockingWalls) {
+							const hit = raySegmentDistance(origin.x, origin.y, dx, dy, wall.start.x, wall.start.y, wall.end.x, wall.end.y);
+							if (hit !== null && hit < dist) dist = hit;
+						}
+						points.push({ x: origin.x + dx * dist, y: origin.y + dy * dist });
+					}
+					let minX = Infinity, maxX = -Infinity;
+					let minY = Infinity, maxY = -Infinity;
+					for (const point of points) {
+						minX = Math.min(minX, point.x);
+						maxX = Math.max(maxX, point.x);
+						minY = Math.min(minY, point.y);
+						maxY = Math.max(maxY, point.y);
+					}
+					const padding = Math.max(1.5 * avgGridSize, Math.min(3 * avgGridSize, maxRadius * 0.18));
+					minX -= padding;
+					maxX += padding;
+					minY -= padding;
+					maxY += padding;
+					const minSpan = 7 * avgGridSize;
+					const boxW = Math.max(minSpan, maxX - minX);
+					const boxH = Math.max(minSpan, maxY - minY);
+					return {
+						cx: (minX + maxX) / 2,
+						cy: (minY + maxY) / 2,
+						w: boxW,
+						h: boxH,
+					};
 				};
 
 				// Collect vision-eligible player tokens (same filter as View-as list)
@@ -3475,34 +3830,58 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					: { width: 1920, height: 1080 };
 				const vpW = vpSize.width;
 				const vpH = vpSize.height;
-				const vpShort = Math.min(vpW, vpH);
+				const getAutoPanSafeViewport = () => {
+					const padding = 24;
+					const full = { x: 0, y: 0, w: vpW, h: vpH };
+					if (config.showInitiativeInPlayerView !== true || typeof pv.getInitiativeOverlayRect !== 'function') {
+						return full;
+					}
+					const overlay = pv.getInitiativeOverlayRect();
+					if (!overlay) return full;
+
+					const rightArea = {
+						x: Math.min(vpW - 120, overlay.right + padding),
+						y: 0,
+						w: Math.max(120, vpW - (overlay.right + padding)),
+						h: vpH,
+					};
+					if (rightArea.w >= vpW * 0.35) return rightArea;
+
+					const bottomArea = {
+						x: 0,
+						y: Math.min(vpH - 120, overlay.bottom + padding),
+						w: vpW,
+						h: Math.max(120, vpH - (overlay.bottom + padding)),
+					};
+					if (bottomArea.h >= vpH * 0.35) return bottomArea;
+
+					return full;
+				};
+				const safeViewport = getAutoPanSafeViewport();
 
 				let targetCx: number;
 				let targetCy: number;
 				let targetScale: number;
+				const fitScaleForBox = (boxW: number, boxH: number): number => {
+					return Math.min(safeViewport.w / boxW, safeViewport.h / boxH);
+				};
 
 				if (selectedVisionTokenId) {
-					// ── Single token: center on it with tactical awareness radius ──
+					// ── Single token: fit the wall-clipped vision footprint ──
 					const marker = (config.markers || []).find((m: any) => m.id === selectedVisionTokenId);
 					if (isAutoPanEligible(marker)) {
-						targetCx = marker.position.x;
-						targetCy = marker.position.y;
-
-						// Show ~12 grid squares on each side = 24 across the viewport
-						// short axis. This gives 60ft awareness radius in 5ft-grid D&D,
-						// covering movement speed + most spell/weapon ranges.
-						const tacticalSquares = 24;
-						const desiredSpan = tacticalSquares * avgGridSize;
-						targetScale = vpShort / desiredSpan;
+						const box = getSingleTokenAutoPanBox(marker);
+						targetCx = box.cx;
+						targetCy = box.cy;
+						targetScale = fitScaleForBox(box.w, box.h);
 					} else {
 						const playerTokens = visionTokens.filter((m: any) => m.position);
 						if (playerTokens.length === 0) return;
 						if (playerTokens.length === 1) {
-							targetCx = playerTokens[0].position.x;
-							targetCy = playerTokens[0].position.y;
-							const tacticalSquares = 24;
-							const desiredSpan = tacticalSquares * avgGridSize;
-							targetScale = vpShort / desiredSpan;
+							const box = getSingleTokenAutoPanBox(playerTokens[0]);
+							targetCx = box.cx;
+							targetCy = box.cy;
+							targetScale = fitScaleForBox(box.w, box.h);
 						} else {
 							let minX = Infinity, maxX = -Infinity;
 							let minY = Infinity, maxY = -Infinity;
@@ -3521,7 +3900,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const boxH = maxY - minY;
 							targetCx = (minX + maxX) / 2;
 							targetCy = (minY + maxY) / 2;
-							targetScale = Math.min(vpW / boxW, vpH / boxH);
+							targetScale = fitScaleForBox(boxW, boxH);
 						}
 					}
 				} else {
@@ -3531,11 +3910,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 					if (playerTokens.length === 1) {
 						// Only one player token: treat like single-token view
-						targetCx = playerTokens[0].position.x;
-						targetCy = playerTokens[0].position.y;
-						const tacticalSquares = 24;
-						const desiredSpan = tacticalSquares * avgGridSize;
-						targetScale = vpShort / desiredSpan;
+						const box = getSingleTokenAutoPanBox(playerTokens[0]);
+						targetCx = box.cx;
+						targetCy = box.cy;
+						targetScale = fitScaleForBox(box.w, box.h);
 					} else {
 						// Compute bounding box
 						let minX = Infinity, maxX = -Infinity;
@@ -3558,7 +3936,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 						targetCx = (minX + maxX) / 2;
 						targetCy = (minY + maxY) / 2;
-						targetScale = Math.min(vpW / boxW, vpH / boxH);
+						targetScale = fitScaleForBox(boxW, boxH);
 					}
 				}
 
@@ -3566,7 +3944,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				targetScale = Math.max(0.05, Math.min(5, targetScale));
 
 				// Animate
-				if (typeof pv.smoothPanAndZoomTo === 'function') {
+				const safeCenterX = safeViewport.x + safeViewport.w / 2;
+				const safeCenterY = safeViewport.y + safeViewport.h / 2;
+				if (typeof pv.smoothPanAndZoomToViewportPoint === 'function') {
+					pv.smoothPanAndZoomToViewportPoint(targetCx, targetCy, targetScale, safeCenterX, safeCenterY, 600);
+				} else if (typeof pv.smoothPanAndZoomTo === 'function') {
 					pv.smoothPanAndZoomTo(targetCx, targetCy, targetScale, 600);
 				} else {
 					// Fallback: set scale then pan
@@ -3651,6 +4033,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					scale: config.scale,
 					name: config.name,
 					type: config.type,
+					showInitiativeInPlayerView: config.showInitiativeInPlayerView === true,
+					initiativeOverlaySize: config.initiativeOverlaySize || 'medium',
+					combatState: config.showInitiativeInPlayerView === true ? plugin.combatTracker.getState() : null,
 					dragRuler: dragRuler,
 					measureRuler: measureRuler,
 					targetDistRuler: targetDistRuler,
@@ -3714,6 +4099,21 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			const ownerWin = viewport.ownerDocument?.defaultView ?? window;
 			ownerWin.requestAnimationFrame(() => _syncPlayerViewImmediate());
 		};
+
+		const initiativeOverlayUnsub = plugin.combatTracker.onChange(() => {
+			if (config.showInitiativeInPlayerView === true && (viewport as any)._syncPlayerView) {
+				(viewport as any)._syncPlayerView();
+			}
+		});
+		const initiativeOverlayObserver = new MutationObserver(() => {
+			if (!viewport.isConnected) {
+				initiativeOverlayUnsub();
+				initiativeOverlayObserver.disconnect();
+			}
+		});
+		if (viewport.parentElement) {
+			initiativeOverlayObserver.observe(viewport.parentElement, { childList: true });
+		}
 
 		// ── Projection status indicator ──────────────────────────────────
 		// Shows a pulsing green badge on the GM viewport when projection(s)
@@ -3789,7 +4189,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						scale: config.scale,
 						name: config.name,
 						isVideo: config.isVideo,
-						type: config.type
+						type: config.type,
+						showInitiativeInPlayerView: config.showInitiativeInPlayerView === true,
+						initiativeOverlaySize: config.initiativeOverlaySize || 'medium',
+						combatState: config.showInitiativeInPlayerView === true ? plugin.combatTracker.getState() : null
 					},
 					imageResourcePath: resourcePath
 				}
@@ -13529,9 +13932,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					menu.addItem((item) =>
 						item.setTitle('✕ Unlink Encounter').setIcon('x').onClick(() => {
 							config.linkedEncounter = '';
+							config.showInitiativeInPlayerView = false;
 							plugin.saveMapAnnotations(config, el);
 							linkEncounterBtn.textContent = '🔗 Link Encounter';
 							linkEncounterBtn.title = 'Link an encounter note to this map';
+							if ((viewport as any)._syncPlayerView) {
+								(viewport as any)._syncPlayerView();
+							}
 							new Notice('Encounter unlinked from map');
 						}),
 					);
