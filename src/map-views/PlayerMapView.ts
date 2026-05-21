@@ -54,6 +54,10 @@ export class PlayerMapView extends ItemView {
   private mapImage: MapMediaElement | null = null;
   private markerImageCache: Map<string, HTMLImageElement> = new Map();
   private envAssetImageCache: Map<string, HTMLImageElement> = new Map();
+
+  private isTokenGroup(marker: any): boolean {
+    return !!marker?.tokenGroup?.members?.length;
+  }
   // Tabletop mode state
   private tabletopMode: boolean = true;
   private tabletopPanX: number = 0;
@@ -338,6 +342,7 @@ export class PlayerMapView extends ItemView {
       n(m.position?.x || 0); n(m.position?.y || 0);
       n(m.darkvision || 0);
       n(m.truesight || 0);
+      n(this.isTokenGroup(m) ? (m.tokenGroup.members?.length || 0) : 0);
       n(m.light?.bright || 0); n(m.light?.dim || 0);
       n(m.visibleToPlayers ? 1 : 0);
       if (m.elevation) { n(m.elevation.height || 0); n(m.elevation.depth || 0); }
@@ -1813,7 +1818,13 @@ export class PlayerMapView extends ItemView {
     const playerTokens: any[] = [];
     const otherMarkers: any[] = [];
     playerMarkers.forEach((m: any) => {
-      if (m.markerId) {
+      if (this.isTokenGroup(m)) {
+        if (m.visibleToPlayers) {
+          playerTokens.push(m);
+        } else {
+          otherMarkers.push(m);
+        }
+      } else if (m.markerId) {
         const markerDef = this.plugin.markerLibrary.getMarker(m.markerId);
         if (markerDef && (markerDef.type === 'player' || m.visibleToPlayers)) {
           playerTokens.push(m);
@@ -3611,14 +3622,24 @@ export class PlayerMapView extends ItemView {
 
     if (!markerDef) {
       // Fallback rendering for legacy or missing markers
-      const radius = 15;
+      const avgGrid = config ? ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2 : 70;
+      const radius = this.isTokenGroup(marker) ? Math.max(18, avgGrid * 0.55) : 15;
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = '#ff0000';
+      ctx.fillStyle = this.isTokenGroup(marker) ? (marker.color || '#3b82f6') : '#ff0000';
       ctx.fill();
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = marker.borderColor || '#ffffff';
+      ctx.lineWidth = Math.max(2, radius * 0.1);
       ctx.stroke();
+      if (this.isTokenGroup(marker)) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `${Math.max(10, radius * 1.2)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(marker.icon || '👥', pos.x, pos.y);
+        ctx.font = `bold ${Math.max(10, radius * 0.45)}px sans-serif`;
+        ctx.fillText(String(marker.tokenGroup.members.length), pos.x, pos.y + radius * 0.38);
+      }
       return;
     }
 
@@ -4031,6 +4052,7 @@ export class PlayerMapView extends ItemView {
       n(px); n(py);
       n(m.darkvision || 0);
       n(m.truesight || 0);
+      n(this.isTokenGroup(m) ? (m.tokenGroup.members?.length || 0) : 0);
       n(m.light?.bright || 0); n(m.light?.dim || 0);
       if (m.light?.type) s(m.light.type);
       n(m.visibleToPlayers ? 1 : 0);
@@ -4266,15 +4288,13 @@ export class PlayerMapView extends ItemView {
     const playerTokens: { x: number; y: number; darkvision: number; truesight: number; elevation: number }[] = [];
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
-        if (!marker.markerId) return;
-        
         // Skip tokens in tunnels (underground)
         if (marker.tunnelState) {
           return;
         }
-        
-        const markerDef = this.plugin.markerLibrary.getMarker(marker.markerId);
-        if (!markerDef) return;
+
+        const markerDef = marker.markerId ? this.plugin.markerLibrary.getMarker(marker.markerId) : null;
+        if (!markerDef && !this.isTokenGroup(marker)) return;
         
         // Determine if this token should contribute to vision
         let includeToken = false;
@@ -4283,7 +4303,7 @@ export class PlayerMapView extends ItemView {
           includeToken = (marker.id === config.selectedVisionTokenId);
         } else {
           // Default mode: player tokens + visibleToPlayers tokens contribute to vision
-          includeToken = (markerDef.type === 'player' || !!marker.visibleToPlayers);
+          includeToken = (this.isTokenGroup(marker) && !!marker.visibleToPlayers) || markerDef?.type === 'player' || !!marker.visibleToPlayers;
         }
         
         if (includeToken) {
@@ -4580,15 +4600,15 @@ export class PlayerMapView extends ItemView {
     const darkvisionMarkers: any[] = [];
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
-        if (!marker.markerId || !marker.darkvision || marker.darkvision <= 0) return;
+        if (!marker.darkvision || marker.darkvision <= 0) return;
         
         // Skip tokens in tunnels - they don't reveal surface fog
         if (marker.tunnelState) {
           return;
         }
         
-        const markerDef = this.plugin.markerLibrary.getMarker(marker.markerId);
-        if (!markerDef) return;
+        const markerDef = marker.markerId ? this.plugin.markerLibrary.getMarker(marker.markerId) : null;
+        if (!markerDef && !this.isTokenGroup(marker)) return;
         
         // Determine if this token should contribute to darkvision
         let includeToken = false;
@@ -4597,7 +4617,7 @@ export class PlayerMapView extends ItemView {
           includeToken = (marker.id === config.selectedVisionTokenId);
         } else {
           // Default mode: player tokens + visibleToPlayers tokens contribute
-          includeToken = (markerDef.type === 'player' || !!marker.visibleToPlayers);
+          includeToken = (this.isTokenGroup(marker) && !!marker.visibleToPlayers) || markerDef?.type === 'player' || !!marker.visibleToPlayers;
         }
         
         if (includeToken) {

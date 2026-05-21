@@ -737,6 +737,269 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				redrawAnnotations();
 			};
 
+			const isTokenGroup = (marker: any): boolean => !!marker?.tokenGroup?.members?.length;
+
+			const getMarkerDisplayName = (marker: any): string => {
+				if (isTokenGroup(marker)) return marker.tokenGroup.name || 'Token Group';
+				const def = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
+				return def?.name || marker.name || marker.id || 'Token';
+			};
+
+			const markerContributesPlayerVision = (marker: any): boolean => {
+				if (isTokenGroup(marker)) return !!marker.visibleToPlayers;
+				const def = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
+				return !!def && (def.type === 'player' || !!marker.visibleToPlayers);
+			};
+
+			const markerMovementBlockedByWalls = (marker: any): boolean => {
+				if ((marker.layer || 'Player') === 'DM') return false;
+				return isTokenGroup(marker) || markerContributesPlayerVision(marker);
+			};
+
+			const getPlacedMarkerRadius = (marker: any): number => {
+				if (isTokenGroup(marker)) {
+					const avgGs = ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2;
+					return Math.max(18, avgGs * 0.55);
+				}
+				const def = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
+				if (def) {
+					if (['player', 'npc', 'creature'].includes(def.type) && def.creatureSize && config.gridSize) {
+						const squares = CREATURE_SIZE_SQUARES[def.creatureSize] || 1;
+						const gsW = config.gridSizeW || config.gridSize;
+						const gsH = config.gridSizeH || config.gridSize;
+						return (squares * ((gsW + gsH) / 2) * 0.90) / 2;
+					}
+					return (def.pixelSize || 30) / 2;
+				}
+				return (marker.pixelSize || 30) / 2;
+			};
+
+			const cloneMarkerForGroup = (marker: any): any => {
+				const clone = JSON.parse(JSON.stringify(marker));
+				delete clone.tokenGroup;
+				return clone;
+			};
+
+			const recomputeTokenGroupVision = (groupMarker: any) => {
+				const members: any[] = groupMarker.tokenGroup?.members || [];
+				const visionKeys = ['darkvision', 'blindsight', 'tremorsense', 'truesight'] as const;
+				visionKeys.forEach((key) => {
+					const maxRange = members.reduce((max, member) => Math.max(max, member[key] || 0), 0);
+					if (maxRange > 0) groupMarker[key] = maxRange;
+					else delete groupMarker[key];
+				});
+				const strongestLight = members.reduce((best: any, member: any) => {
+					if (!member.light) return best;
+					const memberRange = (member.light.bright || 0) + (member.light.dim || 0);
+					const bestRange = best ? (best.bright || 0) + (best.dim || 0) : 0;
+					return memberRange > bestRange ? member.light : best;
+				}, null);
+				if (strongestLight) groupMarker.light = JSON.parse(JSON.stringify(strongestLight));
+				else delete groupMarker.light;
+				groupMarker.visibleToPlayers = members.some(markerContributesPlayerVision);
+				const names = members.map(getMarkerDisplayName);
+				groupMarker.tokenGroup.name = names.length <= 2 ? names.join(' + ') : `Group (${names.length} tokens)`;
+			};
+
+			const movementWallBlocks = (wall: any): boolean => {
+				const type = wall.type || 'wall';
+				if ((type === 'door' || type === 'secret' || type === 'pivotDoor' || type === 'secretPivot') && wall.open) return false;
+				return type !== 'window' || !wall.open;
+			};
+
+			const getMovementWallSegments = () => {
+				return (config.walls || [])
+					.filter((wall: any) => wall?.start && wall?.end && movementWallBlocks(wall))
+					.map((wall: any) => {
+						if (isPivotType(wall.type) && wall.open) {
+							const hinge = (wall.pivotEnd || 'start') === 'start' ? wall.start : wall.end;
+							const free = (wall.pivotEnd || 'start') === 'start' ? wall.end : wall.start;
+							const dx = free.x - hinge.x;
+							const dy = free.y - hinge.y;
+							const dir = wall.openDirection || 1;
+							const rotated = { x: hinge.x - dy * dir, y: hinge.y + dx * dir };
+							return (wall.pivotEnd || 'start') === 'start'
+								? { ...wall, start: hinge, end: rotated }
+								: { ...wall, start: rotated, end: hinge };
+						}
+						return wall;
+					});
+			};
+
+			const segmentsIntersect = (a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }, d: { x: number; y: number }): boolean => {
+				const orient = (p: { x: number; y: number }, q: { x: number; y: number }, r: { x: number; y: number }) =>
+					(q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+				const onSeg = (p: { x: number; y: number }, q: { x: number; y: number }, r: { x: number; y: number }) =>
+					Math.min(p.x, r.x) - 0.001 <= q.x && q.x <= Math.max(p.x, r.x) + 0.001 &&
+					Math.min(p.y, r.y) - 0.001 <= q.y && q.y <= Math.max(p.y, r.y) + 0.001;
+				const o1 = orient(a, b, c);
+				const o2 = orient(a, b, d);
+				const o3 = orient(c, d, a);
+				const o4 = orient(c, d, b);
+				if (Math.abs(o1) < 0.001 && onSeg(a, c, b)) return true;
+				if (Math.abs(o2) < 0.001 && onSeg(a, d, b)) return true;
+				if (Math.abs(o3) < 0.001 && onSeg(c, a, d)) return true;
+				if (Math.abs(o4) < 0.001 && onSeg(c, b, d)) return true;
+				return (o1 > 0) !== (o2 > 0) && (o3 > 0) !== (o4 > 0);
+			};
+
+			const tokenMoveBlocked = (from: { x: number; y: number }, to: { x: number; y: number }): boolean => {
+				if (Math.abs(from.x - to.x) < 0.001 && Math.abs(from.y - to.y) < 0.001) return false;
+				return getMovementWallSegments().some((wall: any) => segmentsIntersect(from, to, wall.start, wall.end));
+			};
+
+			const snapPointForGroupRelease = (x: number, y: number): { x: number; y: number } => {
+				const gsW = config.gridSizeW || config.gridSize || 70;
+				const gsH = config.gridSizeH || config.gridSize || 70;
+				const ox = config.gridOffsetX || 0;
+				const oy = config.gridOffsetY || 0;
+				return {
+					x: ox + Math.round((x - ox - gsW / 2) / gsW) * gsW + gsW / 2,
+					y: oy + Math.round((y - oy - gsH / 2) / gsH) * gsH + gsH / 2,
+				};
+			};
+
+			const findSafeGroupReleasePosition = (groupMarker: any, occupied: { x: number; y: number }[]): { x: number; y: number } | null => {
+				const gsW = config.gridSizeW || config.gridSize || 70;
+				const gsH = config.gridSizeH || config.gridSize || 70;
+				const dirs = [
+					{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 },
+					{ x: 1, y: 1 }, { x: 1, y: -1 }, { x: -1, y: 1 }, { x: -1, y: -1 },
+				];
+				for (let ring = 1; ring <= 4; ring++) {
+					for (const dir of dirs) {
+						const candidate = snapPointForGroupRelease(groupMarker.position.x + dir.x * gsW * ring, groupMarker.position.y + dir.y * gsH * ring);
+						if (tokenMoveBlocked(groupMarker.position, candidate)) continue;
+						const occupiedHit = occupied.some((p) => Math.hypot(p.x - candidate.x, p.y - candidate.y) < Math.min(gsW, gsH) * 0.5);
+						if (!occupiedHit) return candidate;
+					}
+				}
+				return null;
+			};
+
+			const groupSelectedMarkers = () => {
+				if (!config.markers || selectedMarkerIndices.length < 2) return;
+				const uniqueIndices = [...new Set(selectedMarkerIndices)]
+					.filter((i) => config.markers[i] && !isTokenGroup(config.markers[i]))
+					.sort((a, b) => a - b);
+				if (uniqueIndices.length < 2) {
+					new Notice('Select at least two normal tokens to create a group');
+					return;
+				}
+
+				saveToHistory();
+				const members = uniqueIndices.map((i) => cloneMarkerForGroup(config.markers[i]));
+				const avgX = members.reduce((sum, marker) => sum + marker.position.x, 0) / members.length;
+				const avgY = members.reduce((sum, marker) => sum + marker.position.y, 0) / members.length;
+				const groupMarker: any = {
+					id: `token_group_${Date.now()}`,
+					position: snapPointForGroupRelease(avgX, avgY),
+					placedAt: Date.now(),
+					layer: config.activeLayer === 'Background' ? 'Player' : (members[0]?.layer || config.activeLayer || 'Player'),
+					tokenGroup: { members, createdAt: Date.now(), name: '' },
+					icon: '👥',
+					color: '#3b82f6',
+					borderColor: '#ffffff',
+					pixelSize: Math.max(40, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2),
+				};
+				recomputeTokenGroupVision(groupMarker);
+				uniqueIndices.slice().sort((a, b) => b - a).forEach((i) => config.markers.splice(i, 1));
+				config.markers.push(groupMarker);
+				selectedMarkerIndices = [config.markers.length - 1];
+				selectedLightIndices = [];
+				selectedEnvAssetIds = [];
+				selectedTextAnnotationIds = [];
+				selectedWallIndices = [];
+				refreshVisionSelector();
+				redrawAnnotations();
+				plugin.saveMapAnnotations(config, el);
+				if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+				new Notice(`Grouped ${members.length} tokens`);
+			};
+
+			const getSelectedGroupAddTarget = (): { groupIndex: number; tokenIndices: number[] } | null => {
+				if (!config.markers || selectedMarkerIndices.length < 2) return null;
+				const uniqueIndices = [...new Set(selectedMarkerIndices)]
+					.filter((i) => !!config.markers[i]);
+				const groupIndices = uniqueIndices.filter((i) => isTokenGroup(config.markers[i]));
+				const tokenIndices = uniqueIndices.filter((i) => !isTokenGroup(config.markers[i]));
+				if (groupIndices.length !== 1 || tokenIndices.length < 1) return null;
+				return { groupIndex: groupIndices[0]!, tokenIndices };
+			};
+
+			const addSelectedMarkersToGroup = () => {
+				const target = getSelectedGroupAddTarget();
+				if (!target) {
+					new Notice('Select one group token and at least one normal token');
+					return;
+				}
+				const groupMarker = config.markers[target.groupIndex];
+				if (!groupMarker || !isTokenGroup(groupMarker)) return;
+
+				saveToHistory();
+				const tokensToAdd = target.tokenIndices
+					.map((i) => config.markers[i])
+					.filter(Boolean);
+				tokensToAdd.forEach((marker: any) => {
+					groupMarker.tokenGroup.members.push(cloneMarkerForGroup(marker));
+					if (selectedVisionTokenId === marker.id) selectedVisionTokenId = groupMarker.id;
+				});
+				target.tokenIndices
+					.slice()
+					.sort((a, b) => b - a)
+					.forEach((i) => config.markers.splice(i, 1));
+				recomputeTokenGroupVision(groupMarker);
+
+				const nextGroupIndex = config.markers.findIndex((m: any) => m.id === groupMarker.id);
+				selectedMarkerIndices = nextGroupIndex >= 0 ? [nextGroupIndex] : [];
+				selectedLightIndices = [];
+				selectedEnvAssetIds = [];
+				selectedTextAnnotationIds = [];
+				selectedWallIndices = [];
+				refreshVisionSelector();
+				redrawAnnotations();
+				plugin.saveMapAnnotations(config, el);
+				if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+				new Notice(`Added ${tokensToAdd.length} token${tokensToAdd.length > 1 ? 's' : ''} to ${getMarkerDisplayName(groupMarker)}`);
+			};
+
+			const releaseTokenFromGroup = (groupMarker: any, memberIndex: number): boolean => {
+				const members: any[] = groupMarker.tokenGroup?.members || [];
+				const member = members[memberIndex];
+				if (!member) return false;
+				const occupied = (config.markers || [])
+					.filter((m: any) => m.id !== groupMarker.id && m.position)
+					.map((m: any) => ({ x: m.position.x, y: m.position.y }));
+				const position = findSafeGroupReleasePosition(groupMarker, occupied);
+				if (!position) {
+					new Notice('No safe adjacent tile found for this token');
+					return false;
+				}
+				const released = cloneMarkerForGroup(member);
+				released.position = position;
+				released.layer = groupMarker.layer || released.layer || 'Player';
+				delete released.tunnelState;
+				config.markers.push(released);
+				members.splice(memberIndex, 1);
+				if (members.length === 0) {
+					const groupIndex = config.markers.findIndex((m: any) => m.id === groupMarker.id);
+					if (groupIndex >= 0) config.markers.splice(groupIndex, 1);
+					if (selectedVisionTokenId === groupMarker.id) selectedVisionTokenId = null;
+				} else {
+					recomputeTokenGroupVision(groupMarker);
+				}
+				return true;
+			};
+
+			const releaseAllTokensFromGroup = (groupMarker: any): number => {
+				let released = 0;
+				while (groupMarker.tokenGroup?.members?.length) {
+					if (!releaseTokenFromGroup(groupMarker, 0)) break;
+					released++;
+				}
+				return released;
+			};
+
 			const showMultiSelectionMenu = () => {
 				const totalSelected = selectedMarkerIndices.length + selectedLightIndices.length + 
 					selectedEnvAssetIds.length + selectedWallIndices.length;
@@ -801,6 +1064,38 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					markerBtn.addEventListener('click', () => {
 						document.body.removeChild(popup);
 						showBulkMarkerEditor();
+					});
+				}
+
+				const groupAddTarget = getSelectedGroupAddTarget();
+				if (groupAddTarget) {
+					const addRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+					addRow.style.display = 'flex';
+					addRow.style.alignItems = 'center';
+					addRow.style.gap = '6px';
+					addRow.style.padding = '6px 8px';
+
+					const addBtn = addRow.createEl('button', {
+						text: `➕ Add ${groupAddTarget.tokenIndices.length} to Group`,
+						cls: 'mod-cta'
+					});
+					addBtn.addEventListener('click', () => {
+						document.body.removeChild(popup);
+						addSelectedMarkersToGroup();
+					});
+				}
+
+				if (selectedMarkerIndices.length > 1 && !groupAddTarget) {
+					const groupRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+					groupRow.style.display = 'flex';
+					groupRow.style.alignItems = 'center';
+					groupRow.style.gap = '6px';
+					groupRow.style.padding = '6px 8px';
+
+					const groupBtn = groupRow.createEl('button', { text: '👥 Group Tokens', cls: 'mod-cta' });
+					groupBtn.addEventListener('click', () => {
+						document.body.removeChild(popup);
+						groupSelectedMarkers();
 					});
 				}
 				
@@ -1857,16 +2152,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 			// Collect tokens — only player tokens and tokens marked as "Show to Players"
 			const visionTokens = (config.markers || []).filter((m: any) => {
-				const markerDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
-				if (!markerDef) return false;
-				return markerDef.type === 'player' || m.visibleToPlayers;
+				return markerContributesPlayerVision(m);
 			});
 
 			// Count name occurrences to detect duplicates
 			const nameCounts = new Map<string, number>();
 			visionTokens.forEach((m: any) => {
-				const markerDef = plugin.markerLibrary.getMarker(m.markerId);
-				const name = markerDef?.name || m.id;
+				const name = getMarkerDisplayName(m);
 				nameCounts.set(name, (nameCounts.get(name) || 0) + 1);
 			});
 
@@ -1875,9 +2167,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 			// Token options
 			visionTokens.forEach((m: any) => {
-				const markerDef = plugin.markerLibrary.getMarker(m.markerId);
-				const icon = markerDef?.type === 'player' ? '👤' : markerDef?.type === 'creature' ? '👹' : '🧑';
-				let name = markerDef?.name || m.id;
+				const markerDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
+				const icon = isTokenGroup(m) ? '👥' : markerDef?.type === 'player' ? '👤' : markerDef?.type === 'creature' ? '👹' : '🧑';
+				let name = getMarkerDisplayName(m);
 				const isDupe = (nameCounts.get(name) || 0) > 1;
 				// Append campaign name to disambiguate duplicate token names
 				if (isDupe && markerDef?.campaign) {
@@ -1895,9 +2187,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			} else {
 				const selMarker = visionTokens.find((m: any) => m.id === selectedVisionTokenId);
 				if (selMarker) {
-					const selDef = plugin.markerLibrary.getMarker(selMarker.markerId);
-					const selIcon = selDef?.type === 'player' ? '👤' : selDef?.type === 'creature' ? '👹' : '🧑';
-					const selName = selDef?.name || selMarker.id;
+					const selDef = selMarker.markerId ? plugin.markerLibrary.getMarker(selMarker.markerId) : null;
+					const selIcon = isTokenGroup(selMarker) ? '👥' : selDef?.type === 'player' ? '👤' : selDef?.type === 'creature' ? '👹' : '🧑';
+					const selName = getMarkerDisplayName(selMarker);
 					const isDupe = (nameCounts.get(selName) || 0) > 1;
 					visionSelected.createEl('span', { text: selIcon, cls: 'dnd-map-vision-item-icon' });
 					visionSelected.createEl('span', { text: selName, cls: 'dnd-map-vision-item-name' });
@@ -1944,16 +2236,17 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				// Collect vision-eligible tokens (player tokens + "Show to Players")
 				const visionTokens = (config.markers || []).filter((m: any) => {
-					const markerDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
-					if (!markerDef) return false;
-					return markerDef.type === 'player' || m.visibleToPlayers;
+					return markerContributesPlayerVision(m);
 				});
 
 				let matchedMarker: any = null;
 				if (combatant.player || combatant.friendly) {
 					// First try direct tokenId match
 					if (combatant.tokenId) {
-						matchedMarker = visionTokens.find((m: any) => m.markerId === combatant.tokenId);
+						matchedMarker = visionTokens.find((m: any) =>
+							m.markerId === combatant.tokenId ||
+							(isTokenGroup(m) && (m.tokenGroup.members || []).some((member: any) => member.markerId === combatant.tokenId))
+						);
 					}
 
 					// Fallback: vault note token_id
@@ -1963,7 +2256,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const noteCache = plugin.app.metadataCache.getFileCache(noteFile);
 							const noteTokenId = noteCache?.frontmatter?.token_id;
 							if (noteTokenId) {
-								matchedMarker = visionTokens.find((m: any) => m.markerId === noteTokenId);
+								matchedMarker = visionTokens.find((m: any) =>
+									m.markerId === noteTokenId ||
+									(isTokenGroup(m) && (m.tokenGroup.members || []).some((member: any) => member.markerId === noteTokenId))
+								);
 							}
 						}
 					}
@@ -1971,6 +2267,15 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					// Fallback: name-based matching
 					if (!matchedMarker) {
 						matchedMarker = visionTokens.find((m: any) => {
+							if (isTokenGroup(m)) {
+								const displayName = (combatant.display || '').toLowerCase();
+								const baseName = (combatant.name || '').toLowerCase();
+								return (m.tokenGroup.members || []).some((member: any) => {
+									const memberDef = member.markerId ? plugin.markerLibrary.getMarker(member.markerId) : null;
+									const memberName = (memberDef?.name || member.name || '').toLowerCase();
+									return !!memberName && (displayName === memberName || baseName === memberName || displayName.startsWith(memberName));
+								});
+							}
 							const markerDef = plugin.markerLibrary.getMarker(m.markerId);
 							if (!markerDef) return false;
 							const markerName = markerDef.name.toLowerCase();
@@ -1986,9 +2291,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					refreshVisionSelector();
 					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 					_applyAutoPan(true);
-					const markerDef = plugin.markerLibrary.getMarker(matchedMarker.markerId);
-					const icon = markerDef?.type === 'player' ? '👤' : markerDef?.type === 'creature' ? '👹' : '🧑';
-					new Notice(`Vision synced: ${icon} ${markerDef?.name || matchedMarker.id}`);
+					const markerDef = matchedMarker.markerId ? plugin.markerLibrary.getMarker(matchedMarker.markerId) : null;
+					const icon = isTokenGroup(matchedMarker) ? '👥' : markerDef?.type === 'player' ? '👤' : markerDef?.type === 'creature' ? '👹' : '🧑';
+					new Notice(`Vision synced: ${icon} ${getMarkerDisplayName(matchedMarker)}`);
 				} else if (!matchedMarker && selectedVisionTokenId !== null) {
 					selectedVisionTokenId = null;
 					refreshVisionSelector();
@@ -3124,9 +3429,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				// Collect vision-eligible player tokens (same filter as View-as list)
 				const visionTokens = (config.markers || []).filter((m: any) => {
-					const def = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
-					if (!def) return false;
-					return def.type === 'player' || m.visibleToPlayers;
+					return markerContributesPlayerVision(m);
 				});
 
 				const vpSize = typeof pv.getViewportSize === 'function'
@@ -3289,6 +3592,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						if (!selectedVisionTokenId) return null;
 						const selMarker = (config.markers || []).find((m: any) => m.id === selectedVisionTokenId);
 						if (!selMarker) return null;
+						if (isTokenGroup(selMarker) && selMarker.visibleToPlayers) return selectedVisionTokenId;
 						const selDef = selMarker.markerId ? plugin.markerLibrary.getMarker(selMarker.markerId) : null;
 						if (selDef && selDef.type === 'player') return selectedVisionTokenId;
 						if (selMarker.visibleToPlayers) return selectedVisionTokenId;
@@ -5292,8 +5596,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					selectedMarkerIndices.forEach(i => {
 						const marker = config.markers[i];
 						if (!marker) return;
+						const radius = getPlacedMarkerRadius(marker);
 						ctx.beginPath();
-						ctx.arc(marker.position.x, marker.position.y, marker.size / 2 + 4, 0, 2 * Math.PI);
+						ctx.arc(marker.position.x, marker.position.y, radius + 4, 0, 2 * Math.PI);
 						ctx.strokeStyle = '#ff6b35';
 						ctx.lineWidth = 3;
 						ctx.stroke();
@@ -6311,6 +6616,18 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					if (!markerDef) {
 						return;
 					}
+				} else if (isTokenGroup(marker)) {
+					markerDef = {
+						id: marker.id || 'token-group',
+						name: marker.tokenGroup.name || 'Token Group',
+						type: 'player',
+						icon: marker.icon || '👥',
+						backgroundColor: marker.color || '#3b82f6',
+						borderColor: marker.borderColor || '#ffffff',
+						pixelSize: marker.pixelSize || Math.max(40, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2),
+						createdAt: marker.placedAt || 0,
+						updatedAt: Date.now()
+					};
 				} else {
 					// Old format: treat as poi with pixelSize
 					markerDef = {
@@ -6320,7 +6637,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						icon: marker.icon || '',
 						backgroundColor: marker.color || '#ff0000',
 						borderColor: '#ffffff',
-						pixelSize: 30,
+						pixelSize: marker.pixelSize || 30,
 						createdAt: 0,
 						updatedAt: 0
 					};
@@ -6414,6 +6731,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					ctx.textAlign = 'center';
 					ctx.textBaseline = 'middle';
 					ctx.fillText(markerDef.icon, position.x, position.y);
+				}
+
+				if (isTokenGroup(marker)) {
+					ctx.fillStyle = '#ffffff';
+					ctx.font = `bold ${Math.max(10, radius * 0.45)}px sans-serif`;
+					ctx.textAlign = 'center';
+					ctx.textBaseline = 'middle';
+					ctx.fillText(String(marker.tokenGroup.members.length), position.x, position.y + radius * 0.38);
 				}
 				
 				ctx.restore();
@@ -8644,8 +8969,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					let foundMarker = false;
 					for (let i = config.markers.length - 1; i >= 0; i--) {
 						const m = config.markers[i];
-						const mDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
-						const r = mDef ? getMarkerRadius(mDef) : 15;
+						const r = getPlacedMarkerRadius(m);
 						const dist = Math.sqrt(Math.pow(m.position.x - mapPos.x, 2) + Math.pow(m.position.y - mapPos.y, 2));
 						if (dist <= r) {
 							saveToHistory();
@@ -9837,17 +10161,23 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							}
 						} else {
 							// Tunnel not found, allow free movement
-							draggedMarker.position = {
+							const desiredPosition = {
 								x: mapPos.x + dragOffsetX,
 								y: mapPos.y + dragOffsetY
 							};
+							if (!markerMovementBlockedByWalls(draggedMarker) || !tokenMoveBlocked(draggedMarker.position, desiredPosition)) {
+								draggedMarker.position = desiredPosition;
+							}
 						}
 					} else {
 						// Normal free movement
-						draggedMarker.position = {
+						const desiredPosition = {
 							x: mapPos.x + dragOffsetX,
 							y: mapPos.y + dragOffsetY
 						};
+						if (!markerMovementBlockedByWalls(draggedMarker) || !tokenMoveBlocked(draggedMarker.position, desiredPosition)) {
+							draggedMarker.position = desiredPosition;
+						}
 					}
 					
 					// Track tunnel path if marker is actively burrowing (creating a tunnel)
@@ -10449,15 +10779,26 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					// Drop marker: snap creature types to grid
 					const m = config.markers[draggingMarkerIndex];
 					const mDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
+
+					if (isTokenGroup(m) && config.gridSize) {
+						const snapped = snapPointForGroupRelease(m.position.x, m.position.y);
+						if (!tokenMoveBlocked(m.position, snapped)) {
+							m.position.x = snapped.x;
+							m.position.y = snapped.y;
+						}
+					}
 					
 					// First snap the token to grid (if applicable)
 					if (mDef && ['player', 'npc', 'creature'].includes(mDef.type) && config.gridSize) {
 						const squares = CREATURE_SIZE_SQUARES[mDef.creatureSize || 'medium'] || 1;
 						const snapped = snapTokenToGrid(m.position.x, m.position.y, squares);
-						const snapDx = snapped.x - m.position.x;
-						const snapDy = snapped.y - m.position.y;
-						m.position.x = snapped.x;
-						m.position.y = snapped.y;
+						const snapAllowed = !markerMovementBlockedByWalls(m) || !tokenMoveBlocked(m.position, snapped);
+						const snapDx = snapAllowed ? snapped.x - m.position.x : 0;
+						const snapDy = snapAllowed ? snapped.y - m.position.y : 0;
+						if (snapAllowed) {
+							m.position.x = snapped.x;
+							m.position.y = snapped.y;
+						}
 						
 						// Update anchored AoE effects with snap delta
 						if (snapDx !== 0 || snapDy !== 0) {
@@ -10605,7 +10946,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					// Only process if rectangle is large enough (not just a click)
 					if (rectWidth > 5 && rectHeight > 5) {
 						// Find elements within the selection rectangle based on current view filter
-						const canSelectMarkers = config.activeLayer === 'Tokens';
+						const canSelectMarkers = config.activeLayer !== 'Background';
 						const canSelectLights = config.activeLayer === 'Background' && (backgroundEditView === 'all' || backgroundEditView === 'lights');
 						const canSelectEnvAssets = config.activeLayer === 'Background' && (backgroundEditView === 'all' || backgroundEditView === 'env-assets');
 						const canSelectWalls = config.activeLayer === 'Background' && (backgroundEditView === 'all' || backgroundEditView === 'walls');
@@ -11397,7 +11738,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				for (let i = config.markers.length - 1; i >= 0; i--) {
 					const m = config.markers[i];
 					const mDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
-					const r = mDef ? getMarkerRadius(mDef) : 15;
+					const r = getPlacedMarkerRadius(m);
 					const dist = Math.sqrt(Math.pow(m.position.x - mapPos.x, 2) + Math.pow(m.position.y - mapPos.y, 2));
 					if (dist <= r) {
 						e.preventDefault();
@@ -11439,6 +11780,43 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						
 						// Separator
 						contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+
+						if (isTokenGroup(m)) {
+							const groupHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
+							groupHeader.textContent = `Token Group (${m.tokenGroup.members.length})`;
+
+							(m.tokenGroup.members as any[]).forEach((member: any, memberIndex: number) => {
+								const memberRow = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
+								memberRow.textContent = `↗ Release ${getMarkerDisplayName(member)}`;
+								memberRow.addEventListener('click', () => {
+									saveToHistory();
+									const ok = releaseTokenFromGroup(m, memberIndex);
+									if (ok) {
+										refreshVisionSelector();
+										redrawAnnotations();
+										plugin.saveMapAnnotations(config, el);
+										if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+										new Notice(`${getMarkerDisplayName(member)} released from group`);
+									}
+									if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
+								});
+							});
+
+							const releaseAllRow = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
+							releaseAllRow.textContent = '↗ Release All Tokens';
+							releaseAllRow.addEventListener('click', () => {
+								saveToHistory();
+								const count = releaseAllTokensFromGroup(m);
+								refreshVisionSelector();
+								redrawAnnotations();
+								plugin.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
+								new Notice(count > 0 ? `Released ${count} tokens` : 'No safe adjacent tile found');
+							});
+
+							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+						}
 						
 						// Show to Players toggle (for non-player tokens)
 						if (mDef && mDef.type !== 'player') {
@@ -12295,6 +12673,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							saveToHistory();
 							deactivateTunnelsForMarker(config.tunnels, config.markers, m.id);
 							config.markers.splice(i, 1);
+							if (selectedVisionTokenId === m.id) selectedVisionTokenId = null;
 							redrawAnnotations();
 							plugin.saveMapAnnotations(config, el);
 							updateGridToolsVisibility();
