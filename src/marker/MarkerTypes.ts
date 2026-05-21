@@ -67,6 +67,10 @@ export interface MarkerDefinition {
 	pixelSize?: number;
 	// Darkvision range in feet (for player/npc/creature tokens)
 	darkvision?: number;
+	// Additional special senses
+	blindsight?: number;
+	tremorsense?: number;
+	truesight?: number;
 	// Campaign name for disambiguating same-name tokens across campaigns
 	campaign?: string;
 	createdAt: number;

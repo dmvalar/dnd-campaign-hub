@@ -6,6 +6,7 @@ import { TokenEditorWidget } from '../marker/TokenEditorWidget';
 import { TEMPLATE_VERSIONS } from "../migration";
 import { NPC_TEMPLATE } from '../templates';
 import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
+import { parseVisionSenses } from '../utils/VisionSenses';
 
 export class NPCCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -1017,6 +1018,7 @@ export class NPCCreationModal extends Modal {
         // Update the map token using widget values + computed fields
         const now = Date.now();
         const existingMarker = this.plugin.markerLibrary.getMarker(tokenId);
+        const visionSenses = parseVisionSenses(this.senses);
         const tokenAppearance = this.tokenEditor?.getValues();
         const tokenDef: MarkerDefinition = {
           ...(existingMarker || {}),
@@ -1029,7 +1031,10 @@ export class NPCCreationModal extends Modal {
           imageFile: tokenAppearance?.imageFile || undefined,
           imageFit: tokenAppearance?.imageFit !== 'cover' ? tokenAppearance?.imageFit : undefined,
           creatureSize: mappedSize,
-          darkvision: darkvision || existingMarker?.darkvision || 0,
+          darkvision: visionSenses.darkvision || existingMarker?.darkvision || 0,
+          blindsight: visionSenses.blindsight || existingMarker?.blindsight || 0,
+          tremorsense: visionSenses.tremorsense || existingMarker?.tremorsense || 0,
+          truesight: visionSenses.truesight || existingMarker?.truesight || 0,
           campaign: campaignName,
           createdAt: existingMarker?.createdAt || now,
           updatedAt: now

@@ -55,6 +55,9 @@ export class MarkerLibraryModal extends Modal {
 	private creatureSizeSettingEl!: HTMLElement;
 	private pixelSizeSettingEl!: HTMLElement;
 	private darkvisionSettingEl!: HTMLElement;
+	private blindsightSettingEl!: HTMLElement;
+	private tremorsenseSettingEl!: HTMLElement;
+	private truesightSettingEl!: HTMLElement;
 
 	// Form values
 	private name: string = '';
@@ -66,6 +69,9 @@ export class MarkerLibraryModal extends Modal {
 	private creatureSize: CreatureSize = 'medium';
 	private pixelSize: number = 40;
 	private darkvision: number = 0;
+	private blindsight: number = 0;
+	private tremorsense: number = 0;
+	private truesight: number = 0;
 
 	constructor(
 		app: App,
@@ -88,6 +94,9 @@ export class MarkerLibraryModal extends Modal {
 			this.creatureSize = marker.creatureSize || 'medium';
 			this.pixelSize = marker.pixelSize || 40;
 			this.darkvision = marker.darkvision || 0;
+			this.blindsight = marker.blindsight || 0;
+			this.tremorsense = marker.tremorsense || 0;
+			this.truesight = marker.truesight || 0;
 		}
 	}
 
@@ -152,7 +161,7 @@ export class MarkerLibraryModal extends Modal {
 			);
 		this.creatureSizeSettingEl = creatureSizeSetting.settingEl;
 
-		// Darkvision (shown for player/npc/creature)
+		// Vision ranges (shown for player/npc/creature)
 		const darkvisionSetting = new Setting(contentEl)
 			.setName('Darkvision')
 			.setDesc('Default darkvision range in feet (0-300)')
@@ -165,6 +174,45 @@ export class MarkerLibraryModal extends Modal {
 				})
 			);
 		this.darkvisionSettingEl = darkvisionSetting.settingEl;
+
+		const blindsightSetting = new Setting(contentEl)
+			.setName('Blindsight')
+			.setDesc('Default blindsight range in feet (0-300)')
+			.addText(text => text
+				.setValue(this.blindsight > 0 ? this.blindsight.toString() : '')
+				.setPlaceholder('0')
+				.onChange(value => {
+					const num = parseInt(value) || 0;
+					this.blindsight = Math.max(0, Math.min(300, num));
+				})
+			);
+		this.blindsightSettingEl = blindsightSetting.settingEl;
+
+		const tremorsenseSetting = new Setting(contentEl)
+			.setName('Tremorsense')
+			.setDesc('Default tremorsense range in feet (0-300)')
+			.addText(text => text
+				.setValue(this.tremorsense > 0 ? this.tremorsense.toString() : '')
+				.setPlaceholder('0')
+				.onChange(value => {
+					const num = parseInt(value) || 0;
+					this.tremorsense = Math.max(0, Math.min(300, num));
+				})
+			);
+		this.tremorsenseSettingEl = tremorsenseSetting.settingEl;
+
+		const truesightSetting = new Setting(contentEl)
+			.setName('Truesight')
+			.setDesc('Default truesight range in feet (0-300)')
+			.addText(text => text
+				.setValue(this.truesight > 0 ? this.truesight.toString() : '')
+				.setPlaceholder('0')
+				.onChange(value => {
+					const num = parseInt(value) || 0;
+					this.truesight = Math.max(0, Math.min(300, num));
+				})
+			);
+		this.truesightSettingEl = truesightSetting.settingEl;
 
 		// Pixel Size (shown for poi/other)
 		const pixelSizeSetting = new Setting(contentEl)
@@ -313,6 +361,9 @@ export class MarkerLibraryModal extends Modal {
 		const isCreature = ['player', 'npc', 'creature'].includes(this.type);
 		this.creatureSizeSettingEl.style.display = isCreature ? '' : 'none';
 		this.darkvisionSettingEl.style.display = isCreature ? '' : 'none';
+		this.blindsightSettingEl.style.display = isCreature ? '' : 'none';
+		this.tremorsenseSettingEl.style.display = isCreature ? '' : 'none';
+		this.truesightSettingEl.style.display = isCreature ? '' : 'none';
 		this.pixelSizeSettingEl.style.display = isCreature ? 'none' : '';
 	}
 
@@ -390,6 +441,15 @@ export class MarkerLibraryModal extends Modal {
 			def.creatureSize = this.creatureSize;
 			if (this.darkvision > 0) {
 				def.darkvision = this.darkvision;
+			}
+			if (this.blindsight > 0) {
+				def.blindsight = this.blindsight;
+			}
+			if (this.tremorsense > 0) {
+				def.tremorsense = this.tremorsense;
+			}
+			if (this.truesight > 0) {
+				def.truesight = this.truesight;
 			}
 		} else {
 			def.pixelSize = this.pixelSize;

@@ -8,6 +8,7 @@ import { TEMPLATE_VERSIONS } from '../migration';
 import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
 import { createVaultSrdLinkResolver, importFromDndBeyond, StatblockEntry } from './DndBeyondCharacterImport';
 import { parsePDFCharacterSheet, dumpPDFFields } from './PDFCharacterParser';
+import { parseVisionSenses } from '../utils/VisionSenses';
 
 export class PCCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -791,6 +792,7 @@ export class PCCreationModal extends Modal {
         // Update the map token using widget values + computed fields
         const now = Date.now();
         const existingMarker = this.plugin.markerLibrary.getMarker(tokenId);
+        const visionSenses = parseVisionSenses(this.senses);
         const tokenAppearance = this.tokenEditor?.getValues();
         const tokenDef: MarkerDefinition = {
           ...(existingMarker || {}),
@@ -803,6 +805,10 @@ export class PCCreationModal extends Modal {
           imageFile: tokenAppearance?.imageFile || undefined,
           imageFit: tokenAppearance?.imageFit !== 'cover' ? tokenAppearance?.imageFit : undefined,
           creatureSize: existingMarker?.creatureSize || 'medium',
+          darkvision: visionSenses.darkvision || existingMarker?.darkvision || 0,
+          blindsight: visionSenses.blindsight || existingMarker?.blindsight || 0,
+          tremorsense: visionSenses.tremorsense || existingMarker?.tremorsense || 0,
+          truesight: visionSenses.truesight || existingMarker?.truesight || 0,
           campaign: campaignName,
           createdAt: existingMarker?.createdAt || now,
           updatedAt: now
@@ -821,6 +827,7 @@ export class PCCreationModal extends Modal {
         // Create a map token for this PC using widget values
         const now = Date.now();
         tokenId = this.plugin.markerLibrary.generateId();
+        const visionSenses = parseVisionSenses(this.senses);
         const tokenAppearance = this.tokenEditor?.getValues();
         const tokenDef: MarkerDefinition = {
           id: tokenId,
@@ -832,6 +839,10 @@ export class PCCreationModal extends Modal {
           imageFile: tokenAppearance?.imageFile || undefined,
           imageFit: tokenAppearance?.imageFit !== 'cover' ? tokenAppearance?.imageFit : undefined,
           creatureSize: 'medium',
+          darkvision: visionSenses.darkvision || 0,
+          blindsight: visionSenses.blindsight || 0,
+          tremorsense: visionSenses.tremorsense || 0,
+          truesight: visionSenses.truesight || 0,
           campaign: campaignName,
           createdAt: now,
           updatedAt: now

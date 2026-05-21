@@ -3,6 +3,7 @@ import type DndCampaignHubPlugin from "../main";
 import { MarkerDefinition, CreatureSize, CREATURE_SIZE_SQUARES } from "../marker/MarkerTypes";
 import { TokenEditorWidget } from '../marker/TokenEditorWidget';
 import { TEMPLATE_VERSIONS } from "../migration";
+import { parseVisionSenses } from '../utils/VisionSenses';
 
 export class CreatureCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -1033,14 +1034,8 @@ export class CreatureCreationModal extends Modal {
       // Preserve existing marker fields on edit
       const existingMarker = this.plugin.markerLibrary.getMarker(this.tokenId);
 
-      // Extract darkvision range from senses (e.g. "Darkvision 60 ft." → 60)
-      let parsedDarkvision = existingMarker?.darkvision || 0;
-      if (this.senses) {
-        const dvMatch = this.senses.match(/darkvision\s+(\d+)\s*ft/i);
-        if (dvMatch && dvMatch[1]) {
-          parsedDarkvision = parseInt(dvMatch[1]);
-        }
-      }
+      // Extract all vision types from senses
+      const visionSenses = parseVisionSenses(this.senses);
 
       const tokenAppearance = this.tokenEditor?.getValues();
       const tokenDef: MarkerDefinition = {
@@ -1054,7 +1049,10 @@ export class CreatureCreationModal extends Modal {
         imageFile: tokenAppearance?.imageFile || undefined,
         imageFit: tokenAppearance?.imageFit !== 'cover' ? tokenAppearance?.imageFit : undefined,
         creatureSize: mappedSize,
-        darkvision: parsedDarkvision,
+        darkvision: visionSenses.darkvision || existingMarker?.darkvision || 0,
+        blindsight: visionSenses.blindsight || existingMarker?.blindsight || 0,
+        tremorsense: visionSenses.tremorsense || existingMarker?.tremorsense || 0,
+        truesight: visionSenses.truesight || existingMarker?.truesight || 0,
         createdAt: existingMarker?.createdAt || now,
         updatedAt: now
       };
