@@ -362,6 +362,7 @@ Additional SRD data folders (ability scores, classes, conditions, equipment, and
 
 See the [docs/](docs/) folder for detailed guides:
 
+- [First steps: install and create your first campaign](docs/first-steps.md)
 - [Getting started](docs/getting-started.md)
 - [Campaign management](docs/campaign-management.md)
 - [Sessions](docs/sessions.md)
