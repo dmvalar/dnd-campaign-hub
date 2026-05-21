@@ -337,6 +337,7 @@ export class PlayerMapView extends ItemView {
       const m = markers[i];
       n(m.position?.x || 0); n(m.position?.y || 0);
       n(m.darkvision || 0);
+      n(m.truesight || 0);
       n(m.light?.bright || 0); n(m.light?.dim || 0);
       n(m.visibleToPlayers ? 1 : 0);
       if (m.elevation) { n(m.elevation.height || 0); n(m.elevation.depth || 0); }
@@ -4029,6 +4030,7 @@ export class PlayerMapView extends ItemView {
       }
       n(px); n(py);
       n(m.darkvision || 0);
+      n(m.truesight || 0);
       n(m.light?.bright || 0); n(m.light?.dim || 0);
       if (m.light?.type) s(m.light.type);
       n(m.visibleToPlayers ? 1 : 0);
@@ -4261,7 +4263,7 @@ export class PlayerMapView extends ItemView {
     // If selectedVisionTokenId is set, use ONLY that token (any type: player, creature, NPC)
     // Otherwise, use all player-type tokens + visibleToPlayers tokens (default combined vision)
     // SKIP tokens in tunnels (underground) - they don't reveal above-ground fog
-    const playerTokens: { x: number; y: number; darkvision: number; elevation: number }[] = [];
+    const playerTokens: { x: number; y: number; darkvision: number; truesight: number; elevation: number }[] = [];
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
         if (!marker.markerId) return;
@@ -4289,6 +4291,7 @@ export class PlayerMapView extends ItemView {
             x: marker.position.x,
             y: marker.position.y,
             darkvision: marker.darkvision || 0,
+            truesight: marker.truesight || 0,
             elevation: (marker.elevation?.height || 0) - (marker.elevation?.depth || 0)
           });
         }
@@ -4373,6 +4376,34 @@ export class PlayerMapView extends ItemView {
               }
               playerDarkvisionCtx.closePath();
               playerDarkvisionCtx.fill();
+            }
+          }
+        }
+      });
+    }
+
+    // Create player TRUESIGHT mask. Truesight can pierce effective magic darkness,
+    // so it is applied after magic darkness has blocked normal vision, lights, and darkvision.
+    const playerTruesightCanvas = _canvasPool.acquire(w, h);
+    const playerTruesightCtx = playerTruesightCanvas.getContext('2d');
+
+    if (playerTruesightCtx && playerTokens.length > 0) {
+      playerTruesightCtx.fillStyle = 'white';
+      playerTokens.forEach((pt: any) => {
+        if (pt.truesight > 0) {
+          const radiusPx = pt.truesight * pixelsPerFoot;
+          const visPoly = this.computeVisibilityPolygon(pt.x, pt.y, radiusPx, walls, pt.elevation, wallIndex);
+          if (visPoly.length >= 3) {
+            playerTruesightCtx.beginPath();
+            const first = visPoly[0];
+            if (first) {
+              playerTruesightCtx.moveTo(first.x, first.y);
+              for (let i = 1; i < visPoly.length; i++) {
+                const pt = visPoly[i];
+                if (pt) playerTruesightCtx.lineTo(pt.x, pt.y);
+              }
+              playerTruesightCtx.closePath();
+              playerTruesightCtx.fill();
             }
           }
         }
@@ -4614,6 +4645,11 @@ export class PlayerMapView extends ItemView {
       if (_allLightsMask) {
         grayCtx.drawImage(_allLightsMask, 0, 0);
       }
+
+      // Truesight sees through darkness without the darkvision grayscale tint.
+      if (playerTruesightCtx) {
+        grayCtx.drawImage(playerTruesightCanvas, 0, 0);
+      }
     }
 
     // Re-apply effective magic darkness on top of light/darkvision reveals.
@@ -4632,6 +4668,12 @@ export class PlayerMapView extends ItemView {
         fogCtx.drawImage(mdBlack, 0, 0);
       }
       _canvasPool.release(mdBlack);
+    }
+
+    if (playerTruesightCtx) {
+      fogCtx.globalCompositeOperation = 'destination-out';
+      fogCtx.drawImage(playerTruesightCanvas, 0, 0);
+      fogCtx.globalCompositeOperation = 'source-over';
     }
 
     // Draw fully opaque fog onto composite canvas (for caching)
@@ -4819,7 +4861,7 @@ export class PlayerMapView extends ItemView {
 
     _canvasPool.release(_fogComp);
     _canvasPool.release(_mdMask);
-    _canvasPool.releaseAll(playerVisionCanvas, playerDarkvisionCanvas, grayscaleCanvas, _allLightsMask);
+    _canvasPool.releaseAll(playerVisionCanvas, playerDarkvisionCanvas, playerTruesightCanvas, grayscaleCanvas, _allLightsMask);
   }
 
   /**
