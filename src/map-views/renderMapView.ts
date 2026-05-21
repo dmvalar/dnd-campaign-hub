@@ -9099,9 +9099,20 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						layer: config.activeLayer || 'Player'
 					};
 					
-					// Auto-apply darkvision from marker definition if it exists
-					if (mDef && mDef.darkvision && mDef.darkvision > 0) {
-						(markerRef as any).darkvision = mDef.darkvision;
+					// Auto-apply vision fields from marker definition if they exist
+					if (mDef) {
+						if (mDef.darkvision && mDef.darkvision > 0) {
+							(markerRef as any).darkvision = mDef.darkvision;
+						}
+						if (mDef.blindsight && mDef.blindsight > 0) {
+							(markerRef as any).blindsight = mDef.blindsight;
+						}
+						if (mDef.tremorsense && mDef.tremorsense > 0) {
+							(markerRef as any).tremorsense = mDef.tremorsense;
+						}
+						if (mDef.truesight && mDef.truesight > 0) {
+							(markerRef as any).truesight = mDef.truesight;
+						}
 					}
 					
 					// Auto-apply tile ground elevation (if token is a creature on an elevated tile)
@@ -11647,6 +11658,120 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								}
 							});
 							
+							// Blindsight input
+							const blindRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
+							blindRow.createEl('span', { cls: 'dnd-map-context-aoe-label', text: 'Blindsight:' });
+							const blindInput = blindRow.createEl('input', {
+								cls: 'dnd-map-darkvision-input',
+								attr: { 
+									type: 'number', 
+									min: '0', 
+									max: '300',
+									step: '5',
+									placeholder: '0',
+									value: m.blindsight || ''
+								}
+							});
+							blindRow.createEl('span', { text: 'ft' });
+							
+							blindInput.addEventListener('change', () => {
+								saveToHistory();
+								const value = parseInt(blindInput.value) || 0;
+								if (value > 0) {
+									m.blindsight = value;
+								} else {
+									delete m.blindsight;
+								}
+								redrawAnnotations();
+								plugin.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								refreshVisionSelector();
+								new Notice(value > 0 ? `Blindsight set to ${value} ft` : 'Blindsight removed');
+							});
+							
+							blindInput.addEventListener('click', (e) => e.stopPropagation());
+							blindInput.addEventListener('keydown', (e) => {
+								if (e.key === 'Enter') {
+									blindInput.blur();
+								}
+							});
+							
+							// Tremorsense input
+							const tremRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
+							tremRow.createEl('span', { cls: 'dnd-map-context-aoe-label', text: 'Tremorsense:' });
+							const tremInput = tremRow.createEl('input', {
+								cls: 'dnd-map-darkvision-input',
+								attr: { 
+									type: 'number', 
+									min: '0', 
+									max: '300',
+									step: '5',
+									placeholder: '0',
+									value: m.tremorsense || ''
+								}
+							});
+							tremRow.createEl('span', { text: 'ft' });
+							
+							tremInput.addEventListener('change', () => {
+								saveToHistory();
+								const value = parseInt(tremInput.value) || 0;
+								if (value > 0) {
+									m.tremorsense = value;
+								} else {
+									delete m.tremorsense;
+								}
+								redrawAnnotations();
+								plugin.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								refreshVisionSelector();
+								new Notice(value > 0 ? `Tremorsense set to ${value} ft` : 'Tremorsense removed');
+							});
+							
+							tremInput.addEventListener('click', (e) => e.stopPropagation());
+							tremInput.addEventListener('keydown', (e) => {
+								if (e.key === 'Enter') {
+									tremInput.blur();
+								}
+							});
+							
+							// Truesight input
+							const trueRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
+							trueRow.createEl('span', { cls: 'dnd-map-context-aoe-label', text: 'Truesight:' });
+							const trueInput = trueRow.createEl('input', {
+								cls: 'dnd-map-darkvision-input',
+								attr: { 
+									type: 'number', 
+									min: '0', 
+									max: '300',
+									step: '5',
+									placeholder: '0',
+									value: m.truesight || ''
+								}
+							});
+							trueRow.createEl('span', { text: 'ft' });
+							
+							trueInput.addEventListener('change', () => {
+								saveToHistory();
+								const value = parseInt(trueInput.value) || 0;
+								if (value > 0) {
+									m.truesight = value;
+								} else {
+									delete m.truesight;
+								}
+								redrawAnnotations();
+								plugin.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								refreshVisionSelector();
+								new Notice(value > 0 ? `Truesight set to ${value} ft` : 'Truesight removed');
+							});
+							
+							trueInput.addEventListener('click', (e) => e.stopPropagation());
+							trueInput.addEventListener('keydown', (e) => {
+								if (e.key === 'Enter') {
+									trueInput.blur();
+								}
+							});
+							
 							// Border Color control
 							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
 							const borderHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
@@ -13176,9 +13301,18 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							markerRef.borderColor = borderColor;
 						}
 
-						// Auto-apply darkvision from marker definition
+						// Auto-apply vision fields from marker definition
 						if (markerDef.darkvision && markerDef.darkvision > 0) {
 							markerRef.darkvision = markerDef.darkvision;
+						}
+						if (markerDef.blindsight && markerDef.blindsight > 0) {
+							markerRef.blindsight = markerDef.blindsight;
+						}
+						if (markerDef.tremorsense && markerDef.tremorsense > 0) {
+							markerRef.tremorsense = markerDef.tremorsense;
+						}
+						if (markerDef.truesight && markerDef.truesight > 0) {
+							markerRef.truesight = markerDef.truesight;
 						}
 
 						config.markers.push(markerRef);
