@@ -426,6 +426,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			let selectedLightIndices: number[] = [];
 			let selectedEnvAssetIds: string[] = [];
 			let selectedTextAnnotationIds: string[] = [];
+			let activeMultiSelectionMenu: HTMLElement | null = null;
+			let activeMultiSelectionOutsideHandler: ((ev: MouseEvent) => void) | null = null;
 
 			// ── Grid-proportional snap helpers ───────────────────────────
 			// All thresholds scale with gridSize so snapping feels consistent
@@ -728,7 +730,28 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				}, 50);
 			};
 
+			const closeActiveMultiSelectionMenu = (clearSelection = false) => {
+				if (activeMultiSelectionOutsideHandler) {
+					document.removeEventListener('mousedown', activeMultiSelectionOutsideHandler, true);
+					activeMultiSelectionOutsideHandler = null;
+				}
+				if (activeMultiSelectionMenu?.parentNode) {
+					activeMultiSelectionMenu.parentNode.removeChild(activeMultiSelectionMenu);
+				}
+				activeMultiSelectionMenu = null;
+				if (clearSelection) {
+					selectedMarkerIndices = [];
+					selectedLightIndices = [];
+					selectedEnvAssetIds = [];
+					selectedTextAnnotationIds = [];
+					selectedWallIndices = [];
+					multiSelectionRect = null;
+					redrawAnnotations();
+				}
+			};
+
 			const clearMultiSelection = () => {
+				closeActiveMultiSelectionMenu(false);
 				selectedMarkerIndices = [];
 				selectedLightIndices = [];
 				selectedEnvAssetIds = [];
@@ -1003,6 +1026,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			const showMultiSelectionMenu = () => {
 				const totalSelected = selectedMarkerIndices.length + selectedLightIndices.length + 
 					selectedEnvAssetIds.length + selectedWallIndices.length;
+
+				closeActiveMultiSelectionMenu(false);
 				
 				const popup = document.createElement('div');
 				popup.addClass('dnd-map-context-menu');
@@ -1034,7 +1059,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					
 					const lightBtn = lightRow.createEl('button', { text: '💡 Edit Lights', cls: 'mod-cta' });
 					lightBtn.addEventListener('click', () => {
-						document.body.removeChild(popup);
+						closeActiveMultiSelectionMenu(false);
 						showBulkLightEditor();
 					});
 				}
@@ -1048,7 +1073,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					
 					const wallBtn = wallRow.createEl('button', { text: '🧱 Set Wall Height', cls: 'mod-cta' });
 					wallBtn.addEventListener('click', () => {
-						document.body.removeChild(popup);
+						closeActiveMultiSelectionMenu(false);
 						showWallHeightPopup(selectedWallIndices);
 					});
 				}
@@ -1062,7 +1087,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					
 					const markerBtn = markerRow.createEl('button', { text: '🎯 Edit Markers', cls: 'mod-cta' });
 					markerBtn.addEventListener('click', () => {
-						document.body.removeChild(popup);
+						closeActiveMultiSelectionMenu(false);
 						showBulkMarkerEditor();
 					});
 				}
@@ -1080,7 +1105,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						cls: 'mod-cta'
 					});
 					addBtn.addEventListener('click', () => {
-						document.body.removeChild(popup);
+						closeActiveMultiSelectionMenu(false);
 						addSelectedMarkersToGroup();
 					});
 				}
@@ -1094,7 +1119,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 					const groupBtn = groupRow.createEl('button', { text: '👥 Group Tokens', cls: 'mod-cta' });
 					groupBtn.addEventListener('click', () => {
-						document.body.removeChild(popup);
+						closeActiveMultiSelectionMenu(false);
 						groupSelectedMarkers();
 					});
 				}
@@ -1108,7 +1133,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					
 					const assetBtn = assetRow.createEl('button', { text: '🏞️ Edit Assets', cls: 'mod-cta' });
 					assetBtn.addEventListener('click', () => {
-						document.body.removeChild(popup);
+						closeActiveMultiSelectionMenu(false);
 						showBulkAssetEditor();
 					});
 				}
@@ -1122,7 +1147,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				
 				const deleteBtn = deleteRow.createEl('button', { text: '🗑️ Delete All', cls: 'mod-warning' });
 				deleteBtn.addEventListener('click', () => {
-					document.body.removeChild(popup);
+					closeActiveMultiSelectionMenu(false);
 					deleteSelectedElements();
 				});
 				
@@ -1135,11 +1160,20 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				
 				const cancelBtn = cancelRow.createEl('button', { text: 'Cancel' });
 				cancelBtn.addEventListener('click', () => {
-					document.body.removeChild(popup);
-					clearMultiSelection();
+					closeActiveMultiSelectionMenu(true);
 				});
 				
 				document.body.appendChild(popup);
+				activeMultiSelectionMenu = popup;
+				setTimeout(() => {
+					if (activeMultiSelectionMenu !== popup) return;
+					activeMultiSelectionOutsideHandler = (ev: MouseEvent) => {
+						if (activeMultiSelectionMenu && !activeMultiSelectionMenu.contains(ev.target as Node)) {
+							closeActiveMultiSelectionMenu(true);
+						}
+					};
+					document.addEventListener('mousedown', activeMultiSelectionOutsideHandler, true);
+				}, 0);
 				// Center the popup
 				const popupRect = popup.getBoundingClientRect();
 				popup.style.left = `${Math.max(10, (window.innerWidth - popupRect.width) / 2)}px`;
@@ -3427,9 +3461,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					+ (config.gridSizeH || config.gridSize || 50)) / 2;
 				if (avgGridSize <= 0) return;
 
+				const isAutoPanEligible = (marker: any): boolean => {
+					return !!marker?.position && (marker.layer || 'Player') !== 'DM' && markerContributesPlayerVision(marker);
+				};
+
 				// Collect vision-eligible player tokens (same filter as View-as list)
 				const visionTokens = (config.markers || []).filter((m: any) => {
-					return markerContributesPlayerVision(m);
+					return isAutoPanEligible(m);
 				});
 
 				const vpSize = typeof pv.getViewportSize === 'function'
@@ -3446,16 +3484,46 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if (selectedVisionTokenId) {
 					// ── Single token: center on it with tactical awareness radius ──
 					const marker = (config.markers || []).find((m: any) => m.id === selectedVisionTokenId);
-					if (!marker?.position) return;
-					targetCx = marker.position.x;
-					targetCy = marker.position.y;
+					if (isAutoPanEligible(marker)) {
+						targetCx = marker.position.x;
+						targetCy = marker.position.y;
 
-					// Show ~12 grid squares on each side = 24 across the viewport
-					// short axis. This gives 60ft awareness radius in 5ft-grid D&D,
-					// covering movement speed + most spell/weapon ranges.
-					const tacticalSquares = 24;
-					const desiredSpan = tacticalSquares * avgGridSize;
-					targetScale = vpShort / desiredSpan;
+						// Show ~12 grid squares on each side = 24 across the viewport
+						// short axis. This gives 60ft awareness radius in 5ft-grid D&D,
+						// covering movement speed + most spell/weapon ranges.
+						const tacticalSquares = 24;
+						const desiredSpan = tacticalSquares * avgGridSize;
+						targetScale = vpShort / desiredSpan;
+					} else {
+						const playerTokens = visionTokens.filter((m: any) => m.position);
+						if (playerTokens.length === 0) return;
+						if (playerTokens.length === 1) {
+							targetCx = playerTokens[0].position.x;
+							targetCy = playerTokens[0].position.y;
+							const tacticalSquares = 24;
+							const desiredSpan = tacticalSquares * avgGridSize;
+							targetScale = vpShort / desiredSpan;
+						} else {
+							let minX = Infinity, maxX = -Infinity;
+							let minY = Infinity, maxY = -Infinity;
+							for (const m of playerTokens) {
+								minX = Math.min(minX, m.position.x);
+								maxX = Math.max(maxX, m.position.x);
+								minY = Math.min(minY, m.position.y);
+								maxY = Math.max(maxY, m.position.y);
+							}
+							const padding = 6 * avgGridSize;
+							minX -= padding;
+							maxX += padding;
+							minY -= padding;
+							maxY += padding;
+							const boxW = maxX - minX;
+							const boxH = maxY - minY;
+							targetCx = (minX + maxX) / 2;
+							targetCy = (minY + maxY) / 2;
+							targetScale = Math.min(vpW / boxW, vpH / boxH);
+						}
+					}
 				} else {
 					// ── All Players: fit bounding box with comfortable padding ──
 					const playerTokens = visionTokens.filter((m: any) => m.position);
@@ -3525,17 +3593,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				let dragRuler: { origin: { x: number; y: number }; current: { x: number; y: number }; pathCells?: { col: number; row: number; dist: number }[]; totalDist?: number; climbDist?: number; markerId?: string; visibleToPlayers?: boolean } | null = null;
 				if (markerDragOrigin && draggingMarkerIndex >= 0 && config.markers[draggingMarkerIndex]) {
 					const draggedMarker = config.markers[draggingMarkerIndex];
-					const currentPos = draggedMarker.position;
-					const pathResult = computeGridMovePath(markerDragOrigin, currentPos);
-					dragRuler = {
-						origin: { x: markerDragOrigin.x, y: markerDragOrigin.y },
-						current: { x: currentPos.x, y: currentPos.y },
-						pathCells: pathResult.cells,
-						totalDist: pathResult.totalDist,
-						climbDist: pathResult.climbDist,
-						markerId: draggedMarker.markerId,
-						visibleToPlayers: !!draggedMarker.visibleToPlayers
-					};
+					if ((draggedMarker.layer || 'Player') !== 'DM') {
+						const currentPos = draggedMarker.position;
+						const pathResult = computeGridMovePath(markerDragOrigin, currentPos);
+						dragRuler = {
+							origin: { x: markerDragOrigin.x, y: markerDragOrigin.y },
+							current: { x: currentPos.x, y: currentPos.y },
+							pathCells: pathResult.cells,
+							totalDist: pathResult.totalDist,
+							climbDist: pathResult.climbDist,
+							markerId: draggedMarker.markerId,
+							visibleToPlayers: markerContributesPlayerVision(draggedMarker)
+						};
+					}
 				}
 				// Build measure ruler data if ruler is active
 				let measureRuler: { start: { x: number; y: number }; end: { x: number; y: number } } | null = null;
@@ -3592,6 +3662,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						if (!selectedVisionTokenId) return null;
 						const selMarker = (config.markers || []).find((m: any) => m.id === selectedVisionTokenId);
 						if (!selMarker) return null;
+						if ((selMarker.layer || 'Player') === 'DM') return null;
 						if (isTokenGroup(selMarker) && selMarker.visibleToPlayers) return selectedVisionTokenId;
 						const selDef = selMarker.markerId ? plugin.markerLibrary.getMarker(selMarker.markerId) : null;
 						if (selDef && selDef.type === 'player') return selectedVisionTokenId;
@@ -4303,8 +4374,16 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if (_dragRedrawRafId) return; // already scheduled
 				_dragRedrawRafId = requestAnimationFrame(() => {
 					_dragRedrawRafId = 0;
-					_dragRedrawFast();
-					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					if (draggingMarkerIndex >= 0) {
+						_dragRedrawFast();
+						if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+					} else {
+						redrawAnnotations();
+						if ((draggingLightIndex >= 0 || draggingWallIndex >= 0 || envAssetDragOffset || envAssetTransformHandle) &&
+							(viewport as any)._syncPlayerView) {
+							(viewport as any)._syncPlayerView();
+						}
+					}
 				});
 			};
 
@@ -8377,6 +8456,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				// Keep viewport focused so keyboard shortcuts keep working
 				viewport.focus();
+				closeActiveMultiSelectionMenu(true);
 
 				// Auto-switch background edit view when picking a background tool
 				const bgToolViewMap: Record<string, BackgroundEditView> = {
@@ -11773,6 +11853,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								m.layer = layer;
 								redrawAnnotations();
 								plugin.saveMapAnnotations(config, el);
+								refreshVisionSelector();
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								_applyAutoPan(true);
 								if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 								new Notice(`Marker moved to ${layer} layer`);
 							});

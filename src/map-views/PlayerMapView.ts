@@ -4058,6 +4058,7 @@ export class PlayerMapView extends ItemView {
       n(m.visibleToPlayers ? 1 : 0);
       if (m.elevation) { n(m.elevation.height || 0); n(m.elevation.depth || 0); }
       n(m.tunnelState ? 1 : 0);
+      if (m.layer) s(m.layer);
       if (m.markerId) s(m.markerId);
     }
 
@@ -4288,6 +4289,8 @@ export class PlayerMapView extends ItemView {
     const playerTokens: { x: number; y: number; darkvision: number; truesight: number; elevation: number }[] = [];
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
+        if ((marker.layer || 'Player') === 'DM') return;
+
         // Skip tokens in tunnels (underground)
         if (marker.tunnelState) {
           return;
@@ -4600,6 +4603,7 @@ export class PlayerMapView extends ItemView {
     const darkvisionMarkers: any[] = [];
     if (config.markers && config.markers.length > 0) {
       config.markers.forEach((marker: any) => {
+        if ((marker.layer || 'Player') === 'DM') return;
         if (!marker.darkvision || marker.darkvision <= 0) return;
         
         // Skip tokens in tunnels - they don't reveal surface fog
