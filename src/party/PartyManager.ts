@@ -9,6 +9,16 @@ import type {
   PartyManagerData,
   PartyChangeListener,
 } from "./PartyTypes";
+import { parseYamlFrontmatter, updateYamlFrontmatter } from "../utils/YamlFrontmatter";
+
+export interface PartyMemberStatUpdate {
+  level?: number;
+  hp?: number;
+  maxHp?: number;
+  thp?: number;
+  ac?: number;
+  initBonus?: number;
+}
 
 /**
  * Self-contained party and encounter management engine.
@@ -401,27 +411,72 @@ export class PartyManager {
     const file = this.app.vault.getAbstractFileByPath(notePath);
     if (!(file instanceof TFile)) return null;
 
-    const cache = this.app.metadataCache.getFileCache(file);
-    const fm = cache?.frontmatter;
-    if (!fm) return null;
+    const content = await this.app.vault.read(file);
+    const parsed = parseYamlFrontmatter(content);
+    if (!parsed.hasFrontmatter) return null;
+    const fm = parsed.frontmatter;
+    const text = (value: unknown): string | undefined => value == null || value === "" ? undefined : String(value);
+    const int = (value: unknown): number => parseInt(String(value ?? ""));
 
     return {
-      name: fm.name || file.basename,
+      name: text(fm.name) || file.basename,
       notePath,
-      level: parseInt(fm.level) || (fm.cr != null ? this.estimateLevelFromCR(String(fm.cr)) : 1),
-      hp: parseInt(fm.hp) || parseInt(fm.hp_max) || 0,
-      maxHp: parseInt(fm.hp_max) || parseInt(fm.hp) || 0,
-      thp: parseInt(fm.thp) || 0,
-      ac: parseInt(fm.ac) || 10,
+      level: int(fm.level) || (fm.cr != null ? this.estimateLevelFromCR(String(fm.cr)) : 1),
+      hp: int(fm.hp) || int(fm.hp_max) || 0,
+      maxHp: int(fm.hp_max) || int(fm.hp) || 0,
+      thp: int(fm.thp) || 0,
+      ac: int(fm.ac) || 10,
       initBonus: parseInt(String(fm.init_bonus || "0").replace(/[^-\d]/g, "")) || 0,
-      tokenId: fm.token_id || undefined,
-      player: fm.player || undefined,
-      race: fm.race || fm.type || undefined,
-      class: fm.class || fm.subtype || undefined,
+      tokenId: text(fm.token_id),
+      player: text(fm.player),
+      race: text(fm.race) || text(fm.type),
+      class: text(fm.class) || text(fm.subtype),
       enabled: fm.enabled !== false,
       role: role || "pc",
       cr: fm.cr != null ? String(fm.cr) : undefined,
     };
+  }
+
+  async updateMemberStats(notePath: string, updates: PartyMemberStatUpdate): Promise<boolean> {
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (!(file instanceof TFile)) return false;
+
+    const content = await this.app.vault.read(file);
+    const parsed = parseYamlFrontmatter(content);
+    if (!parsed.hasFrontmatter) return false;
+
+    const currentHp = parseInt(String(parsed.frontmatter.hp ?? parsed.frontmatter.hp_max ?? "0")) || 0;
+    const currentMaxHp = parseInt(String(parsed.frontmatter.hp_max ?? parsed.frontmatter.hp ?? "0")) || 0;
+    const nextMaxHp = updates.maxHp !== undefined ? Math.max(1, Math.round(updates.maxHp)) : currentMaxHp;
+
+    const nextContent = updateYamlFrontmatter(content, (frontmatter) => {
+      const out = { ...frontmatter };
+      if (updates.level !== undefined) out.level = Math.max(1, Math.min(20, Math.round(updates.level)));
+      if (updates.maxHp !== undefined) out.hp_max = nextMaxHp;
+      if (updates.hp !== undefined) out.hp = Math.max(0, Math.min(nextMaxHp || Math.round(updates.hp), Math.round(updates.hp)));
+      else if (updates.maxHp !== undefined) out.hp = Math.max(0, Math.min(nextMaxHp, currentHp));
+      if (updates.thp !== undefined) out.thp = Math.max(0, Math.round(updates.thp));
+      if (updates.ac !== undefined) out.ac = Math.max(0, Math.round(updates.ac));
+      if (updates.initBonus !== undefined) out.init_bonus = Math.round(updates.initBonus);
+      return out;
+    });
+
+    if (nextContent === content) return true;
+    await this.app.vault.modify(file, nextContent);
+    this.emit();
+    return true;
+  }
+
+  async longRest(partyId: string): Promise<number> {
+    const members = await this.resolveMembers(partyId);
+    let updated = 0;
+    for (const member of members) {
+      if (member.maxHp <= 0) continue;
+      if (await this.updateMemberStats(member.notePath, { hp: member.maxHp, thp: 0 })) {
+        updated++;
+      }
+    }
+    return updated;
   }
 
   /**

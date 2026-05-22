@@ -172,6 +172,16 @@ export class PartyManagerModal extends Modal {
       });
     }
 
+    const longRestBtn = toolbar.createEl("button", { cls: "dnd-pm-toolbar-btn", text: "Long Rest" });
+    longRestBtn.setAttribute("title", "Heal all party members to maximum HP and clear temporary HP");
+    longRestBtn.addEventListener("click", async () => {
+      const confirmed = window.confirm(`Long rest for "${party.name}"? This sets every member's HP to maximum and clears temporary HP.`);
+      if (!confirmed) return;
+      const updated = await this.manager.longRest(party.id);
+      new Notice(`Long rest complete for ${updated} member${updated !== 1 ? "s" : ""}`);
+      this.render();
+    });
+
     // Spacer to push delete to the right
     toolbar.createDiv({ cls: "dnd-pm-toolbar-spacer" });
 
@@ -417,7 +427,7 @@ export class PartyManagerModal extends Modal {
     // ── Card click toggles expand ──
     card.addEventListener("click", (e) => {
       const target = e.target as HTMLElement;
-      if (target.closest("button, a, .dnd-pm-drag-handle")) return;
+      if (target.closest("button, a, input, select, textarea, .dnd-pm-drag-handle")) return;
       if (isExpanded) {
         // Animate closed, then re-render
         const panel = card.querySelector(".dnd-pm-detail-panel") as HTMLElement;
@@ -603,6 +613,8 @@ export class PartyManagerModal extends Modal {
     addDetail("Token", member.tokenId ? "Assigned" : "None");
     addDetail("Note", member.notePath.split("/").pop()?.replace(".md", ""));
 
+    this.renderMemberStatControls(detailPanel, member);
+
     // Animate open after layout
     if (isExpanded) {
       requestAnimationFrame(() => {
@@ -617,6 +629,100 @@ export class PartyManagerModal extends Modal {
         }, { once: true });
       });
     }
+  }
+
+  private renderMemberStatControls(container: HTMLElement, member: ResolvedPartyMember) {
+    const controls = container.createDiv({ cls: "dnd-pm-stat-controls" });
+
+    const numberInput = (
+      parent: HTMLElement,
+      label: string,
+      value: number,
+      min: number,
+      max: number,
+    ): HTMLInputElement => {
+      const row = parent.createDiv({ cls: "dnd-pm-stat-edit-row" });
+      row.createSpan({ text: label, cls: "dnd-pm-detail-label" });
+      const input = row.createEl("input", {
+        cls: "dnd-pm-stat-input",
+        attr: {
+          type: "number",
+          min: String(min),
+          max: String(max),
+          step: "1",
+          value: String(value),
+        },
+      });
+      input.addEventListener("click", (e) => e.stopPropagation());
+      input.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (e.key === "Enter") input.blur();
+      });
+      return input;
+    };
+
+    const editGrid = controls.createDiv({ cls: "dnd-pm-detail-grid" });
+    const levelInput = numberInput(editGrid, "Level", member.level, 1, 20);
+    const hpInput = numberInput(editGrid, "HP", member.hp, 0, 9999);
+    const maxHpInput = numberInput(editGrid, "Max HP", member.maxHp, 1, 9999);
+    const acInput = numberInput(editGrid, "AC", member.ac, 0, 99);
+    const initInput = numberInput(editGrid, "Init Bonus", member.initBonus, -99, 99);
+
+    const actions = controls.createDiv({ cls: "dnd-pm-add-row" });
+
+    const saveBtn = actions.createEl("button", { cls: "dnd-pm-add-btn", text: "Save Stats" });
+    saveBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const maxHp = this.readInt(maxHpInput, member.maxHp, 1, 9999);
+      await this.manager.updateMemberStats(member.notePath, {
+        level: this.readInt(levelInput, member.level, 1, 20),
+        hp: this.readInt(hpInput, member.hp, 0, maxHp),
+        maxHp,
+        ac: this.readInt(acInput, member.ac, 0, 99),
+        initBonus: this.readInt(initInput, member.initBonus, -99, 99),
+      });
+      new Notice(`${member.name} updated`);
+      this.render();
+    });
+
+    const healBtn = actions.createEl("button", { cls: "dnd-pm-add-btn", text: "Heal" });
+    healBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      new PartyNumberModal(this.app, `Heal ${member.name}`, "HP to restore", 1, 1, 9999, async (amount) => {
+        const hp = Math.min(member.maxHp, member.hp + amount);
+        await this.manager.updateMemberStats(member.notePath, { hp });
+        new Notice(`${member.name} healed ${hp - member.hp} HP`);
+        this.render();
+      }).open();
+    });
+
+    const fullHealBtn = actions.createEl("button", { cls: "dnd-pm-add-btn", text: "Full Heal" });
+    fullHealBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await this.manager.updateMemberStats(member.notePath, { hp: member.maxHp });
+      new Notice(`${member.name} healed to full`);
+      this.render();
+    });
+
+    if (member.role !== "companion") {
+      const levelUpBtn = actions.createEl("button", { cls: "dnd-pm-add-btn", text: "Level Up" });
+      levelUpBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const nextLevel = Math.min(20, member.level + 1);
+        if (nextLevel === member.level) {
+          new Notice(`${member.name} is already level 20`);
+          return;
+        }
+        await this.manager.updateMemberStats(member.notePath, { level: nextLevel });
+        new Notice(`${member.name} is now level ${nextLevel}`);
+        this.render();
+      });
+    }
+  }
+
+  private readInt(input: HTMLInputElement, fallback: number, min: number, max: number): number {
+    const value = parseInt(input.value);
+    if (Number.isNaN(value)) return fallback;
+    return Math.max(min, Math.min(max, value));
   }
 
   /* ──────────────────────── Avatar ──────────────────────── */
@@ -755,6 +861,58 @@ class PartyNameModal extends Modal {
       return;
     }
     this.callback(name);
+    this.close();
+  }
+
+  onClose() { this.contentEl.empty(); }
+}
+
+/** Simple number prompt for party member stat actions. */
+class PartyNumberModal extends Modal {
+  private value: number;
+
+  constructor(
+    app: App,
+    private title: string,
+    private label: string,
+    initial: number,
+    private min: number,
+    private max: number,
+    private callback: (value: number) => void,
+  ) {
+    super(app);
+    this.value = initial;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl("h3", { text: this.title });
+
+    new Setting(contentEl).setName(this.label).addText((text) => {
+      text
+        .setValue(String(this.value))
+        .onChange((value) => {
+          const parsed = parseInt(value);
+          if (!Number.isNaN(parsed)) this.value = parsed;
+        });
+      text.inputEl.type = "number";
+      text.inputEl.min = String(this.min);
+      text.inputEl.max = String(this.max);
+      text.inputEl.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (e.key === "Enter") this.submit();
+      });
+      setTimeout(() => text.inputEl.focus(), 50);
+    });
+
+    const btns = contentEl.createDiv({ cls: "modal-button-container" });
+    btns.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+    const ok = btns.createEl("button", { text: "Apply", cls: "mod-cta" });
+    ok.addEventListener("click", () => this.submit());
+  }
+
+  private submit() {
+    const value = Math.max(this.min, Math.min(this.max, Math.round(this.value)));
+    this.callback(value);
     this.close();
   }
 

@@ -2621,6 +2621,25 @@
   font-weight: 500;
 }
 
+.dnd-pm-stat-controls {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.dnd-pm-stat-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.dnd-pm-stat-input {
+  width: 74px;
+  min-height: 26px;
+}
+
 /* Add PC Button */
 .dnd-pm-add-row {
   display: flex;
