@@ -1021,6 +1021,29 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				return def?.name || marker.name || marker.id || 'Token';
 			};
 
+			const CREATURE_SIZE_OPTIONS: Array<{ value: CreatureSize; label: string }> = [
+				{ value: 'tiny', label: 'Tiny (1/2×1/2)' },
+				{ value: 'small', label: 'Small (1×1)' },
+				{ value: 'medium', label: 'Medium (1×1)' },
+				{ value: 'large', label: 'Large (2×2)' },
+				{ value: 'huge', label: 'Huge (3×3)' },
+				{ value: 'gargantuan', label: 'Gargantuan (4×4)' },
+			];
+
+			const getMarkerDefinitionForPlacedToken = (marker: any): MarkerDefinition | null => {
+				return marker?.markerId ? plugin.markerLibrary.getMarker(marker.markerId) || null : null;
+			};
+
+			const isCreatureSizedMarker = (marker: any): boolean => {
+				const def = getMarkerDefinitionForPlacedToken(marker);
+				return !!def && ['player', 'npc', 'creature'].includes(def.type);
+			};
+
+			const getMarkerCreatureSize = (marker: any, def?: MarkerDefinition | null): CreatureSize => {
+				const size = marker?.creatureSize || def?.creatureSize || 'medium';
+				return (CREATURE_SIZE_SQUARES[size as CreatureSize] ? size : 'medium') as CreatureSize;
+			};
+
 			const markerContributesPlayerVision = (marker: any): boolean => {
 				if (isTokenGroup(marker)) return !!marker.visibleToPlayers;
 				const def = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
@@ -1040,7 +1063,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const def = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
 				if (def) {
 					if (['player', 'npc', 'creature'].includes(def.type) && def.creatureSize && config.gridSize) {
-						const squares = CREATURE_SIZE_SQUARES[def.creatureSize] || 1;
+						const squares = CREATURE_SIZE_SQUARES[getMarkerCreatureSize(marker, def)] || 1;
 						const gsW = config.gridSizeW || config.gridSize;
 						const gsH = config.gridSizeH || config.gridSize;
 						return (squares * ((gsW + gsH) / 2) * 0.90) / 2;
@@ -1075,6 +1098,42 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				groupMarker.visibleToPlayers = members.some(markerContributesPlayerVision);
 				const names = members.map(getMarkerDisplayName);
 				groupMarker.tokenGroup.name = names.length <= 2 ? names.join(' + ') : `Group (${names.length} tokens)`;
+			};
+
+			const setMarkerLayer = (marker: any, layer: Layer) => {
+				marker.layer = layer;
+				if (isTokenGroup(marker)) {
+					(marker.tokenGroup.members || []).forEach((member: any) => {
+						member.layer = layer;
+					});
+				}
+			};
+
+			const canSetMarkerPlayerVisibility = (marker: any): boolean => {
+				if (isTokenGroup(marker)) return true;
+				const def = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
+				return !def || def.type !== 'player';
+			};
+
+			const setMarkerPlayerVisibility = (marker: any, visible: boolean) => {
+				if (isTokenGroup(marker)) {
+					(marker.tokenGroup.members || []).forEach((member: any) => {
+						if (canSetMarkerPlayerVisibility(member)) member.visibleToPlayers = visible;
+					});
+					recomputeTokenGroupVision(marker);
+					return;
+				}
+				if (canSetMarkerPlayerVisibility(marker)) marker.visibleToPlayers = visible;
+			};
+
+			const setMarkerCreatureSize = (marker: any, size: CreatureSize) => {
+				if (isTokenGroup(marker)) {
+					(marker.tokenGroup.members || []).forEach((member: any) => {
+						if (isCreatureSizedMarker(member)) member.creatureSize = size;
+					});
+					return;
+				}
+				if (isCreatureSizedMarker(marker)) marker.creatureSize = size;
 			};
 
 			const movementWallBlocks = (wall: any): boolean => {
@@ -1338,7 +1397,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					markerRow.style.gap = '6px';
 					markerRow.style.padding = '6px 8px';
 					
-					const markerBtn = markerRow.createEl('button', { text: '🎯 Edit Markers', cls: 'mod-cta' });
+					const markerBtn = markerRow.createEl('button', { text: '🎯 Edit Tokens', cls: 'mod-cta' });
 					markerBtn.addEventListener('click', () => {
 						closeActiveMultiSelectionMenu(false);
 						showBulkMarkerEditor();
@@ -1513,33 +1572,97 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			};
 
 			const showBulkMarkerEditor = () => {
+				const selectedMarkers = [...new Set(selectedMarkerIndices)]
+					.map((i) => config.markers?.[i])
+					.filter(Boolean);
+				if (selectedMarkers.length === 0) return;
+
+				const layers: Layer[] = ['Player', 'Elevated', 'Subterranean', 'DM', 'Background'];
+				const commonLayer = selectedMarkers.every((m: any) => (m.layer || 'Player') === (selectedMarkers[0].layer || 'Player'))
+					? (selectedMarkers[0].layer || 'Player') as Layer
+					: null;
+				const visibilityTargets = selectedMarkers.filter(canSetMarkerPlayerVisibility);
+				const commonVisibility = visibilityTargets.length > 0 && visibilityTargets.every((m: any) => markerContributesPlayerVision(m) === markerContributesPlayerVision(visibilityTargets[0]))
+					? markerContributesPlayerVision(visibilityTargets[0])
+					: null;
+				const sizeTargets = selectedMarkers.filter(isCreatureSizedMarker);
+				const commonSize = sizeTargets.length > 0 && sizeTargets.every((m: any) => getMarkerCreatureSize(m, getMarkerDefinitionForPlacedToken(m)) === getMarkerCreatureSize(sizeTargets[0], getMarkerDefinitionForPlacedToken(sizeTargets[0])))
+					? getMarkerCreatureSize(sizeTargets[0], getMarkerDefinitionForPlacedToken(sizeTargets[0]))
+					: null;
+
 				const popup = document.createElement('div');
 				popup.addClass('dnd-map-context-menu');
 				popup.style.position = 'fixed';
 				popup.style.zIndex = '10000';
 				
 				const header = popup.createDiv({ cls: 'dnd-map-context-menu-header' });
-				header.textContent = `🎯 Edit ${selectedMarkerIndices.length} Marker${selectedMarkerIndices.length > 1 ? 's' : ''}`;
+				header.textContent = `🎯 Edit ${selectedMarkers.length} Token${selectedMarkers.length > 1 ? 's' : ''}`;
 				
-				// Size slider
+				const currentRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				currentRow.style.padding = '4px 8px';
+				currentRow.style.fontSize = '11px';
+				currentRow.style.opacity = '0.8';
+				currentRow.textContent = `Layer: ${commonLayer ?? 'Mixed'}${visibilityTargets.length > 0 ? ` · Player visibility: ${commonVisibility === null ? 'Mixed' : commonVisibility ? 'Shown' : 'Hidden'}` : ''}${sizeTargets.length > 0 ? ` · Size: ${commonSize ?? 'Mixed'}` : ''}`;
+
+				const layerRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				layerRow.style.display = 'flex';
+				layerRow.style.alignItems = 'center';
+				layerRow.style.gap = '6px';
+				layerRow.style.padding = '6px 8px';
+
+				const layerToggle = layerRow.createEl('input', { type: 'checkbox' });
+				layerToggle.checked = true;
+				layerRow.createEl('span', { text: 'Move to:' });
+				const layerSelect = layerRow.createEl('select');
+				layers.forEach((layer) => {
+					const option = layerSelect.createEl('option', { text: layer });
+					option.value = layer;
+				});
+				layerSelect.value = commonLayer || (config.activeLayer !== 'Background' ? config.activeLayer : 'Player');
+
+				const visibilityRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
+				visibilityRow.style.display = 'flex';
+				visibilityRow.style.alignItems = 'center';
+				visibilityRow.style.gap = '6px';
+				visibilityRow.style.padding = '6px 8px';
+
+				const visibilityToggle = visibilityRow.createEl('input', { type: 'checkbox' });
+				visibilityToggle.disabled = visibilityTargets.length === 0;
+				visibilityRow.createEl('span', { text: 'Show to players:' });
+				const visibilitySelect = visibilityRow.createEl('select');
+				visibilitySelect.disabled = visibilityTargets.length === 0;
+				const showOption = visibilitySelect.createEl('option', { text: 'Shown' });
+				showOption.value = 'shown';
+				const hideOption = visibilitySelect.createEl('option', { text: 'Hidden' });
+				hideOption.value = 'hidden';
+				visibilitySelect.value = commonVisibility === false ? 'hidden' : 'shown';
+				const visibilityHint = visibilityRow.createEl('span', {
+					text: visibilityTargets.length === 0 ? 'Player tokens stay visible' : `${visibilityTargets.length} editable`
+				});
+				visibilityHint.style.fontSize = '11px';
+				visibilityHint.style.opacity = '0.7';
+
 				const sizeRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
 				sizeRow.style.display = 'flex';
 				sizeRow.style.alignItems = 'center';
 				sizeRow.style.gap = '6px';
 				sizeRow.style.padding = '6px 8px';
-				
-				sizeRow.createEl('span', { text: 'Size:' });
-				const sizeInput = sizeRow.createEl('input', { 
-					attr: { type: 'range', min: '10', max: '200', step: '5' } 
+
+				const sizeToggle = sizeRow.createEl('input', { type: 'checkbox' });
+				sizeToggle.disabled = sizeTargets.length === 0;
+				sizeRow.createEl('span', { text: 'Resize to:' });
+				const sizeSelect = sizeRow.createEl('select');
+				sizeSelect.disabled = sizeTargets.length === 0;
+				CREATURE_SIZE_OPTIONS.forEach(({ value, label }) => {
+					const option = sizeSelect.createEl('option', { text: label });
+					option.value = value;
 				});
-				sizeInput.style.flex = '1';
-				const sizeValue = sizeRow.createEl('span', { text: '50' });
-				sizeValue.style.width = '35px';
-				sizeValue.style.textAlign = 'right';
-				
-				sizeInput.addEventListener('input', () => {
-					sizeValue.textContent = sizeInput.value;
+				sizeSelect.value = commonSize || 'medium';
+				const sizeHint = sizeRow.createEl('span', {
+					text: sizeTargets.length === 0 ? 'Only PC/NPC/creature tokens' : `${sizeTargets.length} editable`
 				});
+				sizeHint.style.fontSize = '11px';
+				sizeHint.style.opacity = '0.7';
 				
 				// Buttons
 				const btnRow = popup.createDiv({ cls: 'dnd-map-context-menu-item' });
@@ -1556,13 +1679,28 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				};
 				
 				applyBtn.addEventListener('click', () => {
+					const shouldMoveLayer = layerToggle.checked;
+					const shouldSetVisibility = visibilityToggle.checked && visibilityTargets.length > 0;
+					const shouldSetSize = sizeToggle.checked && sizeTargets.length > 0;
+					if (!shouldMoveLayer && !shouldSetVisibility && !shouldSetSize) {
+						new Notice('Choose at least one token setting to update');
+						return;
+					}
+
 					saveToHistory();
-					selectedMarkerIndices.forEach(i => {
-						if (config.markers[i]) {
-							config.markers[i].size = parseInt(sizeInput.value);
-						}
-					});
-					new Notice(`Updated ${selectedMarkerIndices.length} marker${selectedMarkerIndices.length > 1 ? 's' : ''}`);
+					if (shouldMoveLayer) {
+						selectedMarkers.forEach((marker: any) => setMarkerLayer(marker, layerSelect.value as Layer));
+					}
+					if (shouldSetVisibility) {
+						const visible = visibilitySelect.value === 'shown';
+						visibilityTargets.forEach((marker: any) => setMarkerPlayerVisibility(marker, visible));
+					}
+					if (shouldSetSize) {
+						const size = sizeSelect.value as CreatureSize;
+						sizeTargets.forEach((marker: any) => setMarkerCreatureSize(marker, size));
+					}
+					refreshVisionSelector();
+					new Notice(`Updated ${selectedMarkers.length} token${selectedMarkers.length > 1 ? 's' : ''}`);
 					plugin.saveMapAnnotations(config, el);
 					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 					closePopup();
@@ -4083,8 +4221,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					const tElev = (tMarker.elevation?.height || 0) - (tMarker.elevation?.depth || 0);
 					const oDef = oMarker.markerId ? plugin.markerLibrary.getMarker(oMarker.markerId) : null;
 					const tDef = tMarker.markerId ? plugin.markerLibrary.getMarker(tMarker.markerId) : null;
-					const oSq = oDef?.creatureSize ? (CREATURE_SIZE_SQUARES[oDef.creatureSize] || 1) : 1;
-					const tSq = tDef?.creatureSize ? (CREATURE_SIZE_SQUARES[tDef.creatureSize] || 1) : 1;
+					const oSq = oDef ? (CREATURE_SIZE_SQUARES[getMarkerCreatureSize(oMarker, oDef)] || 1) : 1;
+					const tSq = tDef ? (CREATURE_SIZE_SQUARES[getMarkerCreatureSize(tMarker, tDef)] || 1) : 1;
 					targetDistRuler = {
 						origin: { x: oMarker.position.x, y: oMarker.position.y, elevation: oElev, sizeSquares: oSq },
 						target: { x: tMarker.position.x, y: tMarker.position.y, elevation: tElev, sizeSquares: tSq }
@@ -6842,7 +6980,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					
 					// Draw origin token highlight ring
 					const originDef = originMarker.markerId ? plugin.markerLibrary.getMarker(originMarker.markerId) : null;
-					const originRadius = originDef ? getMarkerRadius(originDef) : 15;
+					const originRadius = originDef ? getPlacedMarkerRadius(originMarker) : 15;
 					ctx.save();
 					ctx.strokeStyle = '#00ffff';
 					ctx.lineWidth = 3;
@@ -6859,7 +6997,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						
 						// Draw target token highlight ring
 						const targetDef = targetMarker.markerId ? plugin.markerLibrary.getMarker(targetMarker.markerId) : null;
-						const targetRadius = targetDef ? getMarkerRadius(targetDef) : 15;
+						const targetRadius = targetDef ? getPlacedMarkerRadius(targetMarker) : 15;
 						ctx.save();
 						ctx.strokeStyle = '#00ffff';
 						ctx.lineWidth = 3;
@@ -6873,8 +7011,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						// Calculate D&D 5e RAW distance: edge-to-edge, not center-to-center
 						// Each token's space is sizeSquares × sizeSquares grid cells.
 						// Half-extent uses gsW for X axis and gsH for Y axis.
-						const originSizeSquares = originDef?.creatureSize ? (CREATURE_SIZE_SQUARES[originDef.creatureSize] || 1) : 1;
-						const targetSizeSquares = targetDef?.creatureSize ? (CREATURE_SIZE_SQUARES[targetDef.creatureSize] || 1) : 1;
+						const originSizeSquares = originDef ? (CREATURE_SIZE_SQUARES[getMarkerCreatureSize(originMarker, originDef)] || 1) : 1;
+						const targetSizeSquares = targetDef ? (CREATURE_SIZE_SQUARES[getMarkerCreatureSize(targetMarker, targetDef)] || 1) : 1;
 						const _tdGsW = config.gridSizeW || config.gridSize || 70;
 						const _tdGsH = config.gridSizeH || config.gridSize || 70;
 						const originHalfW = (originSizeSquares * _tdGsW) / 2;
@@ -7174,6 +7312,12 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					markerDef = plugin.markerLibrary.getMarker(marker.markerId);
 					if (!markerDef) {
 						return;
+					}
+					if (['player', 'npc', 'creature'].includes(markerDef.type)) {
+						markerDef = {
+							...markerDef,
+							creatureSize: getMarkerCreatureSize(marker, markerDef),
+						};
 					}
 				} else if (isTokenGroup(marker)) {
 					markerDef = {
@@ -10684,8 +10828,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const _tpRaw = tunnel.path[closestIndex];
 							const _tMarkerDef = draggedMarker.markerId
 								? plugin.markerLibrary.getMarker(draggedMarker.markerId) : null;
-							const _tSizeSq = _tMarkerDef?.creatureSize
-								? (CREATURE_SIZE_SQUARES[_tMarkerDef.creatureSize] || 1) : 1;
+							const _tSizeSq = _tMarkerDef
+								? (CREATURE_SIZE_SQUARES[getMarkerCreatureSize(draggedMarker, _tMarkerDef)] || 1) : 1;
 							const _tSnapped = snapTokenToGrid(_tpRaw.x, _tpRaw.y, _tSizeSq);
 
 							// ── Lateral freedom for smaller creatures in wider tunnels ──
@@ -10749,7 +10893,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						if (activeTunnel && activeTunnel.path.length > 0) {
 							// Snap path points to grid tile centers (every tile the token walks on)
 							const markerDef = draggedMarker.markerId ? plugin.markerLibrary.getMarker(draggedMarker.markerId) : null;
-							const sizeInSquares = markerDef?.creatureSize ? (CREATURE_SIZE_SQUARES[markerDef.creatureSize] || 1) : 1;
+							const sizeInSquares = markerDef ? (CREATURE_SIZE_SQUARES[getMarkerCreatureSize(draggedMarker, markerDef)] || 1) : 1;
 							const snapped = snapTokenToGrid(draggedMarker.position.x, draggedMarker.position.y, sizeInSquares);
 							const snappedX = snapped.x;
 							const snappedY = snapped.y;
@@ -11353,7 +11497,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					
 					// First snap the token to grid (if applicable)
 					if (mDef && ['player', 'npc', 'creature'].includes(mDef.type) && config.gridSize) {
-						const squares = CREATURE_SIZE_SQUARES[mDef.creatureSize || 'medium'] || 1;
+						const squares = CREATURE_SIZE_SQUARES[getMarkerCreatureSize(m, mDef)] || 1;
 						const snapped = snapTokenToGrid(m.position.x, m.position.y, squares);
 						const snapAllowed = !markerMovementBlockedByWalls(m) || !tokenMoveBlocked(m.position, snapped);
 						const snapDx = snapAllowed ? snapped.x - m.position.x : 0;
@@ -11386,7 +11530,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						);
 						if (activeTunnel && activeTunnel.path.length > 0) {
 							// Snap final position to grid tile center (same logic as during movement)
-							const sizeInSquares = mDef?.creatureSize ? (CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1) : 1;
+							const sizeInSquares = mDef ? (CREATURE_SIZE_SQUARES[getMarkerCreatureSize(m, mDef)] || 1) : 1;
 							const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
 							const snappedX = snapped.x;
 							const snappedY = snapped.y;
@@ -12333,7 +12477,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							};
 							option.innerHTML = `<span class="layer-icon">${layerIcons[layer]}</span> ${layer}`;
 							option.addEventListener('click', () => {
-								m.layer = layer;
+								saveToHistory();
+								setMarkerLayer(m, layer);
 								redrawAnnotations();
 								plugin.saveMapAnnotations(config, el);
 								refreshVisionSelector();
@@ -12412,6 +12557,34 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									visibilityToggle.dispatchEvent(new Event('change'));
 								}
 							});
+						}
+
+						if (mDef && ['player', 'npc', 'creature'].includes(mDef.type)) {
+							const sizeRow = contextMenu.createDiv({ cls: 'dnd-map-context-aoe-row' });
+							sizeRow.createEl('span', { cls: 'dnd-map-context-aoe-label', text: 'Size:' });
+							const sizeSelect = sizeRow.createEl('select');
+							CREATURE_SIZE_OPTIONS.forEach(({ value, label }) => {
+								const option = sizeSelect.createEl('option', { text: label });
+								option.value = value;
+							});
+							sizeSelect.value = getMarkerCreatureSize(m, mDef);
+							sizeSelect.addEventListener('change', (e) => {
+								e.stopPropagation();
+								saveToHistory();
+								setMarkerCreatureSize(m, sizeSelect.value as CreatureSize);
+								const squares = CREATURE_SIZE_SQUARES[getMarkerCreatureSize(m, mDef)] || 1;
+								const snapped = snapTokenToGrid(m.position.x, m.position.y, squares);
+								if (!markerMovementBlockedByWalls(m) || !tokenMoveBlocked(m.position, snapped)) {
+									m.position.x = snapped.x;
+									m.position.y = snapped.y;
+								}
+								redrawAnnotations();
+								plugin.saveMapAnnotations(config, el);
+								if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+								if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
+								new Notice(`Token resized to ${CREATURE_SIZE_OPTIONS.find((opt) => opt.value === sizeSelect.value)?.label || sizeSelect.value}`);
+							});
+							sizeSelect.addEventListener('click', (e) => e.stopPropagation());
 						}
 						
 						// AoE compact picker for player/creature/npc tokens
@@ -12877,7 +13050,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									if (!config.tunnels) config.tunnels = [];
 									let tunnel = config.tunnels.find((t: any) => t.creatorMarkerId === m.id && t.active);
 									if (!tunnel) {
-										const creatureSize = mDef.creatureSize || 'medium';
+										const creatureSize = getMarkerCreatureSize(m, mDef);
 										const sizeInSquares = CREATURE_SIZE_SQUARES[creatureSize] || 1;
 										const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
 										tunnel = createTunnelSegment(m.id, snapped, creatureSize, value, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2);
@@ -12894,7 +13067,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 								// Mark exit position and deactivate tunnel
 								if (config.tunnels) {
 									// Snap exit to grid tile center
-									const sizeInSquares = mDef?.creatureSize ? (CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1) : 1;
+									const sizeInSquares = mDef ? (CREATURE_SIZE_SQUARES[getMarkerCreatureSize(m, mDef)] || 1) : 1;
 									const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
 									
 									config.tunnels.forEach((t: any) => {
@@ -12954,7 +13127,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									if (!config.tunnels) config.tunnels = [];
 									let tunnel = config.tunnels.find((t: any) => t.creatorMarkerId === m.id && t.active);
 									if (!tunnel) {
-										const creatureSize = mDef.creatureSize || 'medium';
+										const creatureSize = getMarkerCreatureSize(m, mDef);
 										const sizeInSquares = CREATURE_SIZE_SQUARES[creatureSize] || 1;
 										const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
 										tunnel = createTunnelSegment(m.id, snapped, creatureSize, depthValue, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2);
@@ -12977,7 +13150,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 									
 									// Deactivate active tunnel for this marker
 									if (config.tunnels) {
-										const sizeInSquares = mDef?.creatureSize ? (CREATURE_SIZE_SQUARES[mDef.creatureSize] || 1) : 1;
+										const sizeInSquares = mDef ? (CREATURE_SIZE_SQUARES[getMarkerCreatureSize(m, mDef)] || 1) : 1;
 										const snapped = snapTokenToGrid(m.position.x, m.position.y, sizeInSquares);
 										
 										config.tunnels.forEach((t: any) => {
@@ -13027,13 +13200,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 										const nearestTunnel = nearEntrance || nearExit;
 										if (nearestTunnel) {
 											// Check if token is small enough to enter tunnel
-											const tokenSize = CREATURE_SIZE_SQUARES[mDef.creatureSize || 'medium'] || 1;
+											const tokenCreatureSize = getMarkerCreatureSize(m, mDef);
+											const tokenSize = CREATURE_SIZE_SQUARES[tokenCreatureSize] || 1;
 											const tunnelCreatureSize = (nearestTunnel.tunnel.creatureSize || 'medium') as CreatureSize;
 											const tunnelSize = CREATURE_SIZE_SQUARES[tunnelCreatureSize] || 1;
 											
 											// Token must be <= tunnel creator size to enter
 											if (tokenSize > tunnelSize) {
-												new Notice(`This tunnel is too small! Created by ${tunnelCreatureSize} creature, token is ${mDef.creatureSize || 'medium'}`);
+												new Notice(`This tunnel is too small! Created by ${tunnelCreatureSize} creature, token is ${tokenCreatureSize}`);
 												if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
 												return;
 											}
