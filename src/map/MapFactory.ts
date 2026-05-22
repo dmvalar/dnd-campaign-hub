@@ -59,6 +59,9 @@ export function getMapAnnotationDefaults(): Record<string, any> {
     // Template system
     isTemplate: false,
     templateTags: undefined,
+    templateSourceId: '',
+    templateSourceName: '',
+    templateSyncedAt: '',
     // Metadata
     lastModified: '',
   };
@@ -161,6 +164,9 @@ export function cloneTemplateToMap(
   cloned.highlights = [];            // template highlights stay with the template
   cloned.isTemplate = false;
   cloned.templateTags = undefined;
+  cloned.templateSourceId = templateData.mapId || '';
+  cloned.templateSourceName = templateData.name || '';
+  cloned.templateSyncedAt = new Date().toISOString();
   cloned.linkedEncounter = '';
   cloned.linkedScene = '';
   cloned.activeLayer = 'Player';
@@ -177,4 +183,59 @@ export function cloneTemplateToMap(
   }
 
   return cloned;
+}
+
+/**
+ * Fields that are considered part of the reusable map/template structure.
+ * Syncing copies these from the latest template while preserving active-map
+ * encounter content such as placed tokens, drawings, labels, and links.
+ */
+const TEMPLATE_STRUCTURAL_FIELDS = [
+  'imageFile',
+  'isVideo',
+  'type',
+  'dimensions',
+  'gridType',
+  'gridSize',
+  'gridOffsetX',
+  'gridOffsetY',
+  'gridSizeW',
+  'gridSizeH',
+  'gridVisible',
+  'scale',
+  'fogOfWar',
+  'walls',
+  'lightSources',
+  'tunnels',
+  'tileElevations',
+  'difficultTerrain',
+  'envAssets',
+  'hexTerrains',
+  'hexClimates',
+  'customTerrainDescriptions',
+  'hexcrawlState',
+];
+
+/**
+ * Apply the latest structural data from a source template to an existing
+ * active map. Instance-specific data remains on the map:
+ * markers/tokens, highlights, drawings, text annotations, POI refs, linked
+ * scene/encounter, active layer, and player-view settings.
+ */
+export function syncMapFromTemplate(mapData: any, templateData: any): any {
+  const synced = normalizeMapAnnotations(structuredClone(mapData));
+  const template = normalizeMapAnnotations(structuredClone(templateData));
+
+  for (const field of TEMPLATE_STRUCTURAL_FIELDS) {
+    synced[field] = structuredClone(template[field]);
+  }
+
+  synced.isTemplate = false;
+  synced.templateTags = undefined;
+  synced.templateSourceId = template.mapId || synced.templateSourceId || '';
+  synced.templateSourceName = template.name || synced.templateSourceName || '';
+  synced.templateSyncedAt = new Date().toISOString();
+  synced.lastModified = new Date().toISOString();
+
+  return synced;
 }

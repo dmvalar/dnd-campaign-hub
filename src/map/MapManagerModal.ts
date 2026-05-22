@@ -3,7 +3,8 @@ import { MapManager } from './MapManager';
 import { MapCreationModal, BATTLEMAP_TEMPLATE_FOLDER } from './MapCreationModal';
 import { MapTemplateTagModal } from './MapTemplateTagModal';
 import { TemplatePickerModal } from './TemplatePickerModal';
-import { invalidateTemplateIndex } from './MapPersistence';
+import { syncMapFromTemplate as syncMapDataFromTemplate } from './MapFactory';
+import { _flushMapSave, invalidateTemplateIndex } from './MapPersistence';
 import { MapTemplateTags, createDefaultTemplateTags } from './types';
 import type DndCampaignHubPlugin from '../main';
 
@@ -23,6 +24,9 @@ interface StoredMapInfo {
   lastModified?: string;
   isTemplate?: boolean;
   templateTags?: MapTemplateTags;
+  templateSourceId?: string;
+  templateSourceName?: string;
+  templateSyncedAt?: string;
 }
 
 /**
@@ -345,6 +349,14 @@ export class MapManagerModal extends Modal {
       }
     }
 
+    if (!map.isTemplate && map.templateSourceId) {
+      const sourceEl = info.createDiv({ cls: 'dnd-map-manager-template-source' });
+      sourceEl.style.fontSize = '11px';
+      sourceEl.style.color = 'var(--text-faint)';
+      sourceEl.style.marginTop = '2px';
+      sourceEl.setText(`Template: ${map.templateSourceName || map.templateSourceId}`);
+    }
+
     const meta = info.createDiv({ cls: 'dnd-map-manager-meta' });
     meta.style.fontSize = '12px';
     meta.style.color = 'var(--text-muted)';
@@ -419,6 +431,36 @@ export class MapManagerModal extends Modal {
       unmarkBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         this.unmarkAsTemplate(map);
+      });
+    }
+
+    if (!map.isTemplate && map.templateSourceId) {
+      const syncBtn = actions.createEl('button', {
+        text: '🔄 Sync',
+        attr: { title: 'Update walls, lighting, fog, terrain, and grid from the source template' },
+      });
+      syncBtn.style.padding = '4px 10px';
+      syncBtn.style.fontSize = '12px';
+      syncBtn.style.borderRadius = '4px';
+      syncBtn.style.cursor = 'pointer';
+      syncBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.confirmSyncFromTemplate(map);
+      });
+    }
+
+    if (!map.isTemplate && !map.templateSourceId) {
+      const linkBtn = actions.createEl('button', {
+        text: '🔗 Template',
+        attr: { title: 'Link this map to a source template' },
+      });
+      linkBtn.style.padding = '4px 10px';
+      linkBtn.style.fontSize = '12px';
+      linkBtn.style.borderRadius = '4px';
+      linkBtn.style.cursor = 'pointer';
+      linkBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.openLinkTemplateModal(map);
       });
     }
 
@@ -622,6 +664,204 @@ export class MapManagerModal extends Modal {
 
     new Notice(`✅ "${map.name}" is no longer a template`);
     this.renderMapList();
+  }
+
+  /**
+   * Confirm and then sync the active map from its source template.
+   */
+  private confirmSyncFromTemplate(map: StoredMapInfo): void {
+    const confirmModal = new Modal(this.app);
+    confirmModal.onOpen = () => {
+      const { contentEl } = confirmModal;
+      contentEl.empty();
+
+      contentEl.createEl('h2', { text: '🔄 Sync from Template' });
+      contentEl.createEl('p', {
+        text: `Apply the latest template structure from "${map.templateSourceName || map.templateSourceId}" to "${map.name || 'Unnamed Map'}"?`,
+      });
+      contentEl.createEl('p', {
+        text: 'This updates walls, lighting, fog of war, grid, terrain, elevations, tunnels, and environment assets. Tokens, drawings, labels, highlights, POIs, and scene/encounter links stay on this map.',
+        cls: 'setting-item-description',
+      });
+
+      const btnContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+      btnContainer.style.display = 'flex';
+      btnContainer.style.justifyContent = 'flex-end';
+      btnContainer.style.gap = '10px';
+      btnContainer.style.marginTop = '16px';
+
+      const cancelBtn = btnContainer.createEl('button', { text: 'Cancel' });
+      cancelBtn.addEventListener('click', () => confirmModal.close());
+
+      const syncBtn = btnContainer.createEl('button', { text: 'Sync Template Changes' });
+      syncBtn.style.backgroundColor = 'var(--interactive-accent)';
+      syncBtn.style.color = 'var(--text-on-accent)';
+      syncBtn.style.borderRadius = '4px';
+      syncBtn.addEventListener('click', async () => {
+        await this.syncFromTemplate(map);
+        confirmModal.close();
+      });
+    };
+    confirmModal.open();
+  }
+
+  /**
+   * Pull template-owned structural fields into an active map while preserving
+   * instance-specific encounter content.
+   */
+  private async syncFromTemplate(map: StoredMapInfo): Promise<void> {
+    if (!map.templateSourceId) {
+      new Notice('This map is not linked to a template');
+      return;
+    }
+
+    try {
+      const [currentData, templateData] = await Promise.all([
+        this.plugin.loadMapAnnotations(map.mapId),
+        this.plugin.loadMapAnnotations(map.templateSourceId),
+      ]);
+
+      if (!templateData || !templateData.mapId || !templateData.isTemplate) {
+        new Notice('Source template not found. The map may have been created before template sync was available.');
+        return;
+      }
+
+      const syncedData = syncMapDataFromTemplate(currentData, templateData);
+      await this.plugin.saveMapAnnotations(syncedData, document.createElement('div'));
+      await _flushMapSave(this.plugin, syncedData.mapId);
+
+      map.imageFile = syncedData.imageFile;
+      map.isVideo = syncedData.isVideo;
+      map.type = syncedData.type;
+      map.gridType = syncedData.gridType;
+      map.gridSize = syncedData.gridSize;
+      map.scale = syncedData.scale;
+      map.dimensions = syncedData.dimensions;
+      map.lastModified = syncedData.lastModified;
+      map.templateSourceName = syncedData.templateSourceName;
+      map.templateSyncedAt = syncedData.templateSyncedAt;
+
+      this.renderMapList();
+      new Notice(`✅ "${map.name || 'Map'}" synced from template`);
+    } catch (err) {
+      console.error('[MapManager] Error syncing map from template:', err);
+      new Notice('❌ Failed to sync map from template');
+    }
+  }
+
+  /**
+   * Let older active maps choose their source template so they can use sync.
+   */
+  private async openLinkTemplateModal(map: StoredMapInfo): Promise<void> {
+    const templates = await this.plugin.queryMapTemplates({});
+    if (templates.length === 0) {
+      new Notice('No battlemap templates found');
+      return;
+    }
+
+    let selectedTemplateId = templates[0]?.mapId || '';
+    const linkModal = new Modal(this.app);
+    linkModal.onOpen = () => {
+      const { contentEl } = linkModal;
+      contentEl.empty();
+
+      contentEl.createEl('h2', { text: '🔗 Link Template' });
+      contentEl.createEl('p', {
+        text: `Choose the source template for "${map.name || 'Unnamed Map'}".`,
+      });
+
+      new Setting(contentEl)
+        .setName('Source template')
+        .setDesc('After linking, this map can sync future template changes.')
+        .addDropdown(dropdown => {
+          for (const tpl of templates) {
+            dropdown.addOption(tpl.mapId, tpl.name || tpl.mapId);
+          }
+          dropdown
+            .setValue(selectedTemplateId)
+            .onChange(value => {
+              selectedTemplateId = value;
+            });
+        });
+
+      const btnContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+      btnContainer.style.display = 'flex';
+      btnContainer.style.justifyContent = 'flex-end';
+      btnContainer.style.gap = '10px';
+      btnContainer.style.marginTop = '16px';
+
+      const cancelBtn = btnContainer.createEl('button', { text: 'Cancel' });
+      cancelBtn.addEventListener('click', () => linkModal.close());
+
+      const linkOnlyBtn = btnContainer.createEl('button', { text: 'Link Only' });
+      linkOnlyBtn.addEventListener('click', async () => {
+        await this.linkMapToTemplate(map, selectedTemplateId, false);
+        linkModal.close();
+      });
+
+      const linkAndSyncBtn = btnContainer.createEl('button', { text: 'Link and Sync' });
+      linkAndSyncBtn.style.backgroundColor = 'var(--interactive-accent)';
+      linkAndSyncBtn.style.color = 'var(--text-on-accent)';
+      linkAndSyncBtn.style.borderRadius = '4px';
+      linkAndSyncBtn.addEventListener('click', async () => {
+        await this.linkMapToTemplate(map, selectedTemplateId, true);
+        linkModal.close();
+      });
+    };
+    linkModal.open();
+  }
+
+  /**
+   * Store source-template metadata on an active map, optionally applying the
+   * current template structure immediately.
+   */
+  private async linkMapToTemplate(map: StoredMapInfo, templateId: string, syncNow: boolean): Promise<void> {
+    try {
+      const [currentData, templateData] = await Promise.all([
+        this.plugin.loadMapAnnotations(map.mapId),
+        this.plugin.loadMapAnnotations(templateId),
+      ]);
+
+      if (!templateData || !templateData.mapId || !templateData.isTemplate) {
+        new Notice('Selected template could not be loaded');
+        return;
+      }
+
+      const nextData = syncNow
+        ? syncMapDataFromTemplate(currentData, templateData)
+        : {
+            ...currentData,
+            templateSourceId: templateData.mapId,
+            templateSourceName: templateData.name || '',
+            templateSyncedAt: '',
+            lastModified: new Date().toISOString(),
+          };
+
+      await this.plugin.saveMapAnnotations(nextData, document.createElement('div'));
+      await _flushMapSave(this.plugin, nextData.mapId);
+
+      map.templateSourceId = nextData.templateSourceId;
+      map.templateSourceName = nextData.templateSourceName;
+      map.templateSyncedAt = nextData.templateSyncedAt;
+      map.lastModified = nextData.lastModified;
+      if (syncNow) {
+        map.imageFile = nextData.imageFile;
+        map.isVideo = nextData.isVideo;
+        map.type = nextData.type;
+        map.gridType = nextData.gridType;
+        map.gridSize = nextData.gridSize;
+        map.scale = nextData.scale;
+        map.dimensions = nextData.dimensions;
+      }
+
+      this.renderMapList();
+      new Notice(syncNow
+        ? `✅ "${map.name || 'Map'}" linked and synced`
+        : `✅ "${map.name || 'Map'}" linked to template`);
+    } catch (err) {
+      console.error('[MapManager] Error linking map to template:', err);
+      new Notice('❌ Failed to link template');
+    }
   }
 
   /**
