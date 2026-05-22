@@ -1275,3 +1275,91 @@ describe("creature-1.10.0: block scalar desc + bare skillsaves fix", () => {
     expect(out).toContain("template_version: 1.10.0");
   });
 });
+
+// ── creature-1.12.0 simulation helper ───────────────────────────────────────
+
+/**
+ * Simulates the creature-1.12.0 migration step.
+ * Moves legacy monster categories out of `type` and into `creature_type`.
+ */
+function applyCreature1120(content: string): string | null {
+  const typeMatch = content.match(/^type:\s*(.+)$/m);
+  const legacyType = typeMatch?.[1]?.trim();
+  const hasCreatureType = /^creature_type:/m.test(content);
+  let out = content;
+  let changed = false;
+
+  if (legacyType && legacyType !== "creature" && !hasCreatureType) {
+    out = setFrontmatterField(out, "creature_type", legacyType);
+    changed = true;
+  }
+
+  if (legacyType !== "creature") {
+    out = setFrontmatterField(out, "type", "creature");
+    changed = true;
+  }
+
+  if (!changed) return null;
+  return setFrontmatterField(out, "template_version", "1.12.0");
+}
+
+describe("creature-1.12.0: normalize creature type fields", () => {
+  it("moves a legacy monster category from type to creature_type and sets type to creature", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Adult Black Dragon",
+      "size: Huge",
+      "type: dragon",
+      "template_version: 1.10.0",
+      "---",
+      "",
+      "```dnd-hub",
+      "```",
+    ].join("\n");
+
+    const out = applyCreature1120(note);
+
+    expect(out).not.toBeNull();
+    expect(out).toContain("type: creature");
+    expect(out).toContain("creature_type: dragon");
+    expect(out).toContain("template_version: 1.12.0");
+  });
+
+  it("keeps an existing creature_type value when normalizing type", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "plugin_type: creature",
+      "name: Werewolf",
+      "size: Medium",
+      "type: humanoid",
+      "creature_type: monstrosity",
+      "template_version: 1.10.0",
+      "---",
+    ].join("\n");
+
+    const out = applyCreature1120(note);
+
+    expect(out).not.toBeNull();
+    expect(out).toContain("type: creature");
+    expect(out).toContain("creature_type: monstrosity");
+    expect(out).not.toContain("creature_type: humanoid");
+  });
+
+  it("is idempotent when type is already creature", () => {
+    const note = [
+      "---",
+      "statblock: true",
+      "name: Homebrew Ooze",
+      "size: Large",
+      "type: creature",
+      "creature_type: ooze",
+      "template_version: 1.12.0",
+      "---",
+    ].join("\n");
+
+    expect(applyCreature1120(note)).toBeNull();
+  });
+});

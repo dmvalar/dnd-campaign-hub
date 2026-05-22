@@ -890,7 +890,7 @@ export class CreatureCreationModal extends Modal {
       this.creatureName = frontmatter.name || creatureFile.basename;
       this.originalCreatureName = this.creatureName;
       this.size = frontmatter.size || 'Medium';
-      this.type = frontmatter.type || "";
+      this.type = frontmatter.creature_type || (frontmatter.type !== "creature" ? frontmatter.type : "") || "";
       this.subtype = frontmatter.subtype || "";
       this.alignment = frontmatter.alignment || "";
       this.ac = frontmatter.ac?.toString() || "";
@@ -1239,7 +1239,7 @@ fage_stats:
         }
       });
     }
-    const creatureTemplateVersion = TEMPLATE_VERSIONS.creature || "1.11.0";
+    const creatureTemplateVersion = TEMPLATE_VERSIONS.creature || "1.12.0";
     frontmatter += `\ntoken_id: ${this.tokenId}`;
     frontmatter += `\ntemplate_version: ${creatureTemplateVersion}`;
     frontmatter += `\n---\n\n`;

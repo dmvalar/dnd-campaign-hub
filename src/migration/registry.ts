@@ -635,6 +635,33 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "creature-1.12.0",
+      entityTypes: ["creature"],
+      targetVersion: "1.12.0",
+      description: "Use type: creature and preserve monster category in creature_type",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+        let changed = false;
+
+        const legacyType = ctx.frontmatter.type?.trim();
+        const hasCreatureType = /^creature_type:/m.test(out);
+
+        if (legacyType && legacyType !== "creature" && !hasCreatureType) {
+          out = setFrontmatterField(out, "creature_type", legacyType);
+          changed = true;
+        }
+
+        if (legacyType !== "creature") {
+          out = setFrontmatterField(out, "type", "creature");
+          changed = true;
+        }
+
+        if (!changed) return null;
+        return setFrontmatterField(out, "template_version", "1.12.0");
+      },
+    },
+
     // ── Scene ────────────────────────────────────────────────────────────
 
     {
