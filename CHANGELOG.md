@@ -5,6 +5,27 @@ All notable changes to the D&D Campaign Hub plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-05-23
+
+### Added
+
+- **Battlemap Template Sync** — Active battlemaps created from templates now remember their source template. DMs can sync template-owned map structure later without recreating the map or losing encounter-specific content.
+- **Template Linking for Existing Maps** — Older active battlemaps can be linked to a source template from the Map Manager, with options to link only or link and immediately sync.
+- **Bulk Token Editing** — The select tool can now apply shared changes to selected tokens, including moving all selected tokens to a chosen layer.
+- **Grid-Based Token Resizing** — Single and multi-token resizing now uses D&D RAW grid sizes only, avoiding arbitrary in-between token sizes.
+- **Token Submenu Edit Shortcut** — Tokens placed on a battlemap now include an Edit action in their submenu, opening the token edit modal directly without searching through the Token Browser.
+- **Party Manager Rest and Stat Tools** — Party Manager now supports long rests, individual healing for short-rest style recovery, character level-ups, and direct editing of AC, max HP, and initiative bonus.
+
+### Changed
+
+- **Party Manager PC Sync** — Party Manager edits now write changed AC, max HP, initiative bonus, HP, and level values back to the linked PC Markdown files to prevent stat drift.
+- **Battlemap Template Sync Scope** — Template sync updates walls, lighting, fog of war, grid settings, terrain, elevations, tunnels, and environment assets while preserving tokens, drawings, labels, highlights, POIs, and scene/encounter links.
+
+### Fixed
+
+- **Creature Frontmatter Compatibility** — Creature notes now use `type: creature` for note action buttons and `creature_type` for the creature classification, fixing Edit/Delete button detection.
+- **DM Magic Darkness Visibility** — Magical Darkness overlays are much less visually distracting in DM view outside the Background layer, leaving only a subtle hint that the area exists.
+
 ## [0.10.0] - 2026-05-21
 
 ### Added

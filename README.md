@@ -42,8 +42,11 @@ Manage D&D and TTRPG campaigns inside Obsidian with interactive battle maps, a c
 - Tabletop miniature mode with physical monitor calibration for 25–32 mm miniature bases.
 - Two-point grid calibration to align grids with pre-gridded map images.
 - Animated map support for video backgrounds (MP4, WebM).
-- Battlemap template system with tagging for reusable map setups.
+- Battlemap template system with tagging, source linking, and structural sync for reusable map setups.
 - Environmental asset library (scatter, doors, traps) with transform handles for resize, rotate, and pivot.
+- Select-tool bulk actions for chosen tokens, including layer changes and D&D RAW grid-size resizing.
+- Token submenu Edit shortcut for opening the placed token's edit modal directly from the map.
+- Subtle DM-only Magic Darkness hints outside the Background layer, keeping the map readable while still showing the effect exists.
 
 #### Map keyboard shortcuts
 
@@ -98,6 +101,10 @@ Manage D&D and TTRPG campaigns inside Obsidian with interactive battle maps, a c
 - Expandable member cards with full detail view (one at a time).
 - Sync member names from PC notes and prune orphaned members.
 - Initiative configuration: don't roll, roll automatically, or let players roll.
+- Long Rest action to heal all party members to full HP.
+- Individual healing controls for short rests and manual recovery.
+- Level-up and direct stat editing for PC level, AC, max HP, and initiative bonus.
+- Changed Party Manager values sync back to linked PC Markdown files.
 
 ### Encounter builder
 
@@ -143,6 +150,7 @@ Tabbed reference panel with eight quick-reference sections: conditions, actions,
 - **Creature builder** — full stat block with ability scores, saves, skills, resistances, immunities, traits, actions, legendary actions, and more.
 - Tokens auto-created for PCs, NPCs, and creatures with correct grid size.
 - Edit and delete commands for all character and creature types.
+- Creature notes use stable frontmatter for Edit/Delete note actions while keeping creature classification separate.
 - Fantasy Statblocks plugin integration for bestiary management.
 
 ### Items, spells, traps, and factions
@@ -289,7 +297,7 @@ Access all commands through the Command Palette (`Ctrl+P`). The plugin registers
 | Create Battle Map | Create a new interactive map |
 | Insert Battlemap | Embed a map in the current note |
 | Create Battlemap Template | Save a reusable map template |
-| Map Manager | Browse, edit, and delete maps |
+| Map Manager | Browse, edit, delete, link, and sync maps |
 
 ### Party management
 
