@@ -8977,12 +8977,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				}
 				_canvasPool.release(fogCanvas);
 
-				// Draw magic darkness overlay (GM view only): prominent purple tint + dashed border
+				// Draw magic darkness overlay (GM view only): prominent while editing fog,
+				// subtle on play layers so the DM can still read the map underneath.
 				// Uses the effective mask so reveals/hides drawn after magic-darkness cancel it.
 				if (!isPlayerView && _gmHasMD) {
+					const editingMagicDarkness = config.activeLayer === 'Background' && (backgroundEditView === 'all' || backgroundEditView === 'fog' || activeTool === 'fog');
+					const fillAlpha = editingMagicDarkness ? 0.45 : 0.09;
+					const borderAlpha = editingMagicDarkness ? 0.8 : 0.32;
+					const borderWidth = editingMagicDarkness ? 3 : 2;
+					const dashPattern = editingMagicDarkness ? [8, 6] : [4, 10];
+
 					// Purple fill
 					ctx.save();
-					ctx.globalAlpha = 0.5;
+					ctx.globalAlpha = fillAlpha;
 					ctx.fillStyle = '#7b2fbe';
 					ctx.globalCompositeOperation = 'source-over';
 					const purpleCanvas = _canvasPool.acquire(w, h);
@@ -8999,10 +9006,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					// Dashed purple border on each active magic-darkness region
 					// We still draw individual borders for visual clarity (cheap operation)
 					ctx.save();
-					ctx.globalAlpha = 0.8;
+					ctx.globalAlpha = borderAlpha;
 					ctx.strokeStyle = '#a855f7';
-					ctx.lineWidth = 3;
-					ctx.setLineDash([8, 6]);
+					ctx.lineWidth = borderWidth;
+					ctx.setLineDash(dashPattern);
 					ctx.beginPath();
 					// Only stroke regions that haven't been fully overridden
 					config.fogOfWar.regions.forEach((region: any) => {
