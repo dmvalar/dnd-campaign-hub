@@ -9,6 +9,7 @@ import { MapManagerModal } from "../map/MapManagerModal";
 import { TemplatePickerModal } from "../map/TemplatePickerModal";
 import { magicWandDetect } from "../map/MagicWandWallModal";
 import { MarkerLibrary } from "../marker/MarkerLibrary";
+import { MarkerLibraryModal } from "../marker/MarkerLibraryModal";
 import { MarkerReference, MarkerDefinition, MarkerType, CREATURE_SIZE_SQUARES, CreatureSize, Layer, type TunnelSegment } from "../marker/MarkerTypes";
 import { MarkerPickerModal } from "../marker/MarkerPickerModal";
 import { getTunnelWidth, computeTunnelWidth, generateTunnelWalls, drawTunnelPortal, getTunnelPortalRadius, isZigZag, createTunnelSegment, findNearTunnelEntrance, findNearTunnelExit, ejectTokensFromTunnels, deactivateTunnelsForMarker, ensureTunnelWalls, getPathPerpendicular, computeMaxLateral, TUNNEL_MIN_PATH_SPACING, TUNNEL_CORNER_BLOCK_ANGLE } from "./tunnelUtils";
@@ -12463,6 +12464,21 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						contextMenu.style.position = 'fixed';
 						contextMenu.style.left = `${e.clientX}px`;
 						contextMenu.style.top = `${e.clientY}px`;
+
+						if (mDef) {
+							const editOption = contextMenu.createDiv({ cls: 'dnd-map-context-menu-item' });
+							editOption.textContent = '✏️ Edit Token';
+							editOption.addEventListener('click', () => {
+								if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
+								new MarkerLibraryModal(plugin.app, plugin.markerLibrary, mDef, () => {
+									refreshVisionSelector();
+									redrawAnnotations();
+									if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+									new Notice('Token updated');
+								}).open();
+							});
+							contextMenu.createDiv({ cls: 'dnd-map-context-menu-separator' });
+						}
 						
 						// Layer submenu header
 						const layerHeader = contextMenu.createDiv({ cls: 'dnd-map-context-menu-header' });
