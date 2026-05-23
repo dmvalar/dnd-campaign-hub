@@ -84,7 +84,8 @@ Manage D&D and TTRPG campaigns inside Obsidian with interactive battle maps, a c
 - Click a PC name to open their Fantasy Statblocks statblock in a split pane.
 - HP tracking with current, temporary, and max HP; death save successes and failures.
 - Status effects with name, duration in rounds, and GM notes.
-- Initiative rolling with automatic sorting.
+- Initiative rolling with automatic sorting and drag-reordering for matching initiative ties.
+- Add individual combatants or all creatures from another encounter into the active tracker as mid-combat reinforcements.
 - Auto-pan to the active combatant's token on the battle map (optional).
 - Vision selector for individual token perspective or combined party view.
 - Darkvision override per combatant (0–300 ft in 5 ft increments).
@@ -110,7 +111,8 @@ Manage D&D and TTRPG campaigns inside Obsidian with interactive battle maps, a c
 
 - Survival-ratio difficulty calculation with real-time feedback.
 - Add creatures with count, HP, AC, and CR; supports friendly NPCs and hidden creatures.
-- Trap integration: simple and complex traps contribute to encounter difficulty.
+- Trap integration: simple and complex traps contribute to encounter difficulty and load with fixed initiative counts.
+- Encounter cards can add all creatures to the currently active Combat Tracker encounter.
 - Random encounter table generator filtered by environment and party level.
 - Load party roster directly from the Party Manager.
 - D&D 5e SRD API integration for monster data.

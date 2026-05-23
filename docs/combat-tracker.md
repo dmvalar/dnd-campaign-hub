@@ -13,6 +13,7 @@ The GM sidebar shows:
 
 - **Initiative order** — combatants sorted by initiative roll with round counter.
 - **Combatant rows** — each row displays name, HP (current / max), AC, and active status effects. Rows are expandable for detailed editing.
+- **Tie ordering** — when two or more combatants share the same initiative, drag one row onto another row with that initiative to swap their order.
 - **HP tracking** — current, temporary, and max HP. Death save successes and failures for PCs at 0 HP.
 - **Status effects** — add named effects with duration in rounds and optional GM notes.
 - **PC statblocks** — click a PC name to open their Fantasy Statblocks statblock in a split pane. If Fantasy Statblocks is not installed, the PC note opens instead.
@@ -34,6 +35,15 @@ The session projection system can automatically display the Player view during a
 3. Select **Roll Initiative** to roll for all combatants with automatic sorting.
 4. Use **Next Turn** and **Previous Turn** to advance through the initiative order.
 5. Select **End Combat** when the encounter is resolved.
+
+## Adding participants mid-combat
+
+Use the tracker toolbar **⋮** menu to add participants while combat is already running:
+
+- **Add Creature to Encounter** — add a vault creature or manual creature to the active tracker. If the tracker was started from an encounter note, leave **Save to Encounter** enabled to append it to that encounter note.
+- **Add Party Member to Encounter** — add a PC from a Party Manager party. With **Save to Encounter** enabled, the selected PC is also stored in the encounter note's `party_members`.
+
+Encounter cards also support reinforcements: select **Add to Active Encounter** on another encounter card to add all of that encounter's creatures to the currently active tracker at once.
 
 ## Map integration
 

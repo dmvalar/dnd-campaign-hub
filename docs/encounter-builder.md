@@ -7,7 +7,7 @@ The encounter builder helps you create balanced combat encounters with live diff
 1. Open the Command Palette and run **Create New Encounter**.
 2. Fill in the fields:
    - **Encounter Name** — a descriptive title.
-   - **Include Party Members** — toggle this to factor party stats into difficulty.
+   - **Include Party Members** — toggle this to factor party stats into difficulty and save selected PCs into the encounter. When disabled, the encounter loads into the Combat Tracker without auto-adding the campaign party.
    - **Party** — select a party from the Party Manager. Individual members can be toggled with checkboxes.
    - **Use Color Names** — when enabled, duplicate creatures get color suffixes (for example, "Goblin (Red)") instead of numbers.
 
@@ -76,9 +76,12 @@ Embed an encounter widget in any note using the `dnd-encounter` code block:
 ```
 ````
 
-The widget shows the encounter name with a difficulty badge, a stats row (party count, level, enemy count, estimated rounds), and a creature summary. Two buttons appear:
+The widget shows the encounter name with a difficulty badge, a stats row (party count, level, enemy count, estimated rounds), and a creature summary. Common buttons include:
 
 - **Run Encounter** — loads the encounter into the Combat Tracker.
+- **Add to Active Encounter** — adds this encounter's creatures to the encounter currently loaded in the Combat Tracker. This is useful for reinforcements or staged combats.
+- **Save Combat** — saves the current tracker state for this encounter.
+- **Resume Combat** — appears when a saved combat state exists.
 - **Edit** — opens the encounter builder modal.
 
 ## Edit or delete an encounter

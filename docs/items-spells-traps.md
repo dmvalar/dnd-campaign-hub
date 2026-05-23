@@ -66,6 +66,7 @@ The plugin creates a spell note from the default template at `<Campaign>/Spells/
    - **Threat Level** — Setback, Dangerous, or Deadly.
    - **Level Range** — minimum and maximum character levels (1–20).
    - **Trigger** — what activates the trap.
+   - **Initiative Count** — the fixed initiative count used for simple traps or as a default when the trap is loaded into the Combat Tracker.
 3. Add at least one **Trap Element** using the inline builder:
    - **Name** — the element's label.
    - **Element Type** (complex traps only) — Active (acts on initiative), Dynamic (triggers conditionally), or Constant (ongoing effect).
@@ -93,7 +94,11 @@ Run **Edit Trap** while viewing a trap note. All fields are pre-filled, includin
 
 ### Trap integration with encounters
 
-Traps can be included in encounter difficulty calculations. The encounter builder reads trap elements to compute DPR contributions. See [Encounter builder](encounter-builder.md) and [Encounter System](encounter-system.md) for details on SRD imports and encounter spawning.
+Traps can be included in encounter difficulty calculations. The encounter builder reads trap elements to compute DPR contributions.
+
+When an encounter containing traps is loaded into the Combat Tracker, trap initiative is fixed instead of rolled. Simple traps use the trap's **Initiative Count**. Complex traps create fixed tracker entries for active elements with initiative counts, such as 20 and 10. Existing trap notes can be migrated to add the default `trap_initiative` field.
+
+See [Encounter builder](encounter-builder.md) and [Encounter System](encounter-system.md) for details on SRD imports and encounter spawning.
 
 ## Factions
 

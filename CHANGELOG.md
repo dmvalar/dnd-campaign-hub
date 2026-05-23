@@ -5,6 +5,23 @@ All notable changes to the D&D Campaign Hub plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-05-23
+
+### Added
+
+- **Trap Fixed Initiative Integration** — Trap creation now stores a default initiative count, and complex trap elements keep their own fixed initiative counts when loaded into the Combat Tracker.
+- **Active Encounter Imports** — Encounter cards can now add all of their creatures to the encounter currently loaded in the Combat Tracker with **Add to Active Encounter**.
+- **Same-Initiative Reordering** — Combatants with matching initiative values can be drag-swapped in the Combat Tracker to control tie order.
+- **Mid-Combat Encounter Persistence** — Creatures and party members added from the Combat Tracker can also be saved back to the loaded encounter note.
+
+### Changed
+
+- **Encounter Loading Without Party** — Encounters created with **Include Party Members** disabled now stay party-free when loaded into the Combat Tracker or linked from a map.
+
+### Fixed
+
+- **Trap Initiative Reset** — Traps added to encounters no longer lose their fixed initiative and fall back to initiative `0` when combat starts.
+
 ## [0.11.0] - 2026-05-23
 
 ### Added
