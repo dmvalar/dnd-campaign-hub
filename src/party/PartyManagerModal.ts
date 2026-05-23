@@ -182,6 +182,16 @@ export class PartyManagerModal extends Modal {
       this.render();
     });
 
+    const allPresentBtn = toolbar.createEl("button", { cls: "dnd-pm-toolbar-btn", text: "Mark All Present" });
+    allPresentBtn.setAttribute("title", "Clear absent status for every member in this party");
+    allPresentBtn.addEventListener("click", async () => {
+      const updated = await this.manager.markAllPresent(party.id);
+      new Notice(updated > 0
+        ? `${updated} member${updated !== 1 ? "s" : ""} marked present`
+        : "All members are already present");
+      this.render();
+    });
+
     // Spacer to push delete to the right
     toolbar.createDiv({ cls: "dnd-pm-toolbar-spacer" });
 
@@ -341,12 +351,14 @@ export class PartyManagerModal extends Modal {
   private renderSummaryBar(container: HTMLElement, members: ResolvedPartyMember[]) {
     const bar = container.createDiv({ cls: "dnd-pm-summary" });
 
-    const pcs = members.filter((m) => m.role !== "companion");
-    const companions = members.filter((m) => m.role === "companion");
-    const totalHP = members.reduce((s, m) => s + m.hp, 0);
-    const totalMaxHP = members.reduce((s, m) => s + m.maxHp, 0);
+    const presentMembers = members.filter((m) => m.enabled && !m.absent);
+    const pcs = presentMembers.filter((m) => m.role !== "companion");
+    const companions = presentMembers.filter((m) => m.role === "companion");
+    const absentCount = members.filter((m) => m.absent).length;
+    const totalHP = presentMembers.reduce((s, m) => s + m.hp, 0);
+    const totalMaxHP = presentMembers.reduce((s, m) => s + m.maxHp, 0);
     const hpPct = totalMaxHP > 0 ? Math.round((totalHP / totalMaxHP) * 100) : 0;
-    const avgAC = members.length > 0 ? Math.round(members.reduce((s, m) => s + m.ac, 0) / members.length) : 0;
+    const avgAC = presentMembers.length > 0 ? Math.round(presentMembers.reduce((s, m) => s + m.ac, 0) / presentMembers.length) : 0;
     const avgLevel = pcs.length > 0 ? (pcs.reduce((s, m) => s + m.level, 0) / pcs.length) : 0;
 
     // Members count
@@ -360,8 +372,8 @@ export class PartyManagerModal extends Modal {
 
     const memberStr = companions.length > 0
       ? `${pcs.length} PC${pcs.length !== 1 ? "s" : ""} + ${companions.length}`
-      : String(members.length);
-    stat("👥", "Members", memberStr);
+      : String(presentMembers.length);
+    stat("👥", absentCount > 0 ? "Present" : "Members", absentCount > 0 ? `${memberStr} (${absentCount} absent)` : memberStr);
 
     // Party HP with mini bar
     const hpStat = stat("❤️", "HP", `${totalHP}/${totalMaxHP}`);
@@ -420,7 +432,7 @@ export class PartyManagerModal extends Modal {
 
     // ── Card ──
     const card = row.createDiv({
-      cls: `dnd-pm-card${isExpanded ? " is-expanded" : ""}${!member.enabled ? " is-disabled" : ""}${isCompanion ? " is-companion" : ""}`,
+      cls: `dnd-pm-card${isExpanded ? " is-expanded" : ""}${!member.enabled ? " is-disabled" : ""}${member.absent ? " is-absent" : ""}${isCompanion ? " is-companion" : ""}`,
     });
     card.dataset.index = String(index);
 
@@ -520,6 +532,9 @@ export class PartyManagerModal extends Modal {
     if (isCompanion) {
       nameRow.createSpan({ text: "Companion", cls: "dnd-pm-role-badge" });
     }
+    if (member.absent) {
+      nameRow.createSpan({ text: "Absent", cls: "dnd-pm-absent-badge" });
+    }
     const nameLink = nameRow.createEl("a", { text: member.name, cls: "dnd-pm-name" });
     nameLink.addEventListener("click", (e) => {
       e.preventDefault();
@@ -581,6 +596,15 @@ export class PartyManagerModal extends Modal {
     init.createSpan({ text: "⚡", cls: "dnd-pm-badge-label" });
     init.createSpan({ text: initVal, cls: "dnd-pm-badge-value" });
 
+    const presentBadge = statsRow.createDiv({ cls: `dnd-pm-badge dnd-pm-presence-badge${member.absent ? " is-absent" : ""}` });
+    presentBadge.createSpan({ text: member.absent ? "Absent" : "Present", cls: "dnd-pm-badge-value" });
+    presentBadge.setAttribute("title", member.absent ? "Click to mark present" : "Click to mark absent");
+    presentBadge.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await this.manager.setMemberAbsent(party.id, member.notePath, !member.absent);
+      this.render();
+    });
+
     // ── Right-side remove button ──
     const removeBtn = row.createEl("button", { cls: "dnd-pm-icon-btn dnd-pm-remove-btn" });
     removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
@@ -608,6 +632,7 @@ export class PartyManagerModal extends Modal {
     addDetail("Level", member.level > 0 ? String(member.level) : undefined);
     addDetail("CR", member.cr);
     addDetail("Role", isCompanion ? "Companion" : "PC");
+    addDetail("Attendance", member.absent ? "Absent" : "Present");
     addDetail("Temp HP", member.thp > 0 ? String(member.thp) : undefined);
     addDetail("Init Bonus", initVal);
     addDetail("Token", member.tokenId ? "Assigned" : "None");

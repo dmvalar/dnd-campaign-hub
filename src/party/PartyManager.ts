@@ -210,6 +210,43 @@ export class PartyManager {
     return true;
   }
 
+  async setMemberAbsent(partyId: string, notePath: string, absent: boolean): Promise<boolean> {
+    const party = this.getParty(partyId);
+    if (!party) return false;
+
+    const member = party.members.find((m) => m.notePath === notePath);
+    if (!member) return false;
+
+    if (absent) {
+      member.absent = true;
+    } else {
+      delete member.absent;
+    }
+
+    await this.save();
+    this.emit();
+    return true;
+  }
+
+  async markAllPresent(partyId: string): Promise<number> {
+    const party = this.getParty(partyId);
+    if (!party) return 0;
+
+    let changed = 0;
+    for (const member of party.members) {
+      if (member.absent) {
+        delete member.absent;
+        changed++;
+      }
+    }
+
+    if (changed > 0) {
+      await this.save();
+      this.emit();
+    }
+    return changed;
+  }
+
   /** Update the cached display name for a member (e.g. after a rename). */
   async updateMemberName(notePath: string, newName: string): Promise<void> {
     let changed = false;
@@ -396,7 +433,7 @@ export class PartyManager {
 
     const results: ResolvedPartyMember[] = [];
     for (const ref of party.members) {
-      const resolved = await this.resolveMemberFromNote(ref.notePath, ref.role);
+      const resolved = await this.resolveMemberFromNote(ref.notePath, ref.role, ref.absent === true);
       if (resolved) {
         results.push(resolved);
       }
@@ -407,7 +444,7 @@ export class PartyManager {
   /**
    * Resolve a single member's stats from their vault note frontmatter.
    */
-  async resolveMemberFromNote(notePath: string, role?: PartyMemberRole): Promise<ResolvedPartyMember | null> {
+  async resolveMemberFromNote(notePath: string, role?: PartyMemberRole, absent = false): Promise<ResolvedPartyMember | null> {
     const file = this.app.vault.getAbstractFileByPath(notePath);
     if (!(file instanceof TFile)) return null;
 
@@ -432,6 +469,7 @@ export class PartyManager {
       race: text(fm.race) || text(fm.type),
       class: text(fm.class) || text(fm.subtype),
       enabled: fm.enabled !== false,
+      absent,
       role: role || "pc",
       cr: fm.cr != null ? String(fm.cr) : undefined,
     };

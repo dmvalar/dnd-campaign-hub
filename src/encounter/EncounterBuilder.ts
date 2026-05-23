@@ -124,6 +124,7 @@ export class EncounterBuilder {
 
       const resolved = await this.plugin.partyManager.resolveMembers(party.id);
       for (const m of resolved) {
+        if (!m.enabled || m.absent) continue;
         members.push({
           name: m.name,
           level: m.level,
@@ -165,6 +166,7 @@ export class EncounterBuilder {
 
       const resolved = await this.plugin.partyManager.resolveMembers(party.id);
       for (const m of resolved) {
+        if (!m.enabled || m.absent) continue;
         partyMembers.push({
           level: m.level,
           hp: m.maxHp,
@@ -189,7 +191,7 @@ export class EncounterBuilder {
         : null;
 
       return resolved
-        .filter((m) => !selectedNames || selectedNames.has(m.name))
+        .filter((m) => m.enabled && !m.absent && (!selectedNames || selectedNames.has(m.name)))
         .map((m) => ({
           name: m.name,
           level: m.level,
@@ -1631,7 +1633,7 @@ export class EncounterBuilder {
         : null;
 
       return resolved
-        .filter(m => m.enabled && (!selectedNames || selectedNames.has(m.name)))
+        .filter(m => m.enabled && !m.absent && (!selectedNames || selectedNames.has(m.name)))
         .map(m => pm.memberToEncounterCreature(m));
     } catch (error) {
       console.error("Error fetching party members:", error);

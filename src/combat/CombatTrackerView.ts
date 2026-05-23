@@ -1577,13 +1577,13 @@ class AddPartyMemberModal extends Modal {
     );
 
     const members = await this.plugin.partyManager.resolveMembers(partyId);
-    this.currentMembers = members.filter((m) => m.enabled && !presentPaths.has(m.notePath));
+    this.currentMembers = members.filter((m) => m.enabled && !m.absent && !presentPaths.has(m.notePath));
 
     if (this.currentMembers.length === 0) {
       this.memberListEl.createEl("p", {
         text: members.length === 0
           ? "No members in this party."
-          : "All party members are already in combat.",
+          : "All present party members are already in combat.",
         cls: "setting-item-description",
       });
       return;

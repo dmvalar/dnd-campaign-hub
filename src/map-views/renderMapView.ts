@@ -206,6 +206,7 @@ class MapEncounterSetupModal extends Modal {
 				if (resolvedParty) {
 					const resolved = await this.plugin.partyManager.resolveMembers(resolvedParty.id);
 					for (const m of resolved) {
+						if (!m.enabled || m.absent) continue;
 						partyMembers.push({
 							name: m.name,
 							level: m.level,

@@ -5,6 +5,12 @@ All notable changes to the D&D Campaign Hub plugin will be documented in this fi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Party Member Absence** — Party Manager can now mark members absent globally, keeping them visible in the party while excluding them from encounter creation, combat loading, party selection, map-linked encounters, and active combat member adds.
+
 ## [0.12.0] - 2026-05-23
 
 ### Added

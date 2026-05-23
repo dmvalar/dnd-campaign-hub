@@ -57,7 +57,7 @@ export class PartySelector {
     const allParties = partyManager.getParties();
     this.parties = [];
     for (const p of allParties) {
-      const members = await partyManager.resolveMembers(p.id);
+      const members = (await partyManager.resolveMembers(p.id)).filter((m) => m.enabled && !m.absent);
       const avgLevel = members.length > 0
         ? Math.round(members.reduce((s, m) => s + m.level, 0) / members.length)
         : 0;
@@ -124,7 +124,7 @@ export class PartySelector {
     // Remove existing member section if re-rendering
     container.querySelector(".dnd-ps-members")?.remove();
 
-    const members = await partyManager.resolveMembers(this.selectedPartyId);
+    const members = (await partyManager.resolveMembers(this.selectedPartyId)).filter((m) => m.enabled && !m.absent);
     if (members.length === 0) return;
 
     const wrapper = container.createDiv({ cls: "dnd-ps-members" });

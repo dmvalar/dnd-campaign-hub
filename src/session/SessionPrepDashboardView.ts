@@ -336,7 +336,7 @@ export class SessionPrepDashboardView extends ItemView {
     let hasParty = false;
     if (party?.id) {
       const members = await this.plugin.partyManager.resolveMembers(party.id);
-      hasParty = members.length > 0;
+      hasParty = members.some((m) => m.enabled && !m.absent);
     }
 
     const hasSessions = this.getSessionFiles().length > 0;
@@ -836,15 +836,16 @@ export class SessionPrepDashboardView extends ItemView {
       content.createEl("p", { text: "No party members found", cls: "empty-msg" });
     } else {
       const resolved = await this.plugin.partyManager.resolveMembers(party.id);
+      const presentMembers = resolved.filter((m) => m.enabled && !m.absent);
 
-      if (resolved.length === 0) {
-        content.createEl("p", { text: "No PCs yet", cls: "empty-msg" });
+      if (presentMembers.length === 0) {
+        content.createEl("p", { text: resolved.length === 0 ? "No PCs yet" : "No present PCs", cls: "empty-msg" });
       } else {
-        resolved.sort((a, b) => a.name.localeCompare(b.name));
+        presentMembers.sort((a, b) => a.name.localeCompare(b.name));
 
         const partyGrid = content.createEl("div", { cls: "party-grid" });
         
-        for (const pc of resolved) {
+        for (const pc of presentMembers) {
           const pcCard = partyGrid.createEl("div", { cls: "party-card" });
           
           const pcLink = pcCard.createEl("a", { 

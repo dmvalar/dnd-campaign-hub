@@ -229,6 +229,7 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 				if (resolvedParty) {
 					const resolved = await plugin.partyManager.resolveMembers(resolvedParty.id);
 					for (const m of resolved) {
+						if (!m.enabled || m.absent) continue;
 						partyMembers.push({
 							name: m.name,
 							level: m.level,

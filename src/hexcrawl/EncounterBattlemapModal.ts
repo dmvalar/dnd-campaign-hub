@@ -694,7 +694,7 @@ export class EncounterBattlemapModal extends Modal {
       // Resolve live stats from PC notes
       const resolved = await pm.resolveMembers(party.id);
       for (const m of resolved) {
-        if (m.enabled) {
+        if (m.enabled && !m.absent) {
           this.partyMembers.push({
             name: m.name,
             level: m.level,

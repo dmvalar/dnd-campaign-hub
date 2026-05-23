@@ -2394,7 +2394,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (party) {
 					const resolved = await pm.resolveMembers(party.id);
 					for (const m of resolved) {
-						if (m.enabled) {
+						if (m.enabled && !m.absent) {
 							partyCreatures.push(pm.memberToEncounterCreature(m));
 						}
 					}

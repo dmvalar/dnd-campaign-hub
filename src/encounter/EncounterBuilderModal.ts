@@ -1752,7 +1752,7 @@ use_color_names: ${this.useColorNames}`;
         );
         if (party) {
           const resolved = await this.plugin.partyManager.resolveMembers(party.id);
-          const selected = resolved.filter((m) => this.selectedPartyMembers.includes(m.name));
+          const selected = resolved.filter((m) => m.enabled && !m.absent && this.selectedPartyMembers.includes(m.name));
 
           if (selected.length > 0) {
             frontmatter += `\nparty_members:`;

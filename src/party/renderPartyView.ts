@@ -78,7 +78,7 @@ export async function renderPartyView(plugin: DndCampaignHubPlugin, source: stri
 
 		// Resolve live stats from PC notes
 		const resolved = await pm.resolveMembers(party.id);
-		const members = resolved.filter(m => m.enabled).map(m => ({
+		const members = resolved.filter(m => m.enabled && !m.absent).map(m => ({
 			name: m.name,
 			level: m.level,
 			hp: m.hp,

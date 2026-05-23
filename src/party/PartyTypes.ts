@@ -12,6 +12,8 @@ export interface PartyMemberRef {
   name: string;
   /** Member role — "pc" (default) or "companion" (NPC / creature). */
   role?: PartyMemberRole;
+  /** Temporarily absent from sessions and encounters. */
+  absent?: boolean;
 }
 
 /** Resolved stats for a party member — fetched live from note frontmatter. */
@@ -34,6 +36,8 @@ export interface ResolvedPartyMember {
   class?: string;
   /** Active — false if the PC has been retired or killed. */
   enabled: boolean;
+  /** Temporarily absent from sessions and encounters. */
+  absent: boolean;
   /** Member role — "pc" (default) or "companion". */
   role: PartyMemberRole;
   /** Challenge rating (creatures only). */
