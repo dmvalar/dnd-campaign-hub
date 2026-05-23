@@ -1,6 +1,7 @@
 import { App, Notice, TFile } from "obsidian";
 import { ConfirmModal } from "../utils/ConfirmModal";
 import type DndCampaignHubPlugin from "../main";
+import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
 
 /** Format a relative "time ago" string from an ISO date. */
 function formatTimeAgo(isoDate: string): string {
@@ -12,6 +13,58 @@ function formatTimeAgo(isoDate: string): string {
 	if (hours < 24) return `${hours}h ago`;
 	const days = Math.floor(hours / 24);
 	return `${days}d ago`;
+}
+
+function mapEncounterCreatures(fm: any) {
+	return (fm.creatures || []).map((c: any) => {
+		const name = String(c.name ?? "");
+		const initiativeMatch = name.match(/\(Initiative\s+(\d+)\)/i);
+		const inferredInitiative = initiativeMatch?.[1] ? parseInt(initiativeMatch[1], 10) : undefined;
+		const isTrap = c.is_trap ?? c.isTrap ?? !!initiativeMatch;
+		return {
+			name: c.name,
+			count: c.count ?? 1,
+			initiative: c.initiative ?? inferredInitiative,
+			initiativeCounts: Array.isArray(c.initiative_counts) ? c.initiative_counts : c.initiativeCounts,
+			fixedInitiative: c.fixed_initiative ?? c.fixedInitiative ?? !!initiativeMatch,
+			hp: c.hp,
+			ac: c.ac,
+			cr: c.cr,
+			source: c.source,
+			path: c.path && c.path !== "[SRD]" ? c.path : undefined,
+			isTrap,
+			trapPath: c.trap_path ?? c.trapPath,
+			isFriendly: c.isFriendly ?? c.is_friendly ?? false,
+			isHidden: c.isHidden ?? c.is_hidden ?? false,
+		};
+	});
+}
+
+async function appendCreaturesToActiveEncounter(plugin: DndCampaignHubPlugin, creatures: any[]) {
+	const state = plugin.combatTracker.getState();
+	if (!state?.encounterPath || creatures.length === 0) return false;
+
+	const file = plugin.app.vault.getAbstractFileByPath(state.encounterPath);
+	if (!(file instanceof TFile)) return false;
+
+	try {
+		const content = await plugin.app.vault.read(file);
+		const nextContent = updateYamlFrontmatter(content, (frontmatter) => {
+			const existing = Array.isArray(frontmatter.creatures) ? frontmatter.creatures : [];
+			return {
+				...frontmatter,
+				creatures: [...existing, ...structuredClone(creatures)],
+			};
+		});
+		if (nextContent !== content) {
+			await plugin.app.vault.modify(file, nextContent);
+		}
+		return true;
+	} catch (error) {
+		console.error("[EncounterView] Failed to append encounter creatures:", error);
+		new Notice("Added to tracker, but could not update the active encounter note.");
+		return false;
+	}
 }
 
 /**
@@ -145,32 +198,12 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 			const tracker = plugin.combatTracker;
 
 			// Map YAML creatures (snake_case → camelCase for EncounterCreature)
-			const mappedCreatures = (fm.creatures || []).map((c: any) => {
-				const name = String(c.name ?? "");
-				const initiativeMatch = name.match(/\(Initiative\s+(\d+)\)/i);
-				const inferredInitiative = initiativeMatch?.[1] ? parseInt(initiativeMatch[1], 10) : undefined;
-				const isTrap = c.is_trap ?? c.isTrap ?? !!initiativeMatch;
-				return {
-					name: c.name,
-					count: c.count ?? 1,
-					initiative: c.initiative ?? inferredInitiative,
-					initiativeCounts: Array.isArray(c.initiative_counts) ? c.initiative_counts : c.initiativeCounts,
-					fixedInitiative: c.fixed_initiative ?? c.fixedInitiative ?? !!initiativeMatch,
-					hp: c.hp,
-					ac: c.ac,
-					cr: c.cr,
-					source: c.source,
-					path: c.path && c.path !== "[SRD]" ? c.path : undefined,
-					isTrap,
-					trapPath: c.trap_path ?? c.trapPath,
-					isFriendly: c.isFriendly ?? c.is_friendly ?? false,
-					isHidden: c.isHidden ?? c.is_hidden ?? false,
-				};
-			});
+			const mappedCreatures = mapEncounterCreatures(fm);
 
 			// Build party — prefer frontmatter party_members, fall back to PartyManager
 			const partyMembers: Array<{ name: string; level: number; hp: number; maxHp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }> = [];
 
+			const includeParty = fm.include_party !== false;
 			const fmParty: any[] | undefined = fm.party_members;
 			if (Array.isArray(fmParty) && fmParty.length > 0) {
 				for (const m of fmParty) {
@@ -188,7 +221,7 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 						thp: typeof m.thp === "number" ? m.thp : 0,
 					});
 				}
-			} else {
+			} else if (includeParty) {
 				// Resolve party from PartyManager using encounter note context
 				const resolvedParty = encounterFile
 					? plugin.partyManager.resolvePartyForNote(encounterFile.path)
@@ -222,6 +255,37 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 			// Open the Combat Tracker sidebar
 			await plugin.openCombatTracker();
 		});
+
+		if (creatures.length > 0) {
+			const addToActiveBtn = buttonRow.createEl('button', {
+				text: '\u2795 Add to Active Encounter',
+				cls: 'dnd-encounter-btn mod-cta'
+			});
+			addToActiveBtn.addEventListener('click', async () => {
+				const activeCombat = plugin.combatTracker.getState();
+				if (!activeCombat) {
+					new Notice("No active encounter is loaded in the Initiative Tracker.");
+					return;
+				}
+
+				if (activeCombat.encounterPath === encounterFile.path) {
+					new Notice("This encounter is already active in the Initiative Tracker.");
+					return;
+				}
+
+				const mappedCreatures = mapEncounterCreatures(fm);
+				const added = await plugin.combatTracker.addCreaturesFromEncounter(
+					encounterName,
+					mappedCreatures,
+					fm.use_color_names ?? true,
+				);
+
+				if (added > 0) {
+					await appendCreaturesToActiveEncounter(plugin, fm.creatures || []);
+					await plugin.openCombatTracker();
+				}
+			});
+		}
 
 		// Save Combat button
 		const saveBtn = buttonRow.createEl('button', {

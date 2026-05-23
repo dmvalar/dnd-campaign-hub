@@ -2314,6 +2314,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const selectedPartyId = typeof parsed.frontmatter.selected_party_id === 'string' && parsed.frontmatter.selected_party_id.length > 0
 				? parsed.frontmatter.selected_party_id
 				: null;
+			const includeParty = parsed.frontmatter.include_party !== false;
 			const useColorNames = parsed.frontmatter.use_color_names === true;
 
 
@@ -2346,7 +2347,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			}
 
 			// Update Initiative Tracker encounter
-			await this.updateEncounterData(encounterName, encounterCreatures, selectedPartyId, useColorNames);
+			await this.updateEncounterData(encounterName, encounterCreatures, includeParty ? selectedPartyId : null, useColorNames);
 
 			if (scenesLinking.length > 0) {
 				new Notice(`✅ Encounter "${encounterName}" synced to ${scenesLinking.length} scene(s)`);

@@ -4,6 +4,7 @@ import { COMBAT_TRACKER_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE } from "../constants"
 import type { CombatTracker } from "./CombatTracker";
 import type { Combatant, CombatState, StatusEffect, SyncPreviewEntry } from "./types";
 import { enumerateScreens, screenKey, type ScreenInfo } from "../utils/ScreenEnumeration";
+import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
 
 /**
  * Sidebar view for the Combat Tracker — styled to match Initiative Tracker.
@@ -706,15 +707,16 @@ export class CombatTrackerView extends ItemView {
 
   private showOptionsMenu(e: MouseEvent, tracker: CombatTracker, state: CombatState) {
     const menu = new Menu();
+    const hasLoadedEncounter = !!state.encounterPath;
 
     menu.addItem((item) =>
-      item.setTitle("➕ Add Creature").setIcon("plus").onClick(() => {
+      item.setTitle(hasLoadedEncounter ? "➕ Add Creature to Encounter" : "➕ Add Creature").setIcon("plus").onClick(() => {
         new AddCreatureModal(this.app, this.plugin, tracker).open();
       }),
     );
 
     menu.addItem((item) =>
-      item.setTitle("➕ Add Party Member").setIcon("user-plus").onClick(() => {
+      item.setTitle(hasLoadedEncounter ? "➕ Add Party Member to Encounter" : "➕ Add Party Member").setIcon("user-plus").onClick(() => {
         new AddPartyMemberModal(this.app, this.plugin, tracker).open();
       }),
     );
@@ -1116,6 +1118,70 @@ class CombatantEditModal extends Modal {
 }
 
 /** Add a creature mid-combat. */
+async function appendCreaturesToActiveEncounter(
+  app: any,
+  tracker: CombatTracker,
+  creatures: Array<Record<string, unknown>>,
+): Promise<boolean> {
+  const state = tracker.getState();
+  if (!state?.encounterPath || creatures.length === 0) return false;
+
+  const file = app.vault.getAbstractFileByPath(state.encounterPath);
+  if (!(file instanceof TFile)) return false;
+
+  try {
+    const content = await app.vault.read(file);
+    const nextContent = updateYamlFrontmatter(content, (frontmatter) => {
+      const existing = Array.isArray(frontmatter.creatures) ? frontmatter.creatures : [];
+      return {
+        ...frontmatter,
+        creatures: [...existing, ...creatures],
+      };
+    });
+
+    if (nextContent !== content) {
+      await app.vault.modify(file, nextContent);
+    }
+    return true;
+  } catch (error) {
+    console.error("[CombatTracker] Failed to append creatures to encounter:", error);
+    new Notice("Added to tracker, but could not update the encounter note.");
+    return false;
+  }
+}
+
+async function appendPartyMembersToActiveEncounter(
+  app: any,
+  tracker: CombatTracker,
+  members: Array<Record<string, unknown>>,
+): Promise<boolean> {
+  const state = tracker.getState();
+  if (!state?.encounterPath || members.length === 0) return false;
+
+  const file = app.vault.getAbstractFileByPath(state.encounterPath);
+  if (!(file instanceof TFile)) return false;
+
+  try {
+    const content = await app.vault.read(file);
+    const nextContent = updateYamlFrontmatter(content, (frontmatter) => {
+      const existing = Array.isArray(frontmatter.party_members) ? frontmatter.party_members : [];
+      return {
+        ...frontmatter,
+        party_members: [...existing, ...members],
+      };
+    });
+
+    if (nextContent !== content) {
+      await app.vault.modify(file, nextContent);
+    }
+    return true;
+  } catch (error) {
+    console.error("[CombatTracker] Failed to append party members to encounter:", error);
+    new Notice("Added to tracker, but could not update the encounter note.");
+    return false;
+  }
+}
+
 class AddCreatureModal extends Modal {
   private plugin: DndCampaignHubPlugin;
   private tracker: CombatTracker;
@@ -1125,6 +1191,7 @@ class AddCreatureModal extends Modal {
   private vaultCount = "1";
   private vaultFriendly = false;
   private vaultHidden = false;
+  private saveToEncounter = true;
 
   /* Manual creature state */
   private creatureName = "";
@@ -1151,6 +1218,20 @@ class AddCreatureModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.createEl("h3", { text: "➕ Add Creature" });
+
+    const state = this.tracker.getState();
+    if (state?.encounterPath) {
+      new Setting(contentEl)
+        .setName("Save to Encounter")
+        .setDesc("Add this participant to the loaded encounter note as well as the active tracker.")
+        .addToggle((toggle) =>
+          toggle.setValue(this.saveToEncounter).onChange((value) => {
+            this.saveToEncounter = value;
+          }),
+        );
+    } else {
+      this.saveToEncounter = false;
+    }
 
     /* ── Vault creature section ── */
     await this.buildVaultSection(contentEl);
@@ -1302,7 +1383,7 @@ class AddCreatureModal extends Modal {
   }
 
   /* ── Add vault creature(s) ── */
-  private addVaultCreature(searchInput: HTMLInputElement) {
+  private async addVaultCreature(searchInput: HTMLInputElement) {
     if (!this.selectedCreature) { new Notice("Select a creature from the search results"); return; }
     const creature = this.selectedCreature;
     const count = Math.max(1, parseInt(this.vaultCount, 10) || 1);
@@ -1343,6 +1424,20 @@ class AddCreatureModal extends Modal {
       });
     }
 
+    if (this.saveToEncounter) {
+      await appendCreaturesToActiveEncounter(this.app, this.tracker, [{
+        name: creature.name,
+        count,
+        hp: creature.hp,
+        ac: creature.ac,
+        ...(creature.cr ? { cr: creature.cr } : {}),
+        source: "vault",
+        path: creature.path,
+        ...(this.vaultFriendly ? { is_friendly: true } : {}),
+        ...(this.vaultHidden ? { is_hidden: true } : {}),
+      }]);
+    }
+
     new Notice(`Added ${count}× ${creature.name}`);
     /* Reset for another addition */
     this.selectedCreature = null;
@@ -1350,7 +1445,7 @@ class AddCreatureModal extends Modal {
   }
 
   /* ── Add manual creature(s) ── */
-  private addManual() {
+  private async addManual() {
     if (!this.creatureName.trim()) { new Notice("Enter a creature name"); return; }
     const hp = parseInt(this.hp, 10) || 10;
     const ac = parseInt(this.ac, 10) || 10;
@@ -1379,6 +1474,16 @@ class AddCreatureModal extends Modal {
       });
     }
 
+    if (this.saveToEncounter) {
+      await appendCreaturesToActiveEncounter(this.app, this.tracker, [{
+        name: this.creatureName.trim(),
+        count,
+        hp,
+        ac,
+        ...(this.friendly ? { is_friendly: true } : {}),
+      }]);
+    }
+
     new Notice(`Added ${count}× ${this.creatureName.trim()}`);
     this.close();
   }
@@ -1396,6 +1501,7 @@ class AddPartyMemberModal extends Modal {
   private memberListEl!: HTMLElement;
   private addBtn!: HTMLButtonElement;
   private currentMembers: import("../party/PartyTypes").ResolvedPartyMember[] = [];
+  private saveToEncounter = true;
 
   constructor(app: any, plugin: DndCampaignHubPlugin, tracker: CombatTracker) {
     super(app);
@@ -1408,6 +1514,20 @@ class AddPartyMemberModal extends Modal {
     contentEl.empty();
     contentEl.createEl("h3", { text: "➕ Add Party Member" });
 
+    const trackerState = this.tracker.getState();
+    if (trackerState?.encounterPath) {
+      new Setting(contentEl)
+        .setName("Save to Encounter")
+        .setDesc("Add selected party members to the loaded encounter note as well as the active tracker.")
+        .addToggle((toggle) =>
+          toggle.setValue(this.saveToEncounter).onChange((value) => {
+            this.saveToEncounter = value;
+          }),
+        );
+    } else {
+      this.saveToEncounter = false;
+    }
+
     const parties = this.plugin.partyManager.getParties();
     if (parties.length === 0) {
       contentEl.createEl("p", {
@@ -1418,7 +1538,6 @@ class AddPartyMemberModal extends Modal {
     }
 
     // Pre-select the party linked to the encounter, if any
-    const trackerState = this.tracker.getState();
     const autoParty = trackerState?.encounterPath
       ? this.plugin.partyManager.resolvePartyForNote(trackerState.encounterPath)
       : undefined;
@@ -1483,7 +1602,7 @@ class AddPartyMemberModal extends Modal {
     }
   }
 
-  private addSelected() {
+  private async addSelected() {
     if (this.selected.size === 0) {
       new Notice("Select at least one party member");
       return;
@@ -1512,6 +1631,19 @@ class AddPartyMemberModal extends Modal {
         statuses: [],
         level: pm.level,
       });
+    }
+
+    if (this.saveToEncounter) {
+      await appendPartyMembersToActiveEncounter(this.app, this.tracker, toAdd.map((pm) => ({
+        name: pm.name,
+        level: pm.level,
+        hp: pm.maxHp,
+        ac: pm.ac,
+        note_path: pm.notePath,
+        ...(pm.tokenId ? { token_id: pm.tokenId } : {}),
+        init_bonus: pm.initBonus,
+        ...(pm.thp ? { thp: pm.thp } : {}),
+      })));
     }
 
     new Notice(`Added ${toAdd.length} party member${toAdd.length !== 1 ? "s" : ""}`);

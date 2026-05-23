@@ -183,6 +183,7 @@ class MapEncounterSetupModal extends Modal {
 			});
 
 			const partyMembers: Array<{ name: string; level: number; hp: number; maxHp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }> = [];
+			const includeParty = fm.include_party !== false;
 			const fmParty: any[] | undefined = fm.party_members;
 			if (Array.isArray(fmParty) && fmParty.length > 0) {
 				for (const m of fmParty) {
@@ -200,7 +201,7 @@ class MapEncounterSetupModal extends Modal {
 						thp: typeof m.thp === 'number' ? m.thp : 0,
 					});
 				}
-			} else {
+			} else if (includeParty) {
 				const resolvedParty = this.plugin.partyManager.resolvePartyForNote(file.path) || this.plugin.partyManager.getDefaultParty();
 				if (resolvedParty) {
 					const resolved = await this.plugin.partyManager.resolveMembers(resolvedParty.id);

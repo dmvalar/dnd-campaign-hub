@@ -81,7 +81,48 @@ export class CombatTracker {
       });
     }
 
-    // ── Creatures ──
+    combatants.push(...await this.buildCreatureCombatants(creatures, useColorNames, false));
+
+    this.state = {
+      encounterName,
+      encounterPath,
+      combatants,
+      round: 0,
+      turnIndex: 0,
+      started: false,
+      savedAt: new Date().toISOString(),
+    };
+
+    this.emit();
+    new Notice(`⚔️ Combat ready: ${combatants.length} combatants. Roll initiative!`);
+  }
+
+  async addCreaturesFromEncounter(
+    encounterName: string,
+    creatures: EncounterCreature[],
+    useColorNames: boolean,
+  ): Promise<number> {
+    if (!this.state) {
+      new Notice("No active encounter in the tracker");
+      return 0;
+    }
+
+    const additions = await this.buildCreatureCombatants(creatures, useColorNames, this.state.started);
+    if (additions.length === 0) return 0;
+
+    this.state.combatants.push(...additions);
+    this.sortByInitiative();
+    this.emit();
+    new Notice(`Added ${additions.length} participant${additions.length !== 1 ? "s" : ""} from "${encounterName}"`);
+    return additions.length;
+  }
+
+  private async buildCreatureCombatants(
+    creatures: EncounterCreature[],
+    useColorNames: boolean,
+    rollInitiative: boolean,
+  ): Promise<Combatant[]> {
+    const combatants: Combatant[] = [];
     const colors = [
       "Red", "Blue", "Green", "Yellow", "Purple", "Orange",
       "Pink", "Brown", "Black", "White", "Gray", "Cyan",
@@ -125,7 +166,7 @@ export class CombatTracker {
           id: this.generateId(),
           name: ec.name,
           display,
-          initiative: 0,
+          initiative: rollInitiative ? this.rollD20() + modifier : 0,
           modifier,
           currentHP: ec.hp ?? 1,
           maxHP: ec.hp ?? 1,
@@ -143,18 +184,7 @@ export class CombatTracker {
       }
     }
 
-    this.state = {
-      encounterName,
-      encounterPath,
-      combatants,
-      round: 0,
-      turnIndex: 0,
-      started: false,
-      savedAt: new Date().toISOString(),
-    };
-
-    this.emit();
-    new Notice(`⚔️ Combat ready: ${combatants.length} combatants. Roll initiative!`);
+    return combatants;
   }
 
   /** Check whether the Party Manager is configured to auto-roll initiative for PCs.

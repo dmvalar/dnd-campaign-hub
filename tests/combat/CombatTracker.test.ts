@@ -205,4 +205,20 @@ describe("combat/CombatTracker", () => {
     expect(tracker.swapCombatantsWithSameInitiative(ids[0]!, ids[2]!)).toBe(false);
     expect(tracker.getState()!.combatants.map((c) => c.name)).toEqual(["B", "A", "C"]);
   });
+
+  it("adds another encounter's creatures to active combat in one call", async () => {
+    const { tracker } = createTracker();
+    await seedCombat(tracker, [{ name: "Goblin", count: 1, hp: 10, ac: 13, path: "[SRD]" }]);
+    tracker.rollAllInitiative();
+
+    vi.spyOn(tracker as any, "rollD20").mockReturnValue(12);
+    const added = await tracker.addCreaturesFromEncounter("Reinforcements", [
+      { name: "Wolf", count: 2, hp: 11, ac: 13, path: "[SRD]" },
+    ], true);
+
+    const state = tracker.getState()!;
+    expect(added).toBe(2);
+    expect(state.combatants.filter((c) => c.name === "Wolf")).toHaveLength(2);
+    expect(state.combatants.filter((c) => c.name === "Wolf").map((c) => c.initiative)).toEqual([12, 12]);
+  });
 });
