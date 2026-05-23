@@ -30,8 +30,12 @@ export interface Combatant {
   display: string;
   /** Rolled initiative score. */
   initiative: number;
+  /** True when initiative is a fixed count instead of a roll. */
+  fixedInitiative?: boolean;
   /** DEX modifier (tiebreaker for initiative) and initiative roll modifier. */
   modifier: number;
+  /** Manual ordering inside a shared initiative count. */
+  initiativeTieOrder?: number;
   /** Current hit points. */
   currentHP: number;
   /** Max hit points (can be reduced by effects like max-HP drain). */
@@ -48,6 +52,8 @@ export interface Combatant {
   friendly: boolean;
   /** Hidden from players. */
   hidden: boolean;
+  /** Trap/hazard combatant with fixed initiative behavior. */
+  trap?: boolean;
   /** Whether the combatant is enabled (disabled = grayed out, skipped in turns). */
   enabled?: boolean;
   /** Path to the vault note (PC/NPC/creature .md file). */

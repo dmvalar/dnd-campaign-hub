@@ -13,6 +13,7 @@ export class TrapCreationModal extends Modal {
   minLevel = 1;
   maxLevel = 5;
   trigger = "";
+  trapInitiative = 20;
   adventurePath = "";
   scenePath = "";
   
@@ -135,6 +136,21 @@ export class TrapCreationModal extends Modal {
         text.inputEl.rows = 3;
         text.inputEl.style.width = "100%";
       });
+
+    new Setting(contentEl)
+      .setName("Initiative Count")
+      .setDesc("Fixed initiative count used when this trap is loaded into the combat tracker.")
+      .addText((text) =>
+        text
+          .setPlaceholder("20")
+          .setValue(this.trapInitiative.toString())
+          .onChange((value) => {
+            const num = parseInt(value, 10);
+            if (!isNaN(num) && num >= 1 && num <= 30) {
+              this.trapInitiative = num;
+            }
+          })
+      );
 
     // Elements Section
     contentEl.createEl("h3", { text: "Trap Elements" });
@@ -577,6 +593,7 @@ export class TrapCreationModal extends Modal {
       this.minLevel = frontmatter.min_level || 1;
       this.maxLevel = frontmatter.max_level || 5;
       this.trigger = frontmatter.trigger || "";
+      this.trapInitiative = parseInt(String(frontmatter.trap_initiative ?? "20"), 10) || 20;
       this.adventurePath = frontmatter.adventure || "";
       this.scenePath = frontmatter.scene || "";
 
@@ -764,6 +781,7 @@ export class TrapCreationModal extends Modal {
       min_level: this.minLevel,
       max_level: this.maxLevel,
       trigger: this.trigger,
+      trap_initiative: this.trapInitiative,
       elements: this.elements,
       countermeasures: this.countermeasures,
       date: now,

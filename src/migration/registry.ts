@@ -1055,6 +1055,25 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "trap-1.3.2",
+      entityTypes: ["trap"],
+      targetVersion: "1.3.2",
+      description: "Add fixed initiative count for combat tracker loading",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+
+        if (!ctx.frontmatter.trap_initiative) {
+          out = addFrontmatterFieldAfter(out, "trigger", "trap_initiative", "20");
+          if (out === ctx.content) {
+            out = addFrontmatterField(out, "trap_initiative", "20");
+          }
+        }
+
+        return setFrontmatterField(out, "template_version", "1.3.2");
+      },
+    },
+
     // ── Item ─────────────────────────────────────────────────────────────
 
     {

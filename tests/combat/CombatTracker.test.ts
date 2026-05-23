@@ -23,10 +23,15 @@ type PartyMember = {
 type EncounterCreature = {
   name: string;
   count: number;
+  initiative?: number;
+  initiativeCounts?: number[];
+  fixedInitiative?: boolean;
   hp?: number;
   ac?: number;
   cr?: string;
   path?: string;
+  isTrap?: boolean;
+  trapPath?: string;
   isFriendly?: boolean;
   isHidden?: boolean;
 };
@@ -153,5 +158,51 @@ describe("combat/CombatTracker", () => {
     state = tracker.getState()!;
     expect(state.turnIndex).toBe(0);
     expect(state.round).toBe(2);
+  });
+
+  it("keeps trap initiative counts fixed when rolling initiative", async () => {
+    const { tracker } = createTracker();
+    await seedCombat(tracker, [
+      {
+        name: "Grinding Hallway",
+        count: 1,
+        hp: 1,
+        ac: 15,
+        isTrap: true,
+        initiativeCounts: [20, 10],
+        fixedInitiative: true,
+      },
+      { name: "Goblin", count: 1, hp: 10, ac: 13, path: "[SRD]" },
+    ]);
+
+    vi.spyOn(tracker as any, "rollD20").mockReturnValue(3);
+    tracker.rollAllInitiative();
+
+    const state = tracker.getState()!;
+    const traps = state.combatants.filter((c) => c.trap);
+    const goblin = state.combatants.find((c) => c.name === "Goblin")!;
+
+    expect(traps.map((c) => c.initiative)).toEqual([20, 10]);
+    expect(traps.every((c) => c.fixedInitiative)).toBe(true);
+    expect(goblin.initiative).toBe(3);
+  });
+
+  it("swaps combatants only within the same initiative count", async () => {
+    const { tracker } = createTracker();
+    const ids = await seedCombat(tracker, [
+      { name: "A", count: 1, hp: 10, ac: 10, path: "[SRD]" },
+      { name: "B", count: 1, hp: 10, ac: 10, path: "[SRD]" },
+      { name: "C", count: 1, hp: 10, ac: 10, path: "[SRD]" },
+    ]);
+
+    tracker.setInitiative(ids[0]!, 15);
+    tracker.setInitiative(ids[1]!, 15);
+    tracker.setInitiative(ids[2]!, 10);
+
+    expect(tracker.swapCombatantsWithSameInitiative(ids[0]!, ids[1]!)).toBe(true);
+    expect(tracker.getState()!.combatants.map((c) => c.name)).toEqual(["B", "A", "C"]);
+
+    expect(tracker.swapCombatantsWithSameInitiative(ids[0]!, ids[2]!)).toBe(false);
+    expect(tracker.getState()!.combatants.map((c) => c.name)).toEqual(["B", "A", "C"]);
   });
 });

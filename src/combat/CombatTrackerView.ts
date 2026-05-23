@@ -222,12 +222,19 @@ export class CombatTrackerView extends ItemView {
 
   private renderCombatantList(container: HTMLElement, tracker: CombatTracker, state: CombatState) {
     const list = container.createDiv({ cls: "dnd-ct-list" });
+    let draggedCombatantId: string | null = null;
 
     for (let i = 0; i < state.combatants.length; i++) {
       const c = state.combatants[i];
       if (!c) continue;
       const isActive = state.started && i === state.turnIndex;
-      this.renderCombatantRow(list, tracker, c, isActive, state);
+      this.renderCombatantRow(list, tracker, c, isActive, state, {
+        canDragTie: state.started && state.combatants.some(other => other.id !== c.id && other.initiative === c.initiative),
+        getDraggedId: () => draggedCombatantId,
+        setDraggedId: (id) => {
+          draggedCombatantId = id;
+        },
+      });
     }
   }
 
@@ -237,6 +244,11 @@ export class CombatTrackerView extends ItemView {
     c: Combatant,
     isActive: boolean,
     state: CombatState,
+    dragState: {
+      canDragTie: boolean;
+      getDraggedId: () => string | null;
+      setDraggedId: (id: string | null) => void;
+    },
   ) {
     const isEnabled = c.enabled ?? true;
     const isDead = c.dead ?? false;
@@ -250,6 +262,42 @@ export class CombatTrackerView extends ItemView {
     if (!isEnabled) rowClasses.push("dnd-ct-row-disabled");
 
     const row = list.createDiv({ cls: rowClasses.join(" ") });
+    row.dataset.combatantId = c.id;
+
+    if (dragState.canDragTie) {
+      row.draggable = true;
+      row.addClass("dnd-ct-row-draggable");
+      row.title = "Drag onto another combatant with the same initiative to swap tie order";
+      row.addEventListener("dragstart", (e) => {
+        dragState.setDraggedId(c.id);
+        row.addClass("dnd-ct-row-dragging");
+        e.dataTransfer?.setData("text/plain", c.id);
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+      });
+      row.addEventListener("dragend", () => {
+        dragState.setDraggedId(null);
+        row.removeClass("dnd-ct-row-dragging");
+      });
+      row.addEventListener("dragover", (e) => {
+        const draggedId = dragState.getDraggedId();
+        const dragged = state.combatants.find(combatant => combatant.id === draggedId);
+        if (!dragged || dragged.id === c.id || dragged.initiative !== c.initiative) return;
+        e.preventDefault();
+        row.addClass("dnd-ct-row-drag-over");
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      });
+      row.addEventListener("dragleave", () => {
+        row.removeClass("dnd-ct-row-drag-over");
+      });
+      row.addEventListener("drop", (e) => {
+        e.preventDefault();
+        row.removeClass("dnd-ct-row-drag-over");
+        const draggedId = dragState.getDraggedId() || e.dataTransfer?.getData("text/plain") || null;
+        if (!draggedId) return;
+        tracker.swapCombatantsWithSameInitiative(draggedId, c.id);
+        dragState.setDraggedId(null);
+      });
+    }
 
     // ── Initiative badge ──
     const initBadge = row.createEl("span", { cls: "dnd-ct-init" });

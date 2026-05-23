@@ -79,7 +79,11 @@ export interface StoredEncounterCreature {
   ac: number;
   currentAC: number;
   initiative: number;
+  /** True when initiative is a fixed count instead of a roll. */
+  fixedInitiative?: boolean;
   modifier: number;
+  /** Manual ordering inside a shared initiative count. */
+  initiativeTieOrder?: number;
   cr?: string;
   level?: number;
   /** Is this a player character? */
@@ -88,6 +92,8 @@ export interface StoredEncounterCreature {
   friendly: boolean;
   /** Hidden from players. */
   hidden: boolean;
+  /** Trap/hazard combatant with fixed initiative behavior. */
+  trap?: boolean;
   enabled: boolean;
   /** Vault note path for linking. */
   notePath?: string;

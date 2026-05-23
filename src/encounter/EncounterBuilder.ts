@@ -30,6 +30,9 @@ export interface TrapCountermeasure {
 export interface EncounterCreature {
   name: string;
   count: number;
+  initiative?: number;
+  initiativeCounts?: number[];
+  fixedInitiative?: boolean;
   hp?: number;
   ac?: number;
   cr?: string;
@@ -39,10 +42,12 @@ export interface EncounterCreature {
   isFriendly?: boolean;  // Friendly NPC/creature
   isHidden?: boolean;  // Hidden from players
   isTrap?: boolean;  // Trap hazard (uses trap calculation logic)
+  trapPath?: string;
   trapData?: {  // Trap-specific data for difficulty calculation
     elements: TrapElement[];
     threatLevel: 'setback' | 'dangerous' | 'deadly';
     trapType: 'simple' | 'complex';
+    initiative?: number;
   };
 }
 
@@ -1082,14 +1087,25 @@ export class EncounterBuilder {
           const trapCache = this.app.metadataCache.getFileCache(trapFile);
           if (trapCache?.frontmatter) {
             const fm = trapCache.frontmatter;
+            const initiativeCounts = Array.from(new Set<number>((fm.elements || [])
+              .filter((e: any) => e && e.element_type !== "dynamic" && e.element_type !== "constant")
+              .map((e: any) => parseInt(String(e.initiative ?? ""), 10))
+              .filter((n: number) => !Number.isNaN(n) && n > 0)))
+              .sort((a, b) => b - a);
+            const trapInitiative = parseInt(String(fm.trap_initiative ?? ""), 10) || undefined;
             const consolidatedTrap = {
               name: trapName,
               count: 1,
               isTrap: true,
+              fixedInitiative: true,
+              initiative: initiativeCounts[0] ?? trapInitiative,
+              initiativeCounts: initiativeCounts.length > 0 ? initiativeCounts : (trapInitiative ? [trapInitiative] : []),
+              trapPath: trapFile.path,
               trapData: {
                 trapType: fm.trap_type || "complex",
                 threatLevel: fm.threat_level || "dangerous",
-                elements: fm.elements || []
+                elements: fm.elements || [],
+                initiative: trapInitiative,
               },
               // Preserve manual overrides from first element if any
               hp: elements[0].hp,
@@ -1547,8 +1563,9 @@ export class EncounterBuilder {
           instances.push({
             name: creatureName,
             display: displayName,
-            initiative: 0,
-            modifier: 0,
+            initiative: c.fixedInitiative && c.initiative ? c.initiative : 0,
+            fixedInitiative: c.fixedInitiative === true && !!c.initiative,
+            modifier: c.fixedInitiative && c.initiative ? c.initiative : 0,
             hp: hp,
             maxHP: hp,
             currentHP: hp,
@@ -1559,6 +1576,7 @@ export class EncounterBuilder {
             id: pm.generateId(),
             enabled: true,
             hidden: false,
+            trap: c.isTrap === true,
             friendly: false,
             player: false,
             notePath: c.path || undefined,

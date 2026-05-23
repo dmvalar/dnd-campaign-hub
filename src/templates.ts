@@ -572,7 +572,7 @@ date: {{DATE}}
 
 export const TRAP_TEMPLATE = `---
 type: trap
-template_version: 1.3.1
+template_version: 1.3.2
 campaign: 
 adventure: 
 world: 
@@ -583,6 +583,7 @@ threat_level: setback
 min_level: 1
 max_level: 20
 trigger: 
+trap_initiative: 20
 elements: []
 countermeasures: []
 date: 

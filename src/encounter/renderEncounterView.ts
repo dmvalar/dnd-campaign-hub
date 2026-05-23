@@ -145,17 +145,28 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 			const tracker = plugin.combatTracker;
 
 			// Map YAML creatures (snake_case → camelCase for EncounterCreature)
-			const mappedCreatures = (fm.creatures || []).map((c: any) => ({
-				name: c.name,
-				count: c.count ?? 1,
-				hp: c.hp,
-				ac: c.ac,
-				cr: c.cr,
-				source: c.source,
-				path: c.path && c.path !== "[SRD]" ? c.path : undefined,
-				isFriendly: c.isFriendly ?? c.is_friendly ?? false,
-				isHidden: c.isHidden ?? c.is_hidden ?? false,
-			}));
+			const mappedCreatures = (fm.creatures || []).map((c: any) => {
+				const name = String(c.name ?? "");
+				const initiativeMatch = name.match(/\(Initiative\s+(\d+)\)/i);
+				const inferredInitiative = initiativeMatch?.[1] ? parseInt(initiativeMatch[1], 10) : undefined;
+				const isTrap = c.is_trap ?? c.isTrap ?? !!initiativeMatch;
+				return {
+					name: c.name,
+					count: c.count ?? 1,
+					initiative: c.initiative ?? inferredInitiative,
+					initiativeCounts: Array.isArray(c.initiative_counts) ? c.initiative_counts : c.initiativeCounts,
+					fixedInitiative: c.fixed_initiative ?? c.fixedInitiative ?? !!initiativeMatch,
+					hp: c.hp,
+					ac: c.ac,
+					cr: c.cr,
+					source: c.source,
+					path: c.path && c.path !== "[SRD]" ? c.path : undefined,
+					isTrap,
+					trapPath: c.trap_path ?? c.trapPath,
+					isFriendly: c.isFriendly ?? c.is_friendly ?? false,
+					isHidden: c.isHidden ?? c.is_hidden ?? false,
+				};
+			});
 
 			// Build party — prefer frontmatter party_members, fall back to PartyManager
 			const partyMembers: Array<{ name: string; level: number; hp: number; maxHp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }> = [];

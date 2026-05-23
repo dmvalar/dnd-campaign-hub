@@ -2286,19 +2286,29 @@ export default class DndCampaignHubPlugin extends Plugin {
 				: [];
 			const encounterCreatures = rawCreatures
 				.filter((creature): creature is Record<string, unknown> => !!creature && typeof creature === 'object' && !Array.isArray(creature))
-				.map((creature) => ({
-					name: typeof creature.name === 'string' ? creature.name : 'Unknown',
-					count: typeof creature.count === 'number' ? creature.count : 1,
-					hp: typeof creature.hp === 'number' ? creature.hp : null,
-					ac: typeof creature.ac === 'number' ? creature.ac : null,
-					cr: typeof creature.cr === 'string' ? creature.cr : null,
-					path: typeof creature.path === 'string' ? creature.path : null,
-					source: typeof creature.source === 'string' ? creature.source : null,
-					is_trap: creature.is_trap === true,
-					trap_path: typeof creature.trap_path === 'string' ? creature.trap_path : null,
-					is_friendly: creature.is_friendly === true,
-					is_hidden: creature.is_hidden === true,
-				}));
+				.map((creature) => {
+					const name = typeof creature.name === 'string' ? creature.name : 'Unknown';
+					const initiativeMatch = name.match(/\(Initiative\s+(\d+)\)/i);
+					const inferredInitiative = initiativeMatch?.[1] ? parseInt(initiativeMatch[1], 10) : null;
+					return {
+						name,
+						count: typeof creature.count === 'number' ? creature.count : 1,
+						initiative: typeof creature.initiative === 'number' ? creature.initiative : inferredInitiative,
+						initiative_counts: Array.isArray(creature.initiative_counts)
+							? creature.initiative_counts.filter((n): n is number => typeof n === 'number')
+							: [],
+						fixed_initiative: creature.fixed_initiative === true || !!initiativeMatch,
+						hp: typeof creature.hp === 'number' ? creature.hp : null,
+						ac: typeof creature.ac === 'number' ? creature.ac : null,
+						cr: typeof creature.cr === 'string' ? creature.cr : null,
+						path: typeof creature.path === 'string' ? creature.path : null,
+						source: typeof creature.source === 'string' ? creature.source : null,
+						is_trap: creature.is_trap === true || !!initiativeMatch,
+						trap_path: typeof creature.trap_path === 'string' ? creature.trap_path : null,
+						is_friendly: creature.is_friendly === true,
+						is_hidden: creature.is_hidden === true,
+					};
+				});
 
 			const encounterDifficulty = parsed.frontmatter.difficulty ?? null;
 			const selectedPartyId = typeof parsed.frontmatter.selected_party_id === 'string' && parsed.frontmatter.selected_party_id.length > 0
@@ -2396,11 +2406,19 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const enemyCreatures: import("./party/PartyTypes").StoredEncounterCreature[] = [];
 			for (const c of creatures) {
 				const count = c.count || 1;
-				for (let i = 0; i < count; i++) {
+				const fixedInitiatives = c.is_trap && Array.isArray(c.initiative_counts) && c.initiative_counts.length > 0
+					? c.initiative_counts
+					: (c.fixed_initiative && c.initiative ? [c.initiative] : []);
+				const instanceCount = fixedInitiatives.length > 0 ? fixedInitiatives.length : count;
+
+				for (let i = 0; i < instanceCount; i++) {
 					let creatureName = c.name;
 					let displayName = c.name;
+					const fixedInitiative = fixedInitiatives[i];
 
-					if (count > 1 && useColorNames) {
+					if (fixedInitiative) {
+						displayName = fixedInitiatives.length > 1 ? `${c.name} (Initiative ${fixedInitiative})` : c.name;
+					} else if (count > 1 && useColorNames) {
 						const colorIndex = i % colors.length;
 						creatureName = `${c.name} (${colors[colorIndex]})`;
 						displayName = creatureName;
@@ -2409,8 +2427,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 					enemyCreatures.push({
 						name: creatureName,
 						display: displayName,
-						initiative: 0,
-						modifier: 0,
+						initiative: fixedInitiative || 0,
+						fixedInitiative: !!fixedInitiative,
+						modifier: fixedInitiative || 0,
 						hp: c.hp || 1,
 						maxHP: c.hp || 1,
 						currentHP: c.hp || 1,
@@ -2420,8 +2439,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 						currentAC: c.ac || 10,
 						id: pm.generateId(),
 						enabled: true,
-						hidden: c.isHidden || false,
-						friendly: c.isFriendly || false,
+						hidden: c.is_hidden || false,
+						friendly: c.is_friendly || false,
+						trap: c.is_trap === true,
 						player: false,
 						notePath: c.path || undefined,
 						statuses: [],

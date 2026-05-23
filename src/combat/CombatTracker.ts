@@ -90,6 +90,12 @@ export class CombatTracker {
     ];
 
     for (const ec of creatures) {
+      if (ec.isTrap) {
+        const trapCombatants = await this.createTrapCombatants(ec);
+        combatants.push(...trapCombatants);
+        continue;
+      }
+
       for (let i = 0; i < ec.count; i++) {
         let display = ec.name;
         if (ec.count > 1 && useColorNames) {
@@ -164,6 +170,7 @@ export class CombatTracker {
     const rollPCs = this.rollPlayerInitiatives;
 
     for (const c of this.state.combatants) {
+      if (c.fixedInitiative) continue;
       if (c.player && !rollPCs) continue;
       c.initiative = this.rollD20() + c.modifier;
     }
@@ -564,6 +571,7 @@ export class CombatTracker {
     if (!this.state) return;
     const rollPCs = this.rollPlayerInitiatives;
     for (const c of this.state.combatants) {
+      if (c.fixedInitiative) continue;
       if (c.player && !rollPCs) continue;
       c.initiative = this.rollD20() + c.modifier;
     }
@@ -583,11 +591,17 @@ export class CombatTracker {
     if (this.sortAscending) {
       this.state.combatants.sort((a, b) => {
         if (a.initiative !== b.initiative) return a.initiative - b.initiative;
+        if (a.initiativeTieOrder !== undefined && b.initiativeTieOrder !== undefined) {
+          return a.initiativeTieOrder - b.initiativeTieOrder;
+        }
         return a.modifier - b.modifier;
       });
     } else {
       this.state.combatants.sort((a, b) => {
         if (b.initiative !== a.initiative) return b.initiative - a.initiative;
+        if (a.initiativeTieOrder !== undefined && b.initiativeTieOrder !== undefined) {
+          return a.initiativeTieOrder - b.initiativeTieOrder;
+        }
         return b.modifier - a.modifier;
       });
     }
@@ -605,6 +619,32 @@ export class CombatTracker {
     if (!c) return;
     c.enabled = !(c.enabled ?? true);
     this.emit();
+  }
+
+  /** Swap two combatants within the same initiative count. */
+  swapCombatantsWithSameInitiative(sourceId: string, targetId: string): boolean {
+    if (!this.state || sourceId === targetId) return false;
+
+    const sourceIndex = this.state.combatants.findIndex(c => c.id === sourceId);
+    const targetIndex = this.state.combatants.findIndex(c => c.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0) return false;
+
+    const source = this.state.combatants[sourceIndex];
+    const target = this.state.combatants[targetIndex];
+    if (!source || !target || source.initiative !== target.initiative) return false;
+
+    const currentId = this.state.combatants[this.state.turnIndex]?.id;
+    this.state.combatants[sourceIndex] = target;
+    this.state.combatants[targetIndex] = source;
+    this.assignTieOrderForInitiative(source.initiative);
+
+    if (currentId) {
+      const nextTurnIndex = this.state.combatants.findIndex(c => c.id === currentId);
+      if (nextTurnIndex >= 0) this.state.turnIndex = nextTurnIndex;
+    }
+
+    this.emit();
+    return true;
   }
 
   /* ────────────────── Save / Resume ────────────────── */
@@ -857,6 +897,9 @@ export class CombatTracker {
 
     this.state.combatants.sort((a, b) => {
       if (b.initiative !== a.initiative) return b.initiative - a.initiative;
+      if (a.initiativeTieOrder !== undefined && b.initiativeTieOrder !== undefined) {
+        return a.initiativeTieOrder - b.initiativeTieOrder;
+      }
       return b.modifier - a.modifier; // DEX tiebreaker
     });
 
@@ -864,6 +907,16 @@ export class CombatTracker {
     if (currentId) {
       const newIdx = this.state.combatants.findIndex(c => c.id === currentId);
       if (newIdx >= 0) this.state.turnIndex = newIdx;
+    }
+  }
+
+  private assignTieOrderForInitiative(initiative: number): void {
+    if (!this.state) return;
+    let order = 0;
+    for (const c of this.state.combatants) {
+      if (c.initiative === initiative) {
+        c.initiativeTieOrder = order++;
+      }
     }
   }
 
@@ -890,6 +943,108 @@ export class CombatTracker {
 
   private generateId(): string {
     return "CB_" + crypto.randomUUID().replace(/-/g, "").slice(0, 12);
+  }
+
+  private async createTrapCombatants(ec: EncounterCreature): Promise<Combatant[]> {
+    const trapDetails = await this.readTrapDetails(ec);
+    const initiatives = this.getTrapInitiativeCounts(ec, trapDetails);
+    const counts = initiatives.length > 0 ? initiatives : [0];
+    const hp = ec.hp ?? trapDetails.hp ?? 1;
+    const ac = ec.ac ?? trapDetails.ac ?? 10;
+    const combatants: Combatant[] = [];
+
+    for (const initiative of counts) {
+      const hasFixedInitiative = initiative > 0;
+      const display = hasFixedInitiative && counts.length > 1
+        ? `${ec.name} (Initiative ${initiative})`
+        : ec.name;
+
+      combatants.push({
+        id: this.generateId(),
+        name: ec.name,
+        display,
+        initiative: hasFixedInitiative ? initiative : 0,
+        fixedInitiative: hasFixedInitiative,
+        modifier: hasFixedInitiative ? initiative : 0,
+        currentHP: hp,
+        maxHP: hp,
+        tempHP: 0,
+        ac,
+        currentAC: ac,
+        player: false,
+        friendly: ec.isFriendly ?? false,
+        hidden: ec.isHidden ?? false,
+        trap: true,
+        notePath: (ec.trapPath || ec.path) && (ec.trapPath || ec.path) !== "[SRD]" ? (ec.trapPath || ec.path) : undefined,
+        statuses: [],
+        cr: ec.cr,
+      });
+    }
+
+    return combatants;
+  }
+
+  private getTrapInitiativeCounts(
+    ec: EncounterCreature,
+    trapDetails: { initiative?: number; elements: Array<{ element_type?: string; initiative?: number }> },
+  ): number[] {
+    const counts = new Set<number>();
+    const add = (value: unknown) => {
+      const n = typeof value === "number" ? value : parseInt(String(value ?? ""), 10);
+      if (!Number.isNaN(n) && n > 0) counts.add(n);
+    };
+
+    if (Array.isArray(ec.initiativeCounts)) {
+      for (const value of ec.initiativeCounts) add(value);
+    }
+    add(ec.initiative);
+
+    for (const element of trapDetails.elements) {
+      if (!element || element.element_type === "dynamic" || element.element_type === "constant") continue;
+      add(element.initiative);
+    }
+
+    add(trapDetails.initiative);
+
+    const nameMatch = ec.name.match(/\(Initiative\s+(\d+)\)/i);
+    if (nameMatch?.[1]) add(nameMatch[1]);
+
+    return Array.from(counts).sort((a, b) => b - a);
+  }
+
+  private async readTrapDetails(ec: EncounterCreature): Promise<{
+    initiative?: number;
+    elements: Array<{ element_type?: string; initiative?: number }>;
+    hp?: number;
+    ac?: number;
+  }> {
+    const path = ec.trapPath || ec.path;
+    const fallback = {
+      initiative: ec.trapData?.initiative,
+      elements: ec.trapData?.elements ?? [],
+      hp: ec.hp,
+      ac: ec.ac,
+    };
+
+    if (!path || path === "[SRD]") return fallback;
+
+    try {
+      const file = this.app.vault.getAbstractFileByPath(path);
+      if (!(file instanceof TFile)) return fallback;
+
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache?.frontmatter;
+      if (!fm || fm.type !== "trap") return fallback;
+
+      return {
+        initiative: typeof fm.trap_initiative === "number" ? fm.trap_initiative : parseInt(String(fm.trap_initiative ?? ""), 10) || fallback.initiative,
+        elements: Array.isArray(fm.elements) ? fm.elements : fallback.elements,
+        hp: typeof fm.hp === "number" ? fm.hp : fallback.hp,
+        ac: typeof fm.ac === "number" ? fm.ac : fallback.ac,
+      };
+    } catch {
+      return fallback;
+    }
   }
 
   /** Read DEX modifier from a creature's vault note frontmatter. */

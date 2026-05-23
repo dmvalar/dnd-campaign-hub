@@ -1028,6 +1028,19 @@
   opacity: 0.35;
   filter: grayscale(0.5);
 }
+.dnd-ct-row-draggable {
+  cursor: grab;
+}
+.dnd-ct-row-draggable:active {
+  cursor: grabbing;
+}
+.dnd-ct-row-dragging {
+  opacity: 0.55;
+}
+.dnd-ct-row-drag-over {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
 
 /* ── Initiative badge ── */
 .dnd-ct-init {

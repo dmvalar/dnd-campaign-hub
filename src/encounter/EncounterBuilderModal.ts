@@ -166,11 +166,16 @@ export class EncounterBuilderModal extends Modal {
           this.creatures = cache.frontmatter.creatures.map((c: any) => ({
             name: c.name || "",
             count: c.count || 1,
+            initiative: c.initiative,
+            initiativeCounts: Array.isArray(c.initiative_counts) ? c.initiative_counts : c.initiativeCounts,
+            fixedInitiative: c.fixed_initiative === true || c.fixedInitiative === true,
             hp: c.hp,
             ac: c.ac,
             cr: c.cr,
             source: c.source,
             path: c.path,
+            isTrap: c.is_trap === true || c.isTrap === true,
+            trapPath: c.trap_path || c.trapPath,
             isFriendly: c.is_friendly === true || c.is_friendly === "true",
             isHidden: c.is_hidden === true || c.is_hidden === "true"
           }));
@@ -1243,14 +1248,25 @@ export class EncounterBuilderModal extends Modal {
           const trapCache = this.app.metadataCache.getFileCache(trapFile);
           if (trapCache?.frontmatter) {
             const fm = trapCache.frontmatter;
+            const initiativeCounts = Array.from(new Set<number>((fm.elements || [])
+              .filter((e: any) => e && e.element_type !== "dynamic" && e.element_type !== "constant")
+              .map((e: any) => parseInt(String(e.initiative ?? ""), 10))
+              .filter((n: number) => !Number.isNaN(n) && n > 0)))
+              .sort((a, b) => b - a);
+            const trapInitiative = parseInt(String(fm.trap_initiative ?? ""), 10) || undefined;
             const consolidatedTrap = {
               name: trapName,
               count: 1,
               isTrap: true,
+              fixedInitiative: true,
+              initiative: initiativeCounts[0] ?? trapInitiative,
+              initiativeCounts: initiativeCounts.length > 0 ? initiativeCounts : (trapInitiative ? [trapInitiative] : []),
+              trapPath: trapFile.path,
               trapData: {
                 trapType: fm.trap_type || "complex",
                 threatLevel: fm.threat_level || "dangerous",
-                elements: fm.elements || []
+                elements: fm.elements || [],
+                initiative: trapInitiative,
               },
               // Preserve manual overrides from first element if any
               hp: elements[0].hp,
@@ -1625,6 +1641,7 @@ export class EncounterBuilderModal extends Modal {
       // Generate encounter file content
       this.syncEncounterBuilder();
       const diffResult = await this.encounterBuilder.calculateEncounterDifficulty();
+      this.creatures = [...this.encounterBuilder.creatures];
       const encounterContent = await this.generateEncounterContent(diffResult);
 
       // Save or update encounter file
@@ -1702,11 +1719,18 @@ creatures:`;
     for (const creature of this.creatures) {
       frontmatter += `\n  - name: ${this.escapeYamlString(creature.name)}
     count: ${creature.count}`;
+      if (creature.initiative) frontmatter += `\n    initiative: ${creature.initiative}`;
+      if (Array.isArray(creature.initiativeCounts) && creature.initiativeCounts.length > 0) {
+        frontmatter += `\n    initiative_counts: [${creature.initiativeCounts.join(", ")}]`;
+      }
+      if (creature.fixedInitiative) frontmatter += `\n    fixed_initiative: true`;
       if (creature.hp) frontmatter += `\n    hp: ${creature.hp}`;
       if (creature.ac) frontmatter += `\n    ac: ${creature.ac}`;
       if (creature.cr) frontmatter += `\n    cr: ${this.escapeYamlString(creature.cr)}`;
       if (creature.source) frontmatter += `\n    source: ${this.escapeYamlString(creature.source)}`;
       if (creature.path) frontmatter += `\n    path: ${this.escapeYamlString(creature.path)}`;
+      if (creature.isTrap) frontmatter += `\n    is_trap: true`;
+      if (creature.trapPath) frontmatter += `\n    trap_path: ${this.escapeYamlString(creature.trapPath)}`;
       if (creature.isFriendly) frontmatter += `\n    is_friendly: ${creature.isFriendly}`;
       if (creature.isHidden) frontmatter += `\n    is_hidden: ${creature.isHidden}`;
     }
@@ -1838,12 +1862,20 @@ _Add notes about tactics, environment, or special conditions here._
       // Build creature data
       const enemyCreatures: import("../party/PartyTypes").StoredEncounterCreature[] = this.creatures.flatMap(c => {
         const instances: import("../party/PartyTypes").StoredEncounterCreature[] = [];
-        for (let i = 0; i < c.count; i++) {
+        const fixedInitiatives = c.isTrap && Array.isArray(c.initiativeCounts) && c.initiativeCounts.length > 0
+          ? c.initiativeCounts
+          : (c.fixedInitiative && c.initiative ? [c.initiative] : []);
+        const instanceCount = fixedInitiatives.length > 0 ? fixedInitiatives.length : c.count;
+
+        for (let i = 0; i < instanceCount; i++) {
           const hp = c.hp || 1;
           const ac = c.ac || 10;
+          const fixedInitiative = fixedInitiatives[i];
 
           let displayName = c.name;
-          if (c.count > 1 && this.useColorNames) {
+          if (fixedInitiative) {
+            displayName = fixedInitiatives.length > 1 ? `${c.name} (Initiative ${fixedInitiative})` : c.name;
+          } else if (c.count > 1 && this.useColorNames) {
             const colorIndex = i % colors.length;
             displayName = `${c.name} (${colors[colorIndex]})`;
           }
@@ -1851,8 +1883,9 @@ _Add notes about tactics, environment, or special conditions here._
           const creature: import("../party/PartyTypes").StoredEncounterCreature = {
             name: c.name,
             display: displayName,
-            initiative: 0,
-            modifier: 0,
+            initiative: fixedInitiative || 0,
+            fixedInitiative: !!fixedInitiative,
+            modifier: fixedInitiative || 0,
             hp: hp,
             maxHP: hp,
             currentHP: hp,
@@ -1864,11 +1897,13 @@ _Add notes about tactics, environment, or special conditions here._
             enabled: true,
             hidden: c.isHidden || false,
             friendly: c.isFriendly || false,
+            trap: c.isTrap === true,
             player: false,
             statuses: [],
           };
-          if (c.path && c.path !== '[SRD]') {
-            creature.notePath = c.path;
+          const notePath = c.trapPath || c.path;
+          if (notePath && notePath !== '[SRD]') {
+            creature.notePath = notePath;
           }
           instances.push(creature);
         }
