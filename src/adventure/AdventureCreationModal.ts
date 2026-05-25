@@ -453,6 +453,7 @@ export class AdventureCreationModal extends Modal {
     adventureContent = adventureContent
       .replace(/# <% tp\.frontmatter\.name %>/g, `# ${this.adventureName}`)
       .replace(/<% tp\.frontmatter\.name %>/g, this.adventureName)
+      .replace(/{{name}}/g, this.adventureName)
       .replace(/{{ADVENTURE_NAME}}/g, this.adventureName)
       .replace(/{{CAMPAIGN_NAME}}/g, campaignName)
       .replace(/{{LEVEL_RANGE}}/g, `${this.levelFrom}-${this.levelTo}`)
