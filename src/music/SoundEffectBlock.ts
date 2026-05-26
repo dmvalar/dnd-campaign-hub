@@ -1,5 +1,5 @@
 /**
- * Sound Effect Code Block – `dnd-sfx`
+ * Sound Effect widgets – `dnd-sfx`
  *
  * Provides:
  *  1.  SoundEffectModal      – opened via the "Insert Sound Effect" command to
@@ -7,8 +7,10 @@
  *  2.  renderSoundEffectBlock – registered as a Markdown code-block processor;
  *                              renders a compact card with a ▶ Play button that
  *                              plays the SFX overlaid on any current music.
+ *  3.  renderInlineSoundEffectWidgets – registered as a Markdown post processor;
+ *                              normalizes inline SFX controls for note text.
  */
-import { App, Modal, Notice, Setting, MarkdownPostProcessorContext, Editor, TFile, TFolder } from 'obsidian';
+import { App, Modal, Notice, Setting, MarkdownPostProcessorContext, TFile, TFolder } from 'obsidian';
 import { MusicPlayer } from './MusicPlayer';
 import type { MusicSettings, SoundEffect } from './types';
 import { AUDIO_EXTENSIONS, isAudioExtension } from './types';
@@ -34,6 +36,9 @@ export const DEFAULT_SFX_CONFIG: SoundEffectConfig = {
   filePath: '',
   volume: null,
 };
+
+const INLINE_SFX_PROTOCOL = 'dnd-sfx:';
+const INLINE_SFX_PROTOCOL_SLASHES = 'dnd-sfx://';
 
 // ─────────────────────────────────────────────────────────────────
 //  SoundEffectModal – form to configure the SFX before inserting
@@ -340,14 +345,7 @@ export function renderSoundEffectBlock(
   playBtn.addEventListener('click', () => {
     // Ensure the music player leaf is open
     if (onPlayTriggered) onPlayTriggered();
-    const sfx: SoundEffect = {
-      id: 'inline-sfx',
-      name: config.name || 'Sound Effect',
-      filePath: config.filePath,
-      icon: config.icon || '🔊',
-      volume: config.volume ?? undefined,
-    };
-    musicPlayer.playSoundEffect(sfx);
+    playSoundEffectConfig(config, musicPlayer);
 
     // Visual feedback
     playBtn.classList.add('playing');
@@ -356,9 +354,213 @@ export function renderSoundEffectBlock(
 }
 
 // ─────────────────────────────────────────────────────────────────
-//  Helper – build code-block string for insertion into the editor
+//  Inline renderer  –  <button data-dnd-sfx="...">Thunder</button>
+// ─────────────────────────────────────────────────────────────────
+
+export function renderInlineSoundEffectWidgets(
+  el: HTMLElement,
+  _ctx: MarkdownPostProcessorContext,
+  musicPlayer: MusicPlayer,
+  _settings: MusicSettings,
+  onPlayTriggered?: () => void,
+) {
+  const links = Array.from(el.querySelectorAll<HTMLAnchorElement>('a[href^="dnd-sfx:"]'));
+
+  el.querySelectorAll<HTMLElement>('[data-dnd-sfx]').forEach((widget) => {
+    widget.classList.add('dnd-sfx-inline-btn');
+    if (!widget.getAttribute('role')) widget.setAttribute('role', 'button');
+    if (!widget.getAttribute('tabindex')) widget.setAttribute('tabindex', '0');
+  });
+
+  for (const link of links) {
+    const config = parseSoundEffectInlineHref(link.getAttribute('href') || '');
+    if (!config) continue;
+
+    const widget = createSpan({ cls: 'dnd-sfx-inline' });
+    widget.appendChild(createInlineSoundEffectButton(config, link.textContent || undefined));
+    link.replaceWith(widget);
+  }
+}
+
+export function handleInlineSoundEffectInteraction(
+  event: MouseEvent | KeyboardEvent,
+  musicPlayer: MusicPlayer,
+  onPlayTriggered?: () => void,
+): boolean {
+  if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ') return false;
+
+  const target = event.target;
+  if (!(target instanceof Element)) return false;
+
+  const control = target.closest<HTMLElement>('[data-dnd-sfx], a[href^="dnd-sfx:"]');
+  if (!control) return false;
+
+  const config = control.hasAttribute('data-dnd-sfx')
+    ? parseSoundEffectInlineData(control.getAttribute('data-dnd-sfx') || '')
+    : parseSoundEffectInlineHref(control.getAttribute('href') || '');
+  if (!config) return false;
+
+  event.preventDefault();
+  event.stopPropagation();
+  if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+  if (onPlayTriggered) onPlayTriggered();
+  playSoundEffectConfig(config, musicPlayer);
+  control.classList.add('playing');
+  setTimeout(() => control.classList.remove('playing'), 400);
+  return true;
+}
+
+function createInlineSoundEffectButton(config: SoundEffectConfig, fallbackLabel?: string): HTMLButtonElement {
+  const button = createEl('button', {
+    cls: 'dnd-sfx-inline-btn',
+    attr: {
+      type: 'button',
+      'data-dnd-sfx': encodeSoundEffectInlineData(config),
+      'aria-label': `Play sound effect: ${config.name || 'Sound Effect'}`,
+      title: config.filePath,
+    },
+  });
+  button.createEl('span', { text: config.icon || '🔊', cls: 'dnd-sfx-inline-icon' });
+  button.createEl('span', { text: config.name || fallbackLabel || 'Sound Effect', cls: 'dnd-sfx-inline-name' });
+  return button;
+}
+
+function playSoundEffectConfig(config: SoundEffectConfig, musicPlayer: MusicPlayer) {
+  const sfx: SoundEffect = {
+    id: 'inline-sfx',
+    name: config.name || 'Sound Effect',
+    filePath: config.filePath,
+    icon: config.icon || '🔊',
+    volume: config.volume ?? undefined,
+  };
+  musicPlayer.playSoundEffect(sfx);
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Helpers – build note syntax for insertion into the editor
 // ─────────────────────────────────────────────────────────────────
 
 export function buildSoundEffectCodeblock(config: SoundEffectConfig): string {
   return '```dnd-sfx\n' + JSON.stringify(config, null, 2) + '\n```';
+}
+
+export function parseSoundEffectCodeblockMarkdown(markdown: string): SoundEffectConfig | null {
+  const trimmed = markdown.trim();
+  const match = trimmed.match(/^```dnd-sfx\s*\n([\s\S]*?)\n?```$/);
+  const json = match?.[1] ?? trimmed;
+
+  try {
+    const parsed = JSON.parse(json) as Partial<SoundEffectConfig>;
+    if (!parsed.filePath) return null;
+    const filePath = parsed.filePath;
+    return {
+      name: parsed.name || fileNameWithoutExtension(filePath) || 'Sound Effect',
+      icon: parsed.icon || '🔊',
+      filePath,
+      volume: typeof parsed.volume === 'number' ? Math.max(0, Math.min(100, parsed.volume)) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function parseSoundEffectInlineMarkdown(markdown: string): SoundEffectConfig | null {
+  const trimmed = markdown.trim();
+  const markdownLink = trimmed.match(/^\[[^\]]+\]\((dnd-sfx:[^)]+)\)$/);
+  if (markdownLink?.[1]) return parseSoundEffectInlineHref(markdownLink[1]);
+
+  const htmlData = trimmed.match(/data-dnd-sfx=(?:"([^"]+)"|'([^']+)')/);
+  const encodedData = htmlData?.[1] ?? htmlData?.[2];
+  if (encodedData) return parseSoundEffectInlineData(unescapeHtmlAttribute(encodedData));
+
+  return null;
+}
+
+export function buildSoundEffectInlineMarkdown(config: SoundEffectConfig): string {
+  const name = config.name || fileNameWithoutExtension(config.filePath) || 'Sound Effect';
+  const icon = config.icon || '🔊';
+  const data = escapeHtmlAttribute(encodeSoundEffectInlineData({ ...config, name, icon }));
+
+  return `<button type="button" class="dnd-sfx-inline-btn" data-dnd-sfx="${data}" aria-label="Play sound effect: ${escapeHtmlAttribute(name)}">${escapeHtmlText(icon)} ${escapeHtmlText(name)}</button>`;
+}
+
+function encodeSoundEffectInlineData(config: SoundEffectConfig): string {
+  return encodeURIComponent(JSON.stringify(config));
+}
+
+function parseSoundEffectInlineData(data: string): SoundEffectConfig | null {
+  try {
+    const parsed = JSON.parse(decodeURIComponent(data)) as Partial<SoundEffectConfig>;
+    if (!parsed.filePath) return null;
+    return {
+      name: parsed.name || fileNameWithoutExtension(parsed.filePath) || 'Sound Effect',
+      icon: parsed.icon || '🔊',
+      filePath: parsed.filePath,
+      volume: typeof parsed.volume === 'number' ? Math.max(0, Math.min(100, parsed.volume)) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseSoundEffectInlineHref(href: string): SoundEffectConfig | null {
+  if (!href.startsWith(INLINE_SFX_PROTOCOL)) return null;
+
+  const rest = href.startsWith(INLINE_SFX_PROTOCOL_SLASHES)
+    ? href.slice(INLINE_SFX_PROTOCOL_SLASHES.length)
+    : href.slice(INLINE_SFX_PROTOCOL.length);
+  const queryIndex = rest.indexOf('?');
+  const encodedPath = queryIndex === -1 ? rest : rest.slice(0, queryIndex);
+  const query = queryIndex === -1 ? '' : rest.slice(queryIndex + 1);
+
+  let filePath: string;
+  try {
+    filePath = decodeURIComponent(encodedPath);
+  } catch {
+    return null;
+  }
+
+  if (!filePath) return null;
+
+  const params = new URLSearchParams(query);
+  const volumeParam = params.get('volume');
+  const parsedVolume = volumeParam === null || volumeParam.trim() === ''
+    ? null
+    : Number(volumeParam);
+  const volume = parsedVolume !== null && Number.isFinite(parsedVolume)
+    ? Math.max(0, Math.min(100, parsedVolume))
+    : null;
+
+  return {
+    name: params.get('name') || fileNameWithoutExtension(filePath) || 'Sound Effect',
+    icon: params.get('icon') || '🔊',
+    filePath,
+    volume,
+  };
+}
+
+function fileNameWithoutExtension(filePath: string): string {
+  return (filePath.split('/').pop() || '').replace(/\.[^.]+$/, '');
+}
+
+function escapeHtmlText(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function escapeHtmlAttribute(text: string): string {
+  return escapeHtmlText(text)
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function unescapeHtmlAttribute(text: string): string {
+  return text
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&gt;/g, '>')
+    .replace(/&lt;/g, '<')
+    .replace(/&amp;/g, '&');
 }

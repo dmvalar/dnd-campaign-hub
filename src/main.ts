@@ -32,7 +32,7 @@ import type { MusicSettings, SceneMusicConfig, MusicPlaybackState } from "./musi
 import { DEFAULT_MUSIC_SETTINGS, AUDIO_EXTENSIONS } from "./music/types";
 import { MusicPlayerLeafView, MUSIC_PLAYER_VIEW_TYPE } from "./music/MusicPlayerView";
 import { SceneMusicModal, renderSceneMusicBlock, buildSceneMusicCodeblock } from "./music/SceneMusicBlock";
-import { SoundEffectModal, renderSoundEffectBlock, buildSoundEffectCodeblock } from "./music/SoundEffectBlock";
+import { SoundEffectModal, renderSoundEffectBlock, buildSoundEffectCodeblock, buildSoundEffectInlineMarkdown, handleInlineSoundEffectInteraction, parseSoundEffectCodeblockMarkdown, parseSoundEffectInlineMarkdown, renderInlineSoundEffectWidgets } from "./music/SoundEffectBlock";
 import { SceneSnippetSuggest } from "./scene/SceneSnippets";
 import { RandomEncounterTableModal } from "./encounter/RandomEncounterTableModal";
 import {
@@ -452,6 +452,19 @@ export default class DndCampaignHubPlugin extends Plugin {
     this.registerMarkdownCodeBlockProcessor('dnd-sfx', (source, el, ctx) => {
       renderSoundEffectBlock(source, el, ctx, this.musicPlayer, this.settings.musicSettings, () => this.ensureMusicPlayerOpen(), this.app);
     });
+
+    // Register markdown post processor for true inline sound effect widgets
+    this.registerMarkdownPostProcessor((el, ctx) => {
+      renderInlineSoundEffectWidgets(el, ctx, this.musicPlayer, this.settings.musicSettings, () => this.ensureMusicPlayerOpen());
+    });
+
+    this.registerDomEvent(document, 'click', (event) => {
+      handleInlineSoundEffectInteraction(event, this.musicPlayer, () => this.ensureMusicPlayerOpen());
+    }, true);
+
+    this.registerDomEvent(document, 'keydown', (event) => {
+      handleInlineSoundEffectInteraction(event, this.musicPlayer, () => this.ensureMusicPlayerOpen());
+    }, true);
 
     // Register markdown code block processor for encounter table cards
     this.registerMarkdownCodeBlockProcessor('dnd-encounter-table', (source, el, ctx) => {
@@ -1396,6 +1409,39 @@ export default class DndCampaignHubPlugin extends Plugin {
 
     this.addCommand({
       id: "insert-sound-effect",
+      name: "🔊 Insert Inline Sound Effect",
+      editorCallback: (editor: Editor) => {
+        new SoundEffectModal(
+          this.app,
+          this.settings.musicSettings,
+          null,
+          (config) => {
+            const inlineWidget = buildSoundEffectInlineMarkdown(config);
+            editor.replaceSelection(inlineWidget + ' ');
+            new Notice('Inline sound effect inserted');
+          }
+        ).open();
+      },
+    });
+
+    this.addCommand({
+      id: "convert-sound-effect-block-to-inline",
+      name: "🔊 Convert Selected Sound Effect to Inline Widget",
+      editorCallback: (editor: Editor) => {
+        const selected = editor.getSelection();
+        const config = parseSoundEffectCodeblockMarkdown(selected) || parseSoundEffectInlineMarkdown(selected);
+        if (!config) {
+          new Notice('Select a complete dnd-sfx block or inline sound effect first');
+          return;
+        }
+
+        editor.replaceSelection(buildSoundEffectInlineMarkdown(config) + ' ');
+        new Notice('Sound effect converted to inline widget');
+      },
+    });
+
+    this.addCommand({
+      id: "insert-sound-effect-block",
       name: "🔊 Insert Sound Effect Block",
       editorCallback: (editor: Editor) => {
         new SoundEffectModal(
@@ -1404,7 +1450,7 @@ export default class DndCampaignHubPlugin extends Plugin {
           null,
           (config) => {
             const codeblock = buildSoundEffectCodeblock(config);
-            editor.replaceSelection(codeblock + '\n');
+            editor.replaceSelection('\n\n' + codeblock + '\n\n');
             new Notice('Sound effect block inserted');
           }
         ).open();

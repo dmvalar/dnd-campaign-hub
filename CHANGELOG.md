@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Inline Sound Effect Widgets** — Sound effects can now be inserted directly into note text as compact inline play buttons using `dnd-sfx:` Markdown links.
 - **Party Member Absence** — Party Manager can now mark members absent globally, keeping them visible in the party while excluding them from encounter creation, combat loading, party selection, map-linked encounters, and active combat member adds.
 
 ## [0.12.0] - 2026-05-23
