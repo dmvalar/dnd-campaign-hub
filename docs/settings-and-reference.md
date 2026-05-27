@@ -38,7 +38,10 @@ Use this section for battle maps, map rendering, and combat map behaviour.
 | Map Manager | Create and edit maps used by scenes, encounters, and inline map controls |
 | Auto-pan to active combatant | Center the projected player map on the active combatant when turns change |
 | Vision update mode | Choose whether fog of war updates while dragging tokens or only on drop |
+| Player view light animations | Toggle flickering and buzzing light animation in player map views |
 | Map canvas resolution | Adjust overlay sharpness for tokens, fog, and grids |
+
+Light animations are only rendered in player map views. Disable them on slower devices or very large maps if performance suffers.
 
 Higher map canvas values can look sharper but use more memory. Reopen maps after changing this setting.
 

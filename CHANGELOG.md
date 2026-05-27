@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Player View Light Animation Setting** — Added a map setting to disable flickering/buzzing player-view light animations on slower devices or very large maps.
+
 ## [0.13.0] - 2026-05-27
 
 ### Added

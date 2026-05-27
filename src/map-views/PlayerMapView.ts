@@ -1047,6 +1047,16 @@ export class PlayerMapView extends ItemView {
     this.ensureFlickerLoop();
   }
 
+  refreshLightAnimationSettings() {
+    this._fogAtlasKey = '';
+    if (this.plugin.settings.playerLightAnimations === false && this._pvFlickerFrameId !== null) {
+      (this._pvFlickerWin || window).cancelAnimationFrame(this._pvFlickerFrameId);
+      this._pvFlickerFrameId = null;
+    }
+    this.redrawAnnotations();
+    this.ensureFlickerLoop();
+  }
+
   /**
    * Hide the Obsidian view header and tab bar.
    * Injects CSS into the popout window's document to hide all chrome.
@@ -1531,6 +1541,7 @@ export class PlayerMapView extends ItemView {
    * current map config (standalone lights or marker-attached lights).
    */
   private pvHasFlickeringLights(): boolean {
+    if (this.plugin.settings.playerLightAnimations === false) return false;
     const cfg = this.mapConfig;
     if (!cfg) return false;
     if (cfg.lightSources) {
@@ -1574,6 +1585,7 @@ export class PlayerMapView extends ItemView {
 
     // Already running on the correct window — nothing to do
     if (this._pvFlickerFrameId !== null) return;
+    if (!this.pvHasFlickeringLights()) return;
 
     const PV_FLICKER_INTERVAL = 1000 / 14; // ~14 fps
 
@@ -1594,7 +1606,13 @@ export class PlayerMapView extends ItemView {
       if (timestamp - this._pvLastFlickerRedraw >= PV_FLICKER_INTERVAL) {
         this._pvLastFlickerRedraw = timestamp;
         if (this.pvHasFlickeringLights()) {
+          // Flicker changes radius/alpha without changing map data, so the
+          // normal fog atlas digest would otherwise keep reusing a frozen frame.
+          this._fogAtlasKey = '';
           this.redrawAnnotations();
+        } else {
+          this._pvFlickerFrameId = null;
+          return;
         }
       }
       this._pvFlickerFrameId = win.requestAnimationFrame(pvFlickerLoop);
@@ -4725,7 +4743,7 @@ export class PlayerMapView extends ItemView {
         // During drag, freeze flicker to prevent cache-busting radius changes
         const pvFlickerKey = `pv_light_${light.attachedToMarker || i}`;
         const pvIsBuzz = BUZZ_LIGHT_TYPES_SET.has(light.type);
-        const pvShouldFlicker = !_freezeFlicker && FLICKER_LIGHT_TYPES_SET.has(light.type);
+        const pvShouldFlicker = this.plugin.settings.playerLightAnimations !== false && !_freezeFlicker && FLICKER_LIGHT_TYPES_SET.has(light.type);
         const pvFlickerTime = performance.now() / 1000;
         const pvFlicker = pvShouldFlicker
           ? (pvIsBuzz
@@ -4996,7 +5014,7 @@ export class PlayerMapView extends ItemView {
           // Flicker / buzz — frozen during drag for cache stability
           const lcFlickerKey = `pv_light_${light.attachedToMarker || li}`;
           const lcIsBuzz = BUZZ_LIGHT_TYPES_SET.has(light.type);
-          const lcShouldFlicker = !_freezeFlicker && FLICKER_LIGHT_TYPES_SET.has(light.type);
+          const lcShouldFlicker = this.plugin.settings.playerLightAnimations !== false && !_freezeFlicker && FLICKER_LIGHT_TYPES_SET.has(light.type);
           const lcTime = performance.now() / 1000;
           const lcFlicker = lcShouldFlicker
             ? (lcIsBuzz

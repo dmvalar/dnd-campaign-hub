@@ -51,6 +51,8 @@ export interface DndCampaignHubSettings {
    *  Higher values produce sharper tokens when zoomed in on small maps.
    *  1 = native (legacy), 2 = double (default), 3 = triple. */
   mapCanvasScale: number;
+  /** Animate flickering/buzzing light sources in the player map view. */
+  playerLightAnimations: boolean;
 }
 
 export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
@@ -67,4 +69,5 @@ export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   combatAutoPan: false,
   sessionProjection: { ...DEFAULT_SESSION_PROJECTION_SETTINGS },
   mapCanvasScale: 2,
+  playerLightAnimations: true,
 };

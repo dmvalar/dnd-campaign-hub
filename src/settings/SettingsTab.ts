@@ -238,6 +238,21 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
       );
 
     new Setting(maps)
+      .setName("Player view light animations")
+      .setDesc(
+        "Animate flickering and buzzing light sources in the player map view. Turn this off on slower devices or very large maps."
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.playerLightAnimations ?? true)
+          .onChange(async (value) => {
+            this.plugin.settings.playerLightAnimations = value;
+            await this.plugin.saveSettings();
+            this.plugin._playerMapViews.forEach((view) => view.refreshLightAnimationSettings());
+          })
+      );
+
+    new Setting(maps)
       .setName("Map canvas resolution")
       .setDesc(
         "Higher values make tokens, fog, and grids sharper on some maps, but use more memory. Reopen maps after changing this."

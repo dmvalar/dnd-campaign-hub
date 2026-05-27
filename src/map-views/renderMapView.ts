@@ -22,7 +22,7 @@ import { enumerateScreens, screenKey, isMultiScreenSupported } from "../utils/Sc
 import type { ScreenInfo } from "../utils/ScreenEnumeration";
 import { canvasPool as _canvasPool } from "../utils/CanvasPool";
 import { getWallsHash as _getWallsHash, visCacheKey as _visCacheKey, visCacheMap as _visCacheMap, VIS_CACHE_MAX as _VIS_CACHE_MAX, visCacheEvict as _visCacheEvict } from "../utils/VisibilityCache";
-import { computeLightFlicker, computeNeonBuzz, hexToRgb, getFlickerSeedForKey, FLICKER_LIGHT_TYPES_SET, BUZZ_LIGHT_TYPES_SET } from "../utils/LightFlicker";
+import { hexToRgb } from "../utils/LightFlicker";
 import { LIGHT_SOURCES, PLACEABLE_LIGHT_TYPES, getDefaultLightColor } from "../map/LightTypes";
 import type { LightSourceType } from "../map/LightTypes";
 import { EnvAssetLibrary } from "../envasset/EnvAssetLibrary";
@@ -510,63 +510,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			// Ensure aoeEffects array exists on config
 			if (!config.aoeEffects) config.aoeEffects = [];
 			
-			// ── Light Flicker Animation System ──
-			// Delegates to module-level computeLightFlicker() and getFlickerSeedForKey().
-			// The closure only manages the animation loop lifecycle.
-			const FLICKER_LIGHT_TYPES = FLICKER_LIGHT_TYPES_SET;
-			const BUZZ_LIGHT_TYPES = BUZZ_LIGHT_TYPES_SET;
-			const getFlickerSeed = getFlickerSeedForKey;
-			const computeFlicker = computeLightFlicker;
-			const computeBuzz = computeNeonBuzz;
-			
-			// Flicker animation state
-			let flickerAnimFrameId: number | null = null;
-			let lastFlickerRedraw = 0;
-			const FLICKER_FPS = 14; // ~14 fps for flickering — smooth enough without being expensive
-			const FLICKER_INTERVAL = 1000 / FLICKER_FPS;
-			
-			// Check if any flickering lights exist (standalone or marker-attached)
-			const hasFlickeringLights = (): boolean => {
-				if (config.lightSources) {
-					for (const light of config.lightSources) {
-						if (light.active !== false && FLICKER_LIGHT_TYPES.has(light.type)) return true;
-					}
-				}
-				if (config.markers) {
-					for (const marker of config.markers as any[]) {
-						if (marker.light && FLICKER_LIGHT_TYPES.has(marker.light.type)) return true;
-					}
-				}
-				return false;
-			};
-			
-			// Animation loop — only runs when flickering lights are present
-			const flickerAnimLoop = (timestamp: number) => {
-				if (!el.isConnected) {
-					flickerAnimFrameId = null;
-					return; // Map view removed from DOM, stop
-				}
-				if (timestamp - lastFlickerRedraw >= FLICKER_INTERVAL) {
-					lastFlickerRedraw = timestamp;
-					redrawAnnotations();
-				}
-				flickerAnimFrameId = (viewport.ownerDocument?.defaultView ?? window).requestAnimationFrame(flickerAnimLoop);
-			};
-			
-			// Start/stop flicker animation based on whether flickering lights exist
-			const updateFlickerAnimation = () => {
-				const ownerWin = viewport.ownerDocument?.defaultView ?? window;
-				if (hasFlickeringLights()) {
-					if (flickerAnimFrameId === null) {
-						flickerAnimFrameId = ownerWin.requestAnimationFrame(flickerAnimLoop);
-					}
-				} else {
-					if (flickerAnimFrameId !== null) {
-						ownerWin.cancelAnimationFrame(flickerAnimFrameId);
-						flickerAnimFrameId = null;
-					}
-				}
-			};
+			// Animated light effects belong to PlayerMapView, where they are visible
+			// to players. The GM editor renders animated-capable lights statically.
+			const STATIC_LIGHT_MODULATION = { radius: 1, alpha: 1 };
+			const updateFlickerAnimation = () => {};
 			// Fog of War tool state
 			let selectedFogShape: 'circle' | 'rect' | 'polygon' | 'brush' = 'brush';
 			let fogMode: 'reveal' | 'hide' | 'magic-darkness' = 'reveal'; // Whether fog tool reveals, hides, or creates impenetrable magic darkness
@@ -5081,15 +5028,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					const pxPerFt = _gsAvgLight && config.scale?.value ? _gsAvgLight / config.scale.value : 1;
 					const baseBrightPx = draggedMarker.light.bright * pxPerFt;
 					const baseDimPx = draggedMarker.light.dim * pxPerFt;
-					const flickerKey = `marker_${draggedMarker.id || draggingMarkerIndex}`;
-					const isBuzz = BUZZ_LIGHT_TYPES.has(draggedMarker.light.type);
-					const shouldFlicker = FLICKER_LIGHT_TYPES.has(draggedMarker.light.type);
-					const flickerTime = performance.now() / 1000;
-					const flicker = shouldFlicker
-						? (isBuzz
-							? computeBuzz(getFlickerSeed(flickerKey), flickerTime)
-							: computeFlicker(getFlickerSeed(flickerKey), flickerTime, 'high'))
-						: { radius: 1, alpha: 1 };
+					const flicker = STATIC_LIGHT_MODULATION;
 					const brightR = baseBrightPx * flicker.radius;
 					const dimR = baseDimPx * flicker.radius;
 					const totalR = brightR + dimR;
@@ -5380,16 +5319,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							const _maxLightR = (baseBrightPx + baseDimPx) * 1.15; // flicker margin
 							if (!_inViewCircle(marker.position.x, marker.position.y, _maxLightR)) return;
 							
-							// Compute flicker/buzz for marker lights
-							const flickerKey = `marker_${marker.id || mIdx}`;
-							const isBuzz = BUZZ_LIGHT_TYPES.has(marker.light.type);
-							const shouldFlicker = FLICKER_LIGHT_TYPES.has(marker.light.type);
-							const flickerTime = performance.now() / 1000;
-							const flicker = shouldFlicker
-								? (isBuzz
-									? computeBuzz(getFlickerSeed(flickerKey), flickerTime)
-									: computeFlicker(getFlickerSeed(flickerKey), flickerTime, 'high'))
-								: { radius: 1, alpha: 1 };
+							const flicker = STATIC_LIGHT_MODULATION;
 							
 							const brightRadiusPx = baseBrightPx * flicker.radius;
 							const dimRadiusPx = baseDimPx * flicker.radius;
@@ -6506,16 +6436,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						
 						// Only draw light radii if the light is active
 						if (isActive) {
-								// Compute flicker/buzz modulation
-								const flickerKey = `standalone_${idx}`;
-								const isBuzz = BUZZ_LIGHT_TYPES.has(light.type);
-								const shouldFlicker = FLICKER_LIGHT_TYPES.has(light.type);
-								const flickerTime = performance.now() / 1000;
-								const flicker = shouldFlicker
-									? (isBuzz
-										? computeBuzz(getFlickerSeed(flickerKey), flickerTime)
-										: computeFlicker(getFlickerSeed(flickerKey), flickerTime, 'high'))
-									: { radius: 1, alpha: 1 };
+								const flicker = STATIC_LIGHT_MODULATION;
 								
 								const flickBrightPx = brightRadiusPx * flicker.radius;
 								const flickDimPx = dimRadiusPx * flicker.radius;
@@ -8655,19 +8576,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const colorCanvas = _canvasPool.acquire(w, h);
 				const colCtx = colorCanvas.getContext('2d');
 
-				const flickerTime = performance.now() / 1000;
-
 				try {
 				for (let li = 0; li < previewLights.length; li++) {
 					const light = previewLights[li]!;
-					const flickerKey = `preview_${li}`;
-					const isBuzz = BUZZ_LIGHT_TYPES.has(light.type);
-					const shouldFlicker = FLICKER_LIGHT_TYPES.has(light.type);
-					const flicker = shouldFlicker
-						? (isBuzz
-							? computeBuzz(getFlickerSeed(flickerKey), flickerTime)
-							: computeFlicker(getFlickerSeed(flickerKey), flickerTime, 'high'))
-						: { radius: 1, alpha: 1 };
+					const flicker = STATIC_LIGHT_MODULATION;
 
 					const brightPx = light.bright * pixelsPerFoot * flicker.radius;
 					const dimPx = light.dim * pixelsPerFoot * flicker.radius;
@@ -8840,16 +8752,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					fogCtx.fillStyle = '#ffffff';
 					
 					config.lightSources.forEach((light: any, fogLightIdx: number) => {
-						// Apply flicker/buzz for lights in GM fog view
-						const fogFlickerKey = `fog_${fogLightIdx}`;
-						const fogIsBuzz = BUZZ_LIGHT_TYPES.has(light.type);
-						const fogShouldFlicker = FLICKER_LIGHT_TYPES.has(light.type);
-						const fogFlickerTime = performance.now() / 1000;
-						const fogFlicker = fogShouldFlicker
-							? (fogIsBuzz
-								? computeBuzz(getFlickerSeed(fogFlickerKey), fogFlickerTime)
-								: computeFlicker(getFlickerSeed(fogFlickerKey), fogFlickerTime, 'high'))
-							: { radius: 1, alpha: 1 };
+						const fogFlicker = STATIC_LIGHT_MODULATION;
 						
 						// Convert feet to pixels with flicker modulation
 						const brightRadiusPx = light.bright * pixelsPerFoot * fogFlicker.radius;
