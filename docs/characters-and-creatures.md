@@ -131,4 +131,4 @@ Creature frontmatter is compatible with the Fantasy Statblocks plugin. Multi-lin
 
 ### Migrating existing creature notes
 
-If you imported SRD creatures with a previous plugin version, run the migration from **Settings → Migrate Notes** to repair frontmatter. The migration adds the `plugin_type: creature` field, replaces old `dataviewjs` button blocks with native `dnd-hub` blocks, quotes special-character values, and converts multi-line descriptions to block scalars.
+If you imported SRD creatures with a previous plugin version, run **Migrate campaign files** from **Settings** -> **D&D Campaign Hub** -> **Maintenance** to repair frontmatter. The migration adds the `plugin_type: creature` field, replaces old `dataviewjs` button blocks with native `dnd-hub` blocks, quotes special-character values, and converts multi-line descriptions to block scalars.

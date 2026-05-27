@@ -3,7 +3,31 @@ import type DndCampaignHubPlugin from "../main";
 import { SESSION_RUN_VIEW_TYPE } from "../constants";
 import { TimerNameModal } from "./TimerNameModal";
 import type { SceneMusicConfig } from '../music/types';
+import type { SoundEffectConfig } from '../music/SoundEffectBlock';
+import { parseSoundEffectCodeblockMarkdown } from '../music/SoundEffectBlock';
+import type { HandoutContentType } from '../projection/types';
 import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
+
+type RunScene = {
+  path: string;
+  number: number;
+  name: string;
+  type: string;
+  difficulty: string;
+  status: string;
+  mapLinked?: boolean;
+  mapId?: string;
+  mapName?: string;
+  mapNotePath?: string;
+  musicConfig?: SceneMusicConfig;
+  encounterName?: string;
+  encounterPath?: string;
+  soundEffects?: SoundEffectConfig[];
+  handouts?: Array<{ label: string; path: string; contentType: HandoutContentType }>;
+  inlineHandoutCount?: number;
+  partySummary?: string;
+  partyId?: string;
+};
 
 export class SessionRunDashboardView extends ItemView {
   plugin: DndCampaignHubPlugin;
@@ -19,7 +43,7 @@ export class SessionRunDashboardView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
     this.plugin = plugin;
-    this.campaignPath = plugin.resolveCampaign();
+    this.campaignPath = plugin.getActiveCampaignPath();
   }
 
   getViewType(): string {
@@ -35,8 +59,9 @@ export class SessionRunDashboardView extends ItemView {
   }
 
   setCampaign(campaignPath: string) {
+    if (this.campaignPath === campaignPath) return;
     this.campaignPath = campaignPath;
-    this.render();
+    void this.detectCurrentSession().then(() => this.loadQuickNotes()).then(() => this.render());
   }
 
   private renderCampaignPicker(container: HTMLElement) {
@@ -46,7 +71,12 @@ export class SessionRunDashboardView extends ItemView {
 
     const campaigns = this.plugin.getAllCampaigns();
     if (campaigns.length === 0) {
-      wrapper.createEl("p", { text: "No campaigns found. Create a campaign first.", cls: "empty-msg" });
+      this.renderEmptyState(
+        wrapper,
+        "No campaigns found",
+        "Create a campaign before using the live session controls.",
+        [{ label: "Create Campaign", onClick: () => this.plugin.createCampaign(), cta: true }]
+      );
       return;
     }
 
@@ -60,12 +90,40 @@ export class SessionRunDashboardView extends ItemView {
     const btn = wrapper.createEl("button", { text: "Start Session", cls: "mod-cta" });
     btn.addEventListener("click", async () => {
       this.campaignPath = select.value;
+      await this.plugin.setActiveCampaignPath(select.value);
       await this.detectCurrentSession();
       this.render();
     });
   }
 
+  private renderEmptyState(
+    container: HTMLElement,
+    title: string,
+    description: string,
+    actions: Array<{ label: string; onClick: () => void | Promise<void>; cta?: boolean }> = []
+  ): HTMLElement {
+    const empty = container.createEl("div", { cls: "dashboard-empty-state" });
+    empty.createEl("strong", { text: title });
+    empty.createEl("p", { text: description });
+    if (actions.length > 0) {
+      const actionRow = empty.createEl("div", { cls: "dashboard-empty-actions" });
+      for (const action of actions) {
+        const button = actionRow.createEl("button", {
+          text: action.label,
+          cls: action.cta ? "mod-cta" : "",
+        });
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void action.onClick();
+        });
+      }
+    }
+    return empty;
+  }
+
   async onOpen() {
+    this.campaignPath = this.plugin.getActiveCampaignPath();
     // Find current session file
     await this.detectCurrentSession();
 
@@ -313,6 +371,13 @@ export class SessionRunDashboardView extends ItemView {
     container.addClass("session-run-dashboard");
     container.addClass("session-run-compact");
 
+    const activeCampaignPath = this.plugin.getActiveCampaignPath();
+    if (activeCampaignPath && activeCampaignPath !== this.campaignPath) {
+      this.campaignPath = activeCampaignPath;
+      await this.detectCurrentSession();
+      await this.loadQuickNotes();
+    }
+
     // If no campaign resolved, show picker
     if (!this.campaignPath) {
       this.renderCampaignPicker(container as HTMLElement);
@@ -324,22 +389,13 @@ export class SessionRunDashboardView extends ItemView {
     const sessionName = this.currentSessionFile?.basename || "No Active Session";
     header.createEl("h3", { text: `🎮 Session Control` });
 
-    // Campaign selector if multiple campaigns
-    const campaigns = this.plugin.getAllCampaigns();
-    if (campaigns.length > 1) {
-      const select = header.createEl("select", { cls: "dashboard-campaign-select" });
-      for (const c of campaigns) {
-        const name = typeof c === "string" ? c : c.name;
-        const path = typeof c === "string" ? c : c.path;
-        const opt = select.createEl("option", { text: name, value: path });
-        if (path === this.campaignPath) opt.selected = true;
-      }
-      select.addEventListener("change", async () => {
-        this.setCampaign(select.value);
-        await this.detectCurrentSession();
-        this.render();
-      });
-    }
+    const campaignName = this.campaignPath.split("/").pop() || "No campaign selected";
+    const campaignRow = header.createEl("div", { cls: "session-active-campaign" });
+    campaignRow.createEl("span", { text: campaignName });
+    const homeBtn = campaignRow.createEl("button", { text: "Campaign Home" });
+    homeBtn.addEventListener("click", () => {
+      void this.plugin.openCampaignHome(this.campaignPath);
+    });
 
     header.createEl("p", { 
       text: sessionName,
@@ -375,6 +431,8 @@ export class SessionRunDashboardView extends ItemView {
     
     // Dice roller section
     this.renderDiceRoller(controlPanel);
+
+    await this.renderLiveSceneControl(controlPanel);
 
     // Scene music detection – scan active scene for dnd-music codeblock
     await this.renderSceneMusicDetector(controlPanel);
@@ -631,6 +689,407 @@ export class SessionRunDashboardView extends ItemView {
         });
       }
     }
+  }
+
+  async renderLiveSceneControl(container: HTMLElement) {
+    const context = await this.getLiveSceneContext();
+    const section = container.createEl("div", { cls: "dashboard-section session-live-scene" });
+    section.createEl("h3", { text: "🎬 Live Scene" });
+
+    if (!context.current) {
+      this.renderEmptyState(
+        section,
+        "No runnable scene found",
+        "Create or prepare a scene to make the live dashboard useful during play.",
+        [
+          { label: "Add Scene", onClick: () => this.plugin.createScene(this.campaignPath), cta: true },
+          { label: "Open Prep", onClick: () => this.plugin.openSessionPrepDashboard(this.campaignPath) },
+        ]
+      );
+      return;
+    }
+
+    const current = context.current;
+    const card = section.createEl("div", { cls: "session-live-scene-card" });
+    const heading = card.createEl("div", { cls: "session-live-scene-heading" });
+    heading.createEl("strong", { text: `Scene ${current.number || ""} ${current.name}`.trim() });
+    heading.createEl("span", { text: `${current.status} · ${current.type} · ${current.difficulty}` });
+
+    const nav = card.createEl("div", { cls: "session-live-scene-nav" });
+    this.createSceneActionButton(nav, "Previous", () => this.openScene(context.previous?.path), false, !context.previous);
+    this.createSceneActionButton(nav, "Open Scene", () => this.openScene(current.path), true);
+    this.createSceneActionButton(nav, "Next", () => this.openScene(context.next?.path), false, !context.next);
+
+    const links = card.createEl("div", { cls: "session-live-scene-links" });
+    this.renderSceneStatusPill(links, "Map", current.mapName || (current.mapLinked ? "Linked" : "Missing"), !!current.mapLinked);
+    this.renderSceneStatusPill(links, "Music", current.musicConfig ? "Linked" : "Missing", !!current.musicConfig);
+    this.renderSceneStatusPill(links, "Encounter", current.encounterName || current.encounterPath ? "Linked" : "Missing", !!(current.encounterName || current.encounterPath));
+    this.renderSceneStatusPill(links, "SFX", current.soundEffects?.length ? `${current.soundEffects.length}` : "None", !!current.soundEffects?.length);
+    const handoutCount = (current.handouts?.length || 0) + (current.inlineHandoutCount || 0);
+    this.renderSceneStatusPill(links, "Handouts", handoutCount ? `${handoutCount}` : "None", handoutCount > 0);
+    this.renderSceneStatusPill(links, "Party", current.partySummary || "Missing", !!current.partySummary);
+
+    const actions = card.createEl("div", { cls: "session-live-scene-actions" });
+    this.createSceneActionButton(actions, "Start Scene", async () => {
+      await this.updateSceneStatus(current.path, "in-progress");
+      await this.openScene(current.path);
+    }, current.status !== "in-progress");
+
+    if (current.musicConfig) {
+      this.createSceneActionButton(actions, "Play Music", async () => {
+        this.plugin.ensureMusicPlayerOpen();
+        await this.plugin.musicPlayer.loadSceneMusic(current.musicConfig!, current.musicConfig!.autoPlay);
+      });
+    }
+
+    if (!current.mapLinked) {
+      this.createSceneActionButton(actions, "Link Map", () => this.plugin.openMapManager());
+    }
+
+    if (current.encounterPath) {
+      this.createSceneActionButton(actions, "Start Encounter", async () => {
+        await this.openLinkedEncounter(current);
+      });
+    } else {
+      this.createSceneActionButton(actions, "Add Encounter", () => this.plugin.createEncounter(this.campaignPath));
+    }
+
+    if (current.handouts?.length) {
+      this.createSceneActionButton(actions, "Project Handout", () => this.projectHandout(current.handouts![0]!));
+    } else if (current.inlineHandoutCount) {
+      this.createSceneActionButton(actions, "Open Handouts", () => this.openScene(current.path));
+    }
+
+    if (current.soundEffects?.length) {
+      this.createSceneActionButton(actions, "Play SFX", () => this.playSceneSoundEffect(current.soundEffects![0]!));
+    }
+
+    this.createSceneActionButton(actions, "Open Party", () => this.plugin.openPartyManager(this.campaignPath), false, !current.partyId);
+
+    this.createSceneActionButton(actions, "Complete", () => this.markSceneComplete(current.path), false, current.status === "completed");
+
+    const missing: string[] = [];
+    if (!current.mapLinked) missing.push("map");
+    if (!current.musicConfig) missing.push("music");
+    if (!current.encounterName && !current.encounterPath) missing.push("encounter");
+    if (!handoutCount) missing.push("handout");
+    if (!current.partySummary) missing.push("party");
+    if (missing.length > 0) {
+      card.createEl("p", {
+        cls: "session-live-scene-missing",
+        text: `Missing: ${missing.join(", ")}.`,
+      });
+    }
+  }
+
+  private async getLiveSceneContext(): Promise<{ current: RunScene | null; previous: RunScene | null; next: RunScene | null }> {
+    const adventures = await this.getActiveAdventures();
+    const adventure = adventures[0];
+    if (!adventure) return { current: null, previous: null, next: null };
+
+    const scenes = await this.getScenesForAdventure(adventure.path) as RunScene[];
+    for (const scene of scenes) {
+      await this.enrichRunScene(scene);
+    }
+
+    const current = scenes.find((scene) => scene.status === "in-progress")
+      || scenes.find((scene) => scene.status === "not-started")
+      || scenes.find((scene) => scene.status !== "completed")
+      || scenes[0]
+      || null;
+    if (!current) return { current: null, previous: null, next: null };
+
+    const index = scenes.findIndex((scene) => scene.path === current.path);
+    return {
+      current,
+      previous: index > 0 ? scenes[index - 1] || null : null,
+      next: index >= 0 && index < scenes.length - 1 ? scenes[index + 1] || null : null,
+    };
+  }
+
+  private async enrichRunScene(scene: RunScene): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(scene.path);
+    if (!(file instanceof TFile)) return;
+
+    const cache = this.app.metadataCache.getFileCache(file);
+    const fm = cache?.frontmatter || {};
+    scene.encounterName = fm.tracker_encounter || "";
+    scene.encounterPath = this.extractLinkPath(fm.encounter_file || "");
+
+    const content = await this.app.vault.cachedRead(file);
+    const mapId = this.extractFirstMapId(content);
+    scene.mapId = mapId || undefined;
+    scene.mapLinked = !!mapId || content.includes("```dnd-map");
+    scene.mapNotePath = scene.mapLinked ? scene.path : undefined;
+    if (mapId) {
+      const mapData = await this.plugin.loadMapAnnotations(mapId);
+      scene.mapName = mapData?.name || mapId;
+    } else {
+      scene.mapName = undefined;
+    }
+
+    const musicMatch = content.match(/```dnd-music\s*\n([\s\S]*?)```/);
+    if (musicMatch?.[1]) {
+      try {
+        scene.musicConfig = JSON.parse(musicMatch[1].trim()) as SceneMusicConfig;
+      } catch {
+        scene.musicConfig = undefined;
+      }
+    }
+
+    scene.soundEffects = this.extractSceneSoundEffects(content);
+    scene.handouts = this.extractSceneHandouts(content, fm);
+    scene.inlineHandoutCount = this.countInlineHandouts(content);
+
+    const party = this.plugin.partyManager.getParty(fm.selected_party_id || fm.party_id || "")
+      || this.plugin.partyManager.getPartiesForCampaign(this.campaignPath)[0]
+      || this.plugin.partyManager.resolveParty(undefined, this.campaignPath)
+      || this.plugin.partyManager.resolvePartyForNote(scene.path);
+    if (party) {
+      const members = await this.plugin.partyManager.resolveMembers(party.id);
+      const active = members.filter((member) => member.enabled && !member.absent).length;
+      scene.partyId = party.id;
+      scene.partySummary = `${party.name} (${active}/${members.length} active)`;
+    } else {
+      scene.partyId = undefined;
+      scene.partySummary = undefined;
+    }
+  }
+
+  private extractSceneSoundEffects(content: string): SoundEffectConfig[] {
+    const effects: SoundEffectConfig[] = [];
+
+    for (const match of content.matchAll(/```dnd-sfx\s*\n([\s\S]*?)```/g)) {
+      const config = parseSoundEffectCodeblockMarkdown(match[1] || "");
+      if (config) effects.push(config);
+    }
+
+    for (const match of content.matchAll(/data-dnd-sfx=(?:"([^"]+)"|'([^']+)')/g)) {
+      const encoded = match[1] || match[2] || "";
+      const config = this.parseInlineSoundEffectData(encoded);
+      if (config) effects.push(config);
+    }
+
+    for (const match of content.matchAll(/\[[^\]]+\]\((dnd-sfx:[^)]+)\)/g)) {
+      const config = this.parseInlineSoundEffectHref(match[1] || "");
+      if (config) effects.push(config);
+    }
+
+    return effects;
+  }
+
+  private extractFirstMapId(content: string): string {
+    for (const match of content.matchAll(/```dnd-map\s*\n([\s\S]*?)```/g)) {
+      const source = match[1]?.trim();
+      if (!source) continue;
+      try {
+        const parsed = JSON.parse(source) as { mapId?: unknown };
+        if (typeof parsed.mapId === "string" && parsed.mapId.trim()) {
+          return parsed.mapId.trim();
+        }
+      } catch {
+        const fallback = source.match(/"mapId"\s*:\s*"([^"]+)"/);
+        if (fallback?.[1]) return fallback[1].trim();
+      }
+    }
+    return "";
+  }
+
+  private parseInlineSoundEffectData(data: string): SoundEffectConfig | null {
+    try {
+      const parsed = JSON.parse(decodeURIComponent(this.unescapeHtmlAttribute(data))) as Partial<SoundEffectConfig>;
+      if (!parsed.filePath) return null;
+      return {
+        name: parsed.name || this.fileNameWithoutExtension(parsed.filePath) || "Sound Effect",
+        icon: parsed.icon || "🔊",
+        filePath: parsed.filePath,
+        volume: typeof parsed.volume === "number" ? Math.max(0, Math.min(100, parsed.volume)) : null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private parseInlineSoundEffectHref(href: string): SoundEffectConfig | null {
+    if (!href.startsWith("dnd-sfx:")) return null;
+    const rest = href.startsWith("dnd-sfx://") ? href.slice("dnd-sfx://".length) : href.slice("dnd-sfx:".length);
+    const queryIndex = rest.indexOf("?");
+    const encodedPath = queryIndex === -1 ? rest : rest.slice(0, queryIndex);
+    const query = queryIndex === -1 ? "" : rest.slice(queryIndex + 1);
+
+    try {
+      const filePath = decodeURIComponent(encodedPath);
+      if (!filePath) return null;
+      const params = new URLSearchParams(query);
+      const name = params.get("name") || this.fileNameWithoutExtension(filePath) || "Sound Effect";
+      const icon = params.get("icon") || "🔊";
+      const parsedVolume = Number(params.get("volume"));
+      return {
+        name,
+        icon,
+        filePath,
+        volume: Number.isFinite(parsedVolume) ? Math.max(0, Math.min(100, parsedVolume)) : null,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private extractSceneHandouts(content: string, frontmatter: Record<string, any>): Array<{ label: string; path: string; contentType: HandoutContentType }> {
+    const handouts: Array<{ label: string; path: string; contentType: HandoutContentType }> = [];
+    const seen = new Set<string>();
+    const candidates: string[] = [];
+
+    for (const field of ["handout", "handouts", "handout_file", "handout_files", "player_handout", "player_handouts"]) {
+      const value = frontmatter[field];
+      if (Array.isArray(value)) {
+        candidates.push(...value.map((item) => String(item)));
+      } else if (typeof value === "string") {
+        candidates.push(value);
+      }
+    }
+
+    const handoutSection = content.match(/(?:^|\n)#{2,4}\s+.*handouts?.*\n([\s\S]*?)(?=\n#{1,4}\s+|$)/i);
+    if (handoutSection?.[1]) {
+      for (const match of handoutSection[1].matchAll(/!?\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]/g)) {
+        candidates.push(match[1] || "");
+      }
+      for (const match of handoutSection[1].matchAll(/\[[^\]]+\]\(([^)]+)\)/g)) {
+        candidates.push(match[1] || "");
+      }
+    }
+
+    for (const raw of candidates) {
+      const path = this.extractLinkPath(raw);
+      const file = path ? this.app.metadataCache.getFirstLinkpathDest(path, this.campaignPath) : null;
+      const resolvedPath = file?.path || path;
+      const contentType = this.detectHandoutContentType(resolvedPath);
+      if (!resolvedPath || !contentType || seen.has(resolvedPath)) continue;
+      seen.add(resolvedPath);
+      handouts.push({
+        label: resolvedPath.split("/").pop() || resolvedPath,
+        path: resolvedPath,
+        contentType,
+      });
+    }
+
+    return handouts;
+  }
+
+  private countInlineHandouts(content: string): number {
+    const quoteHandouts = content.match(/>\s*\[!(?:quote|note|info)\][^\n]*handout/gi)?.length || 0;
+    const headingHandouts = content.match(/^#{2,5}\s+.*handouts?.*$/gim)?.length || 0;
+    return quoteHandouts + headingHandouts;
+  }
+
+  private detectHandoutContentType(filePath: string): HandoutContentType | null {
+    const ext = filePath.split(".").pop()?.toLowerCase();
+    if (!ext) return null;
+    if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(ext)) return "image";
+    if (ext === "pdf") return "pdf";
+    if (ext === "md") return "note";
+    return null;
+  }
+
+  private unescapeHtmlAttribute(value: string): string {
+    return value
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">");
+  }
+
+  private fileNameWithoutExtension(filePath: string): string {
+    const fileName = filePath.split("/").pop() || filePath;
+    return fileName.replace(/\.[^.]+$/, "");
+  }
+
+  private renderSceneStatusPill(container: HTMLElement, label: string, value: string, linked: boolean) {
+    const pill = container.createEl("span", {
+      cls: linked ? "session-live-scene-pill is-linked" : "session-live-scene-pill is-missing",
+      text: `${label}: ${value}`,
+    });
+    return pill;
+  }
+
+  private createSceneActionButton(container: HTMLElement, label: string, action: () => void | Promise<void>, cta = false, disabled = false) {
+    const button = container.createEl("button", {
+      text: label,
+      cls: cta ? "mod-cta" : undefined,
+    });
+    button.disabled = disabled;
+    button.addEventListener("click", () => {
+      if (disabled) return;
+      void action();
+    });
+    return button;
+  }
+
+  private async openScene(scenePath?: string) {
+    if (!scenePath) return;
+    await this.app.workspace.openLinkText(scenePath, "", false);
+  }
+
+  private async updateSceneStatus(scenePath: string, status: string) {
+    const file = this.app.vault.getAbstractFileByPath(scenePath);
+    if (!(file instanceof TFile)) return;
+    const content = await this.app.vault.read(file);
+    const newContent = updateYamlFrontmatter(content, (fm) => ({
+      ...fm,
+      status,
+    }));
+    await this.app.vault.modify(file, newContent);
+    await this.render();
+  }
+
+  private async openLinkedEncounter(scene: RunScene) {
+    if (scene.encounterPath) {
+      const encounterFile = this.app.metadataCache.getFirstLinkpathDest(scene.encounterPath, scene.path);
+      if (encounterFile instanceof TFile) {
+        await this.app.workspace.openLinkText(encounterFile.path, "", false);
+      }
+    }
+    await this.plugin.openCombatTracker();
+  }
+
+  private async projectHandout(handout: { label: string; path: string; contentType: HandoutContentType }) {
+    const spm = this.plugin.sessionProjectionManager;
+    const pm = this.plugin.projectionManager;
+
+    if (!spm?.isActive()) {
+      this.plugin.openSessionProjectionHub();
+      new Notice("Start a projection session, then project the handout.");
+      return;
+    }
+
+    const state = spm.getAllScreenStates()[0];
+    if (!state) {
+      this.plugin.openSessionProjectionHub();
+      new Notice("No projection screen is available for handouts.");
+      return;
+    }
+
+    await pm.projectHandout(handout.path, handout.contentType, state.screen);
+  }
+
+  private playSceneSoundEffect(config: SoundEffectConfig) {
+    this.plugin.ensureMusicPlayerOpen();
+    this.plugin.musicPlayer.playSoundEffect({
+      id: "live-scene-sfx",
+      name: config.name || "Sound Effect",
+      filePath: config.filePath,
+      icon: config.icon || "🔊",
+      volume: config.volume ?? undefined,
+    });
+  }
+
+  private extractLinkPath(raw: unknown): string {
+    if (typeof raw !== "string") return "";
+    const trimmed = raw.trim();
+    const wiki = trimmed.match(/^\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]$/);
+    if (wiki?.[1]) return wiki[1].trim();
+    return trimmed.replace(/^["']|["']$/g, "");
   }
 
   async renderQuickNotes(container: HTMLElement) {

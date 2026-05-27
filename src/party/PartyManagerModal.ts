@@ -16,10 +16,11 @@ export class PartyManagerModal extends Modal {
   private dragSourceIndex = -1;
   private dragOverIndex = -1;
 
-  constructor(app: App, plugin: DndCampaignHubPlugin) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, initialPartyId?: string) {
     super(app);
     this.plugin = plugin;
     this.manager = plugin.partyManager;
+    this.selectedPartyId = initialPartyId || "";
   }
 
   onOpen() {
@@ -137,8 +138,19 @@ export class PartyManagerModal extends Modal {
       empty.createEl("div", { text: "🗡️", cls: "dnd-pm-empty-icon" });
       empty.createEl("p", { text: "No parties yet" });
       empty.createEl("p", {
-        text: "Create your first adventuring party to get started.",
+        text: "Parties connect PCs to sessions, encounters, and Campaign Home.",
         cls: "dnd-pm-empty-hint",
+      });
+      const createBtn = empty.createEl("button", {
+        text: "Create Party",
+        cls: "mod-cta",
+      });
+      createBtn.addEventListener("click", () => {
+        new PartyNameModal(this.app, "Create Party", "", async (name) => {
+          const p = await this.manager.createParty(name);
+          this.selectedPartyId = p.id;
+          this.render();
+        }).open();
       });
       return;
     }

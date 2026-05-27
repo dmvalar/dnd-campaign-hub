@@ -113,6 +113,18 @@ export function renderMusicPlayer(
   const settingsBtn = header.createEl('button', { text: '⚙️', cls: 'music-settings-btn', attr: { 'aria-label': 'Music Settings' } });
   settingsBtn.addEventListener('click', onOpenSettings);
 
+  if (settings.playlists.length === 0 && settings.soundEffects.length === 0) {
+    const empty = section.createEl('div', { cls: 'music-player-empty-state' });
+    empty.createEl('p', { text: 'No playlists or sound effects configured yet.' });
+    empty.createEl('p', {
+      text: 'Choose an audio folder and create playlists before using scene music or inline SFX.',
+      cls: 'music-player-empty-hint',
+    });
+    const setupBtn = empty.createEl('button', { text: 'Open Music Settings', cls: 'mod-cta' });
+    setupBtn.addEventListener('click', onOpenSettings);
+    return () => {};
+  }
+
   // ── Primary Layer ───────────────────────────────────────
   const primaryCleanup = renderLayerControls(
     section, musicPlayer.primary, settings, '🎵 Primary', musicPlayer, false

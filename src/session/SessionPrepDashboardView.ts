@@ -20,7 +20,7 @@ export class SessionPrepDashboardView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: DndCampaignHubPlugin) {
     super(leaf);
     this.plugin = plugin;
-    this.campaignPath = plugin.resolveCampaign();
+    this.campaignPath = plugin.getActiveCampaignPath();
   }
 
   getViewType(): string {
@@ -37,6 +37,7 @@ export class SessionPrepDashboardView extends ItemView {
 
   setCampaign(campaignPath: string) {
     this.campaignPath = campaignPath;
+    void this.plugin.setActiveCampaignPath(campaignPath);
     this.requestRefresh("campaign changed", 0);
   }
 
@@ -138,7 +139,12 @@ export class SessionPrepDashboardView extends ItemView {
 
     const campaigns = this.plugin.getAllCampaigns();
     if (campaigns.length === 0) {
-      wrapper.createEl("p", { text: "No campaigns found. Create a campaign first.", cls: "empty-msg" });
+      this.renderEmptyState(
+        wrapper,
+        "No campaigns found",
+        "Create a campaign to unlock prep, sessions, scenes, party tools, maps, and audio.",
+        [{ label: "Create Campaign", onClick: () => this.plugin.createCampaign(), cta: true }]
+      );
       return;
     }
 
@@ -156,6 +162,7 @@ export class SessionPrepDashboardView extends ItemView {
   }
 
   async onOpen() {
+    this.campaignPath = this.plugin.getActiveCampaignPath();
     // Ensure the view container takes full width of the leaf
     this.containerEl.style.width = "100%";
     this.containerEl.style.minWidth = "0";
@@ -206,6 +213,11 @@ export class SessionPrepDashboardView extends ItemView {
     container.empty();
     container.addClass("session-prep-dashboard");
 
+    const activeCampaignPath = this.plugin.getActiveCampaignPath();
+    if (activeCampaignPath && activeCampaignPath !== this.campaignPath) {
+      this.campaignPath = activeCampaignPath;
+    }
+
     // If no campaign resolved, show picker
     if (!this.campaignPath) {
       this.renderCampaignPicker(container);
@@ -250,7 +262,7 @@ export class SessionPrepDashboardView extends ItemView {
         cls: "dashboard-main-action mod-cta"
       });
       mainAction.addEventListener("click", () => {
-        this.plugin.createSession();
+        this.plugin.createSession(this.campaignPath);
       });
 
       await this.renderReadinessCard(container);
@@ -368,6 +380,32 @@ export class SessionPrepDashboardView extends ItemView {
   private runCommand(commandId: string): void {
     const commands = (this.app as any).commands;
     commands?.executeCommandById(`dnd-campaign-hub:${commandId}`);
+  }
+
+  private renderEmptyState(
+    container: HTMLElement,
+    title: string,
+    description: string,
+    actions: Array<{ label: string; onClick: () => void | Promise<void>; cta?: boolean }> = []
+  ): HTMLElement {
+    const empty = container.createEl("div", { cls: "dashboard-empty-state" });
+    empty.createEl("strong", { text: title });
+    empty.createEl("p", { text: description });
+    if (actions.length > 0) {
+      const actionRow = empty.createEl("div", { cls: "dashboard-empty-actions" });
+      for (const action of actions) {
+        const button = actionRow.createEl("button", {
+          text: action.label,
+          cls: action.cta ? "mod-cta" : "",
+        });
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          void action.onClick();
+        });
+      }
+    }
+    return empty;
   }
 
   async renderReadinessCard(container: HTMLElement) {
@@ -522,7 +560,12 @@ export class SessionPrepDashboardView extends ItemView {
     const npcsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/NPCs`);
     
     if (!(npcsFolder instanceof TFolder)) {
-      content.createEl("p", { text: "No NPCs found", cls: "empty-msg" });
+      this.renderEmptyState(
+        content,
+        "No NPCs found",
+        "NPCs give the prep dashboard quick access to recurring characters.",
+        [{ label: "Create NPC", onClick: () => this.plugin.createNpc(this.campaignPath), cta: true }]
+      );
     } else {
       const npcFiles: TFile[] = [];
       for (const item of npcsFolder.children) {
@@ -535,7 +578,12 @@ export class SessionPrepDashboardView extends ItemView {
       const recentNPCs = npcFiles.slice(0, 8);
 
       if (recentNPCs.length === 0) {
-        content.createEl("p", { text: "No NPCs yet", cls: "empty-msg" });
+        this.renderEmptyState(
+          content,
+          "No NPCs yet",
+          "Create important NPCs here so they are easy to pull up while preparing.",
+          [{ label: "Create NPC", onClick: () => this.plugin.createNpc(this.campaignPath), cta: true }]
+        );
       } else {
         const npcGrid = content.createEl("div", { cls: "npc-grid" });
         for (const npc of recentNPCs) {
@@ -594,7 +642,15 @@ export class SessionPrepDashboardView extends ItemView {
     const adventures = await this.getActiveAdventures();
 
     if (adventures.length === 0) {
-      container.createEl("p", { text: "No active adventures found." });
+      this.renderEmptyState(
+        container,
+        "No active adventures found",
+        "Adventures organize scenes into a runnable sequence for session prep.",
+        [
+          { label: "Create Adventure", onClick: () => this.plugin.createAdventure(this.campaignPath), cta: true },
+          { label: "Create Content", onClick: () => this.plugin.openCreateContent(this.campaignPath) },
+        ]
+      );
       return;
     }
 
@@ -622,7 +678,12 @@ export class SessionPrepDashboardView extends ItemView {
       const scenes = await this.getScenesForAdventure(adventure.path);
       
       if (scenes.length === 0) {
-        adventureCard.createEl("p", { text: "No scenes yet" });
+        this.renderEmptyState(
+          adventureCard,
+          "No scenes yet",
+          "Scenes are the moments you can prepare, run, and connect to maps, music, and encounters.",
+          [{ label: "Add Scene", onClick: () => this.plugin.createScene(this.campaignPath), cta: true }]
+        );
         continue;
       }
 
@@ -833,13 +894,25 @@ export class SessionPrepDashboardView extends ItemView {
     const party = this.plugin.partyManager.resolveParty(undefined, campaignName);
 
     if (!party || party.members.length === 0) {
-      content.createEl("p", { text: "No party members found", cls: "empty-msg" });
+      this.renderEmptyState(
+        content,
+        "No party members found",
+        "Link a party to this campaign so encounters and session prep use the right characters.",
+        [{ label: "Open Party Manager", onClick: () => this.plugin.openPartyManager(this.campaignPath), cta: true }]
+      );
     } else {
       const resolved = await this.plugin.partyManager.resolveMembers(party.id);
       const presentMembers = resolved.filter((m) => m.enabled && !m.absent);
 
       if (presentMembers.length === 0) {
-        content.createEl("p", { text: resolved.length === 0 ? "No PCs yet" : "No present PCs", cls: "empty-msg" });
+        this.renderEmptyState(
+          content,
+          resolved.length === 0 ? "No PCs yet" : "No present PCs",
+          resolved.length === 0
+            ? "Add PCs to the party before building encounters around them."
+            : "Mark at least one party member present before using party readiness.",
+          [{ label: "Open Party Manager", onClick: () => this.plugin.openPartyManager(this.campaignPath), cta: true }]
+        );
       } else {
         presentMembers.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -928,7 +1001,12 @@ export class SessionPrepDashboardView extends ItemView {
 
     const lastSession = sessionFiles[0];
     if (!lastSession) {
-      container.createEl("p", { text: "No sessions yet" });
+      this.renderEmptyState(
+        container,
+        "No sessions yet",
+        "Create your first session note to track prep, recap, scenes, and follow-up.",
+        [{ label: "New Session", onClick: () => this.plugin.createSession(this.campaignPath), cta: true }]
+      );
       return;
     }
 
@@ -1083,10 +1161,12 @@ export class SessionPrepDashboardView extends ItemView {
     const sessionFiles = this.getSessionFiles();
 
     if (sessionFiles.length === 0) {
-      content.createEl("p", { 
-        text: "No previous sessions yet.",
-        cls: "empty-msg"
-      });
+      this.renderEmptyState(
+        content,
+        "No previous sessions yet",
+        "Create a session note now; future prep will show the latest recap here.",
+        [{ label: "New Session", onClick: () => this.plugin.createSession(this.campaignPath), cta: true }]
+      );
     } else {
       // Sort by session number (descending)
       sessionFiles.sort((a, b) => {

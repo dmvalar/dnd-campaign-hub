@@ -5,11 +5,13 @@ import { buildSpellContent } from "./buildSpellContent";
 export class SpellDetailsModal extends Modal {
   plugin: DndCampaignHubPlugin;
   spellData: any;
+  campaignPath = "";
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, spellData: any) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, spellData: any, campaignPath?: string) {
     super(app);
     this.plugin = plugin;
     this.spellData = spellData;
+    this.campaignPath = campaignPath || plugin.resolveCampaign();
   }
 
   onOpen() {
@@ -91,7 +93,7 @@ export class SpellDetailsModal extends Modal {
   async importSpell() {
     try {
       const spell = this.spellData;
-      const spellPath = `${this.plugin.resolveCampaign()}/Spells`;
+      const spellPath = `${this.campaignPath || this.plugin.resolveCampaign()}/Spells`;
       await this.plugin.ensureFolderExists(spellPath);
 
       const content = buildSpellContent(spell);

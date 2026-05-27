@@ -67,6 +67,205 @@ async function appendCreaturesToActiveEncounter(plugin: DndCampaignHubPlugin, cr
 	}
 }
 
+export interface InlineEncounterConfig {
+	path: string;
+	name?: string;
+}
+
+export async function startEncounterFromFile(plugin: DndCampaignHubPlugin, encounterFile: TFile): Promise<void> {
+	const cache = plugin.app.metadataCache.getFileCache(encounterFile);
+	const fm = cache?.frontmatter;
+	if (!fm || fm.type !== 'encounter') {
+		new Notice("Not a valid encounter note.");
+		return;
+	}
+
+	const encounterName = fm.name || encounterFile.basename;
+	const mappedCreatures = mapEncounterCreatures(fm);
+	const partyMembers: Array<{ name: string; level: number; hp: number; maxHp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }> = [];
+
+	const includeParty = fm.include_party !== false;
+	const fmParty: any[] | undefined = fm.party_members;
+	if (Array.isArray(fmParty) && fmParty.length > 0) {
+		for (const m of fmParty) {
+			if (!m || !m.name) continue;
+			const maxHp = typeof m.hp_max === "number" ? m.hp_max : (typeof m.hp === "number" ? m.hp : 10);
+			partyMembers.push({
+				name: m.name,
+				level: typeof m.level === "number" ? m.level : 1,
+				hp: typeof m.hp === "number" ? m.hp : maxHp,
+				maxHp,
+				ac: typeof m.ac === "number" ? m.ac : 10,
+				notePath: m.note_path || undefined,
+				tokenId: m.token_id || undefined,
+				initBonus: typeof m.init_bonus === "number" ? m.init_bonus : 0,
+				thp: typeof m.thp === "number" ? m.thp : 0,
+			});
+		}
+	} else if (includeParty) {
+		const resolvedParty = plugin.partyManager.resolvePartyForNote(encounterFile.path)
+			|| plugin.partyManager.getDefaultParty();
+		if (resolvedParty) {
+			const resolved = await plugin.partyManager.resolveMembers(resolvedParty.id);
+			for (const m of resolved) {
+				if (!m.enabled || m.absent) continue;
+				partyMembers.push({
+					name: m.name,
+					level: m.level,
+					hp: m.hp,
+					maxHp: m.maxHp,
+					ac: m.ac,
+					notePath: m.notePath,
+					tokenId: m.tokenId,
+					initBonus: m.initBonus,
+					thp: m.thp,
+				});
+			}
+		}
+	}
+
+	await plugin.combatTracker.startFromEncounter(
+		encounterName,
+		mappedCreatures,
+		partyMembers,
+		fm.use_color_names ?? true,
+		encounterFile.path,
+	);
+
+	await plugin.openCombatTracker();
+}
+
+export function resolveEncounterFile(plugin: DndCampaignHubPlugin, rawPath: string, sourcePath: string): TFile | null {
+	const trimmed = rawPath.trim();
+	if (!trimmed) return null;
+
+	let filePath = trimmed;
+	const wikiMatch = trimmed.match(/^\[\[(.+?)\]\]$/);
+	if (wikiMatch?.[1]) {
+		filePath = wikiMatch[1];
+	}
+
+	if (!filePath.endsWith('.md')) {
+		filePath += '.md';
+	}
+
+	const direct = plugin.app.vault.getAbstractFileByPath(filePath);
+	if (direct instanceof TFile) return direct;
+
+	const resolved = plugin.app.metadataCache.getFirstLinkpathDest(filePath.replace(/\.md$/, ''), sourcePath);
+	return resolved instanceof TFile ? resolved : null;
+}
+
+export function renderInlineEncounterWidgets(el: HTMLElement) {
+	el.querySelectorAll<HTMLElement>('[data-dnd-encounter]').forEach((widget) => {
+		widget.classList.add('dnd-encounter-inline-btn');
+		if (!widget.getAttribute('role')) widget.setAttribute('role', 'button');
+		if (!widget.getAttribute('tabindex')) widget.setAttribute('tabindex', '0');
+		if (!widget.getAttribute('aria-label')) widget.setAttribute('aria-label', 'Run encounter');
+	});
+}
+
+export function handleInlineEncounterInteraction(
+	event: MouseEvent | KeyboardEvent,
+	plugin: DndCampaignHubPlugin,
+): boolean {
+	if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ') return false;
+
+	const target = event.target;
+	if (!(target instanceof Element)) return false;
+
+	const control = target.closest<HTMLElement>('[data-dnd-encounter]');
+	if (!control) return false;
+
+	const config = parseEncounterInlineData(control.getAttribute('data-dnd-encounter') || '');
+	if (!config?.path) return false;
+
+	event.preventDefault();
+	event.stopPropagation();
+	if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+
+	void (async () => {
+		const encounterFile = resolveEncounterFile(plugin, config.path, '');
+		if (!encounterFile) {
+			new Notice('Encounter note not found.');
+			return;
+		}
+		control.classList.add('playing');
+		try {
+			await startEncounterFromFile(plugin, encounterFile);
+		} finally {
+			setTimeout(() => control.classList.remove('playing'), 400);
+		}
+	})();
+
+	return true;
+}
+
+export function buildEncounterInlineMarkdown(config: InlineEncounterConfig): string {
+	const name = config.name || config.path.split('/').pop()?.replace(/\.md$/, '') || 'Encounter';
+	const data = escapeHtmlAttribute(encodeEncounterInlineData({ ...config, name }));
+	return `<button type="button" class="dnd-encounter-inline-btn" data-dnd-encounter="${data}" aria-label="Run encounter: ${escapeHtmlAttribute(name)}">⚔️ ${escapeHtmlText(name)}</button>`;
+}
+
+export function parseEncounterCodeblockMarkdown(markdown: string): InlineEncounterConfig | null {
+	const trimmed = markdown.trim();
+	const match = trimmed.match(/^```dnd-encounter\s*\n([\s\S]*?)\n?```$/);
+	const source = (match?.[1] ?? trimmed).trim();
+	if (!source) return null;
+
+	const wiki = source.match(/^\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]$/);
+	const path = wiki?.[1]?.trim() || source;
+	const name = wiki?.[2]?.trim() || path.split('/').pop()?.replace(/\.md$/, '') || 'Encounter';
+	return { path, name };
+}
+
+export function parseEncounterInlineMarkdown(markdown: string): InlineEncounterConfig | null {
+	const htmlData = markdown.trim().match(/data-dnd-encounter=(?:"([^"]+)"|'([^']+)')/);
+	const encodedData = htmlData?.[1] ?? htmlData?.[2];
+	return encodedData ? parseEncounterInlineData(unescapeHtmlAttribute(encodedData)) : null;
+}
+
+function encodeEncounterInlineData(config: InlineEncounterConfig): string {
+	return encodeURIComponent(JSON.stringify(config));
+}
+
+function parseEncounterInlineData(data: string): InlineEncounterConfig | null {
+	try {
+		const parsed = JSON.parse(decodeURIComponent(data)) as Partial<InlineEncounterConfig>;
+		if (!parsed.path || typeof parsed.path !== 'string') return null;
+		return {
+			path: parsed.path,
+			name: typeof parsed.name === 'string' ? parsed.name : undefined,
+		};
+	} catch {
+		return null;
+	}
+}
+
+function escapeHtmlAttribute(value: string): string {
+	return value
+		.replace(/&/g, '&amp;')
+		.replace(/"/g, '&quot;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;');
+}
+
+function escapeHtmlText(value: string): string {
+	return value
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;');
+}
+
+function unescapeHtmlAttribute(value: string): string {
+	return value
+		.replace(/&quot;/g, '"')
+		.replace(/&#39;/g, "'")
+		.replace(/&amp;/g, '&')
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>');
+}
+
 /**
  * Renders the dnd-encounter code block.
  */
@@ -78,28 +277,7 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 		let encounterFile: TFile | null = null;
 
 		if (trimmedSource) {
-			// Source contains a path to encounter file
-			// Handle wikilink format: [[path/to/encounter]] or plain path
-			let filePath = trimmedSource;
-			const wikiMatch = trimmedSource.match(/^\[\[(.+?)\]\]$/);
-			if (wikiMatch && wikiMatch[1]) {
-				filePath = wikiMatch[1];
-			}
-
-			// Add .md extension if not present
-			if (!filePath.endsWith('.md')) {
-				filePath += '.md';
-			}
-
-			// Find the file
-			encounterFile = plugin.app.vault.getAbstractFileByPath(filePath) as TFile;
-			if (!encounterFile) {
-				// Try to resolve as wikilink
-				const resolved = plugin.app.metadataCache.getFirstLinkpathDest(filePath.replace('.md', ''), ctx.sourcePath);
-				if (resolved instanceof TFile) {
-					encounterFile = resolved;
-				}
-			}
+			encounterFile = resolveEncounterFile(plugin, trimmedSource, ctx.sourcePath);
 		} else {
 			// Use current file
 			encounterFile = plugin.app.vault.getAbstractFileByPath(ctx.sourcePath) as TFile;
@@ -195,66 +373,7 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 			cls: 'dnd-encounter-btn mod-cta'
 		});
 		loadBtn.addEventListener('click', async () => {
-			const tracker = plugin.combatTracker;
-
-			// Map YAML creatures (snake_case → camelCase for EncounterCreature)
-			const mappedCreatures = mapEncounterCreatures(fm);
-
-			// Build party — prefer frontmatter party_members, fall back to PartyManager
-			const partyMembers: Array<{ name: string; level: number; hp: number; maxHp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }> = [];
-
-			const includeParty = fm.include_party !== false;
-			const fmParty: any[] | undefined = fm.party_members;
-			if (Array.isArray(fmParty) && fmParty.length > 0) {
-				for (const m of fmParty) {
-					if (!m || !m.name) continue;
-					const maxHp = typeof m.hp_max === "number" ? m.hp_max : (typeof m.hp === "number" ? m.hp : 10);
-					partyMembers.push({
-						name: m.name,
-						level: typeof m.level === "number" ? m.level : 1,
-						hp: typeof m.hp === "number" ? m.hp : maxHp,
-						maxHp,
-						ac: typeof m.ac === "number" ? m.ac : 10,
-						notePath: m.note_path || undefined,
-						tokenId: m.token_id || undefined,
-						initBonus: typeof m.init_bonus === "number" ? m.init_bonus : 0,
-						thp: typeof m.thp === "number" ? m.thp : 0,
-					});
-				}
-			} else if (includeParty) {
-				// Resolve party from PartyManager using encounter note context
-				const resolvedParty = encounterFile
-					? plugin.partyManager.resolvePartyForNote(encounterFile.path)
-					: plugin.partyManager.getDefaultParty();
-				if (resolvedParty) {
-					const resolved = await plugin.partyManager.resolveMembers(resolvedParty.id);
-					for (const m of resolved) {
-						if (!m.enabled || m.absent) continue;
-						partyMembers.push({
-							name: m.name,
-							level: m.level,
-							hp: m.hp,
-							maxHp: m.maxHp,
-							ac: m.ac,
-							notePath: m.notePath,
-							tokenId: m.tokenId,
-							initBonus: m.initBonus,
-							thp: m.thp,
-						});
-					}
-				}
-			}
-
-			await tracker.startFromEncounter(
-				encounterName,
-				mappedCreatures,
-				partyMembers,
-				fm.use_color_names ?? true,
-				encounterFile!.path,
-			);
-
-			// Open the Combat Tracker sidebar
-			await plugin.openCombatTracker();
+			await startEncounterFromFile(plugin, encounterFile!);
 		});
 
 		if (creatures.length > 0) {

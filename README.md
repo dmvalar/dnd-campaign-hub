@@ -221,20 +221,31 @@ The plugin checks for missing optional plugins on startup and in **Settings** â†
 ## Quick start
 
 1. Open the Command Palette (`Ctrl+P` on Windows/Linux, `Command+P` on macOS).
-2. Run **Initialize D&D Campaign Hub** to create the vault folder structure.
-3. Run **Create New Campaign**, enter a name, choose your role, and optionally link a calendar.
-4. Open the campaign hub with `Ctrl+Shift+M` (Windows/Linux) or `Command+Shift+M` (macOS) to access all creation tools.
-5. Run **Create Battle Map** to set up your first interactive map, then embed it in a note with a `dnd-map` code block.
+2. Run **D&D Hub: Open Setup Wizard** to create the campaign structure and optional starter content.
+3. Run **D&D Hub: Open Campaign Home** and select the active campaign from the dropdown.
+4. Use **New Session** or **Create Content** from Campaign Home to prepare the next session.
+5. Run **D&D Hub: Start Session** when you are ready to play.
 
 ## Commands
 
-Access all commands through the Command Palette (`Ctrl+P`). The plugin registers 79 commands organized by category.
+Access all commands through the Command Palette (`Ctrl+P`). Search for "D&D Hub" for the main workflows.
+
+### Main workflows
+
+| Command | Description |
+| --- | --- |
+| D&D Hub: Open Setup Wizard | Run or revisit first-time setup |
+| D&D Hub: Open Campaign Home | Open the main campaign dashboard |
+| D&D Hub: Create Content | Create sessions, scenes, characters, encounters, maps, and world notes from one menu |
+| D&D Hub: Prepare Next Session | Open the preparation dashboard |
+| D&D Hub: Start Session | Open the live session dashboard |
+| D&D Hub: Open GM Tools | Open common live-play tools |
 
 ### Core
 
 | Command | Description |
 | --- | --- |
-| Open D&D Campaign Hub | Open the main hub modal |
+| Open D&D Campaign Hub | Open the legacy hub modal |
 | Initialize D&D Campaign Hub | Create vault folder structure and templates |
 | Migrate D&D Hub Files | Apply safe file migrations after updates |
 | Purge D&D Campaign Hub Data | Remove all plugin data |
@@ -329,18 +340,16 @@ All campaign entities (adventures, scenes, encounters, PCs, NPCs, creatures, ite
 
 ## Settings
 
-Open **Settings** â†’ **D&D Campaign Hub** to configure the plugin.
+Open **Settings** -> **D&D Campaign Hub** to configure the plugin.
 
-| Section | Setting | Description |
-| --- | --- | --- |
-| Campaign | Active Campaign | Auto-detected from the open note or selectable via picker |
-| Maps | Auto-pan to active combatant | Center the player view on the current combatant during combat |
-| Lighting | Vision update mode | "Update on drop" (faster) or "Update while dragging" (live preview) |
-| SRD Data | Import All SRD Data | Download all 15 SRD categories to system folders |
-| | Import SRD Creatures | Import 334 creatures as tokens with artwork |
-| Dependencies | Plugin Dependencies | Status of optional plugins (Calendarium, Templater, Fantasy Statblocks) |
-| File Management | Migrate Files | Safely update templates to the latest version |
-| Danger Zone | Purge Vault | Remove all plugin data from the vault |
+| Section | Purpose |
+| --- | --- |
+| Setup | Re-run setup, reset the setup checklist, open Campaign Home, and open Create Content |
+| Audio & Projection | Configure music/SFX, open the music player, and manage projection screens |
+| Maps & Encounters | Open Map Manager and tune combat map behaviour |
+| Reference Data | Import optional SRD reference notes and creature tokens |
+| Maintenance | Run template migrations with backups |
+| Danger Zone | Remove all plugin data from the vault |
 
 ## Vault structure
 
@@ -374,6 +383,10 @@ See the [docs/](docs/) folder for detailed guides:
 
 - [First steps: install and create your first campaign](docs/first-steps.md)
 - [Getting started](docs/getting-started.md)
+- [Prepare a session](docs/prepare-a-session.md)
+- [Run a session](docs/run-a-session.md)
+- [Build a scene with map, encounter, and music](docs/build-scene-map-encounter-music.md)
+- [Recover or continue a session](docs/recover-continue-session.md)
 - [Campaign management](docs/campaign-management.md)
 - [Sessions](docs/sessions.md)
 - [Adventures and scenes](docs/adventures-and-scenes.md)

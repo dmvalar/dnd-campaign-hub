@@ -719,6 +719,16 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "scene-2.3.1",
+      entityTypes: ["scene"],
+      targetVersion: "2.3.1",
+      description: "Record template clarity pass without rewriting existing scene notes",
+      async apply(ctx: MigrationContext) {
+        return setFrontmatterField(ctx.content, "template_version", "2.3.1");
+      },
+    },
+
     // ── Session ──────────────────────────────────────────────────────────
 
     {
@@ -761,6 +771,30 @@ deleteBtn.addEventListener("click", () => {
                       ?? replaceDataviewjsBlock(ctx.content, "sessionFile.adventure", replacement);
         if (!replaced) return null;
         return setFrontmatterField(replaced, "template_version", "1.5.0");
+      },
+    },
+
+    {
+      id: "session-1.6.0",
+      entityTypes: ["session"],
+      targetVersion: "1.6.0",
+      description: "Add runtime session action bar",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+        if (!out.includes("```dnd-hub")) {
+          out = insertAfterTitle(out, DND_HUB_BLOCK);
+        }
+        return setFrontmatterField(out, "template_version", "1.6.0");
+      },
+    },
+
+    {
+      id: "session-1.6.1",
+      entityTypes: ["session"],
+      targetVersion: "1.6.1",
+      description: "Record template clarity pass without rewriting existing session notes",
+      async apply(ctx: MigrationContext) {
+        return setFrontmatterField(ctx.content, "template_version", "1.6.1");
       },
     },
 
@@ -836,6 +870,16 @@ deleteButton.onclick = () => {
                       ?? replaceDataviewjsBlock(ctx.content, "adventureFolder", replacement);
         if (!replaced) return null;
         return setFrontmatterField(replaced, "template_version", "1.4.0");
+      },
+    },
+
+    {
+      id: "adventure-1.4.1",
+      entityTypes: ["adventure"],
+      targetVersion: "1.4.1",
+      description: "Record template clarity pass without rewriting existing adventure notes",
+      async apply(ctx: MigrationContext) {
+        return setFrontmatterField(ctx.content, "template_version", "1.4.1");
       },
     },
 
@@ -1207,6 +1251,30 @@ deleteBtn.addEventListener("click", () => {
 
         out = setFrontmatterField(out, "template_version", "1.1.0");
         return out;
+      },
+    },
+
+    {
+      id: "campaign-1.2.0",
+      entityTypes: ["campaign"],
+      targetVersion: "1.2.0",
+      description: "Add runtime campaign action bar",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+        if (!out.includes("```dnd-hub")) {
+          out = insertAfterTitle(out, DND_HUB_BLOCK);
+        }
+        return setFrontmatterField(out, "template_version", "1.2.0");
+      },
+    },
+
+    {
+      id: "campaign-1.2.1",
+      entityTypes: ["campaign"],
+      targetVersion: "1.2.1",
+      description: "Record template clarity pass without rewriting existing campaign notes",
+      async apply(ctx: MigrationContext) {
+        return setFrontmatterField(ctx.content, "template_version", "1.2.1");
       },
     },
 

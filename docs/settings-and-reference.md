@@ -1,30 +1,50 @@
-# Settings and reference
+# Settings and Reference
 
-## Plugin settings
+## Plugin Settings
 
-Open **Settings > D&D Campaign Hub** to configure the plugin. The settings page has the following sections:
+Open **Settings** -> **D&D Campaign Hub** to configure the plugin.
 
-### Plugin dependencies
+The settings page is grouped around workflows so new users can start with the sections they actually need.
 
-Shows the installation status of each optional plugin. A green check indicates the plugin is installed and enabled; a yellow warning means it is missing. Select **Install** to open the Obsidian plugin browser for any missing plugin.
+### Setup
 
-| Plugin | Purpose |
+Use this section when starting a vault, changing onboarding state, or returning to the main campaign workflow.
+
+| Setting | Purpose |
 | --- | --- |
-| Calendarium | In-game calendar and date tracking |
-| Templater | Template processing for note creation |
-| Fantasy Statblocks | Creature and PC stat block rendering |
+| Setup wizard | Re-run first-time setup for campaign structure, starter content, audio, and map/token folders |
+| Setup checklist | Mark setup complete or reset it when you want setup to be treated as unfinished |
+| Campaign Home | Open the main campaign dashboard |
+| Create content | Open the unified creation menu |
 
-### Campaign settings
+The active campaign is selected in **Campaign Home**. Campaign-aware workflows launched from Campaign Home use that selected campaign.
 
-- **Active Campaign** — auto-detected from the currently open note. Use the campaign picker in creation modals to target a different campaign.
+### Audio and Projection
 
-### Map management
+Use this section for live table media.
 
-- **Open Map Manager** — opens the map manager modal to browse, edit, duplicate, and delete map templates and active maps.
+| Setting | Purpose |
+| --- | --- |
+| Music and SFX settings | Choose the audio folder, build playlists, configure sound effects, and tune playback |
+| Music player | Open the live audio player |
+| Session projection | Manage player-facing screens for scenes, handouts, maps, and session information |
 
-### SRD data import
+### Maps and Encounters
 
-Import official D&D 5e System Reference Document data into your vault. Each button downloads data from the D&D 5e API and creates notes in the corresponding `z_*` folder.
+Use this section for battle maps, map rendering, and combat map behaviour.
+
+| Setting | Purpose |
+| --- | --- |
+| Map Manager | Create and edit maps used by scenes, encounters, and inline map controls |
+| Auto-pan to active combatant | Center the projected player map on the active combatant when turns change |
+| Vision update mode | Choose whether fog of war updates while dragging tokens or only on drop |
+| Map canvas resolution | Adjust overlay sharpness for tokens, fog, and grids |
+
+Higher map canvas values can look sharper but use more memory. Reopen maps after changing this setting.
+
+### Reference Data
+
+Use this section to import optional D&D 5e SRD notes and creature tokens.
 
 | Category | Target folder |
 | --- | --- |
@@ -44,49 +64,65 @@ Import official D&D 5e System Reference Document data into your vault. Each butt
 | Traits | `z_Traits/` |
 | Weapon Properties | `z_WeaponProperties/` |
 
-Select **Import All SRD Data** to download every category at once.
+**Import all SRD reference data** creates reference notes for all categories.
 
-### SRD creature token import
+**Import SRD creature tokens** creates SRD creature notes and matching battlemap tokens. Existing imported creatures with matching paths may be overwritten.
 
-Select **Import SRD Creatures** to download all 334 SRD monsters with artwork. The plugin creates notes in `z_Beastiarity/` with full stat blocks and registers matching map marker tokens with correct creature sizes and darkvision values. A progress indicator tracks the import.
+### Maintenance
 
-### About
+| Setting | Purpose |
+| --- | --- |
+| Migrate campaign files | Update older generated notes to the latest template versions |
 
-- **Version** — the current plugin version.
-- **Migrate Files** — runs template migration to update existing notes with new features introduced in plugin updates. Backups are saved to `z_Backups/`.
+Migrations create backups before changing files.
 
-### Danger zone
+### Danger Zone
 
-- **Purge Vault** — deletes all plugin-created folders (`ttrpgs/`, `z_Templates/`, `z_Assets/`, and others). A confirmation modal requires explicit confirmation before proceeding.
+| Setting | Purpose |
+| --- | --- |
+| Purge Vault | Delete all plugin-created folders and files from the current vault |
 
-## Command reference
+This action is destructive and requires explicit confirmation.
 
-All commands are available from the Command Palette (`Ctrl+P` on Windows/Linux, `Cmd+P` on macOS). Search for "D&D" to filter.
+## Command Reference
+
+All commands are available from the Command Palette. Search for "D&D" or "D&D Hub" to filter.
+
+### Main Workflows
+
+| Command | Description |
+| --- | --- |
+| D&D Hub: Open Setup Wizard | Run or revisit first-time setup |
+| D&D Hub: Open Campaign Home | Open the main campaign dashboard |
+| D&D Hub: Create Content | Create common campaign content from one menu |
+| D&D Hub: Prepare Next Session | Open the preparation dashboard |
+| D&D Hub: Start Session | Open the live run dashboard |
+| D&D Hub: Open GM Tools | Open common live-play tools |
 
 ### General
 
 | Command | Description |
 | --- | --- |
-| Open D&D Campaign Hub | Open the hub modal with quick-create buttons and vault browser |
+| Open D&D Campaign Hub | Open the legacy hub modal |
 | Initialize D&D Campaign Hub | Create the vault folder structure and templates |
 | Migrate D&D Hub Files | Run template migration after plugin updates |
-| Purge D&D Campaign Hub Data | Delete all plugin-created data (with confirmation) |
+| Purge D&D Campaign Hub Data | Delete plugin-created data with confirmation |
 | Reset Focus | Fix stuck input fields in modals |
 
-### Campaigns and sessions
+### Campaigns and Sessions
 
 | Command | Description |
 | --- | --- |
 | Create New Campaign | Open the campaign creation modal |
 | Create New Session | Open the session creation modal |
 | End Session Here | Record the ending scene for the current session |
-| Open Session Prep Dashboard | Open the pre-session preparation panel |
-| Open Session Run Dashboard | Open the in-session management panel |
-| Session Projection | Open the projection setup modal for managed player screens |
+| Open Session Prep Dashboard | Open the preparation panel |
+| Open Session Run Dashboard | Open the live session panel |
+| Session Projection | Open the projection setup modal |
 | Start Projection Session | Launch configured projection screens |
 | Stop Projection Session | Close all managed projection screens |
 
-### Adventures and scenes
+### Adventures and Scenes
 
 | Command | Description |
 | --- | --- |
@@ -97,7 +133,7 @@ All commands are available from the Command Palette (`Ctrl+P` on Windows/Linux, 
 | Edit Scene | Edit the scene in the current note |
 | Delete Scene | Delete the current scene note |
 
-### Characters and creatures
+### Characters and Creatures
 
 | Command | Description |
 | --- | --- |
@@ -112,7 +148,7 @@ All commands are available from the Command Palette (`Ctrl+P` on Windows/Linux, 
 | Edit Creature | Edit the creature in the current note |
 | Delete Creature | Delete the current creature note |
 
-### Items, spells, traps, and factions
+### Items, Spells, Traps, and Factions
 
 | Command | Description |
 | --- | --- |
@@ -125,15 +161,6 @@ All commands are available from the Command Palette (`Ctrl+P` on Windows/Linux, 
 | Delete Trap | Delete the current trap note |
 | Create New Faction | Open the faction creation modal |
 
-### Points of interest
-
-| Command | Description |
-| --- | --- |
-| Edit Point of Interest | Edit the PoI in the current note |
-| Delete Point of Interest | Delete the current PoI note |
-| Insert PoI Code Block | Insert a `dnd-poi` code block with a multi-select picker |
-| Update PoI Icons | Refresh map icons for all PoIs |
-
 ### Encounters
 
 | Command | Description |
@@ -142,6 +169,8 @@ All commands are available from the Command Palette (`Ctrl+P` on Windows/Linux, 
 | Edit Encounter | Edit the encounter in the current note |
 | Delete Encounter | Delete the current encounter note |
 | Insert Encounter Widget | Insert a `dnd-encounter` code block |
+| Insert Inline Encounter Control | Insert a compact encounter button into note text |
+| Convert Selected Encounter Widget to Inline Control | Convert a selected encounter block or inline control |
 | Create Random Encounter Table | Generate a random encounter table |
 | Roll Random Encounter | Roll on the encounter table in the current note |
 | Insert Encounter Table Code Block | Insert a `dnd-encounter-table` code block |
@@ -149,13 +178,15 @@ All commands are available from the Command Palette (`Ctrl+P` on Windows/Linux, 
 | Edit Encounter Table | Edit the encounter table in the current note |
 | Delete Encounter Table | Delete the current encounter table |
 
-### Battle maps
+### Battle Maps
 
 | Command | Description |
 | --- | --- |
 | Create Battle Map (from template) | Insert a map from an existing template |
 | Create Battlemap Template | Open the map creation modal |
 | Map Manager | Open the map manager |
+| Insert Inline Map Control | Insert a compact map button into note text |
+| Convert Selected Map Block to Inline Control | Convert a selected map block or inline control |
 
 ### Music
 
@@ -167,49 +198,58 @@ All commands are available from the Command Palette (`Ctrl+P` on Windows/Linux, 
 | Previous Track | Go to the previous track |
 | Stop All Music | Stop both layers and all sound effects |
 | Volume Up (+10) | Increase primary layer volume by 10% |
-| Volume Down (−10) | Decrease primary layer volume by 10% |
+| Volume Down (-10) | Decrease primary layer volume by 10% |
 | Toggle Mute | Mute or unmute the primary layer |
 | Insert Scene Music Block | Insert a `dnd-music` code block |
+| Insert Inline Scene Music | Insert a compact scene music button into note text |
+| Convert Selected Scene Music to Inline Widget | Convert selected scene music to an inline control |
 | Insert Sound Effect Block | Insert a `dnd-sfx` code block |
+| Insert Inline Sound Effect | Insert a compact SFX button into note text |
+| Convert Selected Sound Effect to Inline Widget | Convert selected SFX to an inline control |
 | Open Music Settings | Open the music configuration modal |
 | Search Freesound | Open the Freesound search browser |
 
-## Code block reference
+### Projection and Handouts
 
-The plugin registers seven custom code block types:
+| Command | Description |
+| --- | --- |
+| Insert Inline Handout Control | Insert a compact handout projection button into note text |
+| Convert Selected Handout Control to Inline | Rebuild a selected handout inline control |
+
+## Note Controls
+
+### Code Blocks
 
 | Code block | Description | Documentation |
 | --- | --- | --- |
 | `dnd-map` | Renders an interactive battle map | [Battle maps](battle-maps.md) |
 | `dnd-encounter` | Renders an encounter summary widget | [Encounter builder](encounter-builder.md) |
 | `dnd-encounter-table` | Renders a random encounter table widget | [Encounter builder](encounter-builder.md) |
-| `dnd-hub` | Renders entity action buttons (edit, delete) | Included automatically in all entity templates |
+| `dnd-hub` | Renders entity action buttons | Included automatically in generated templates |
 | `dnd-music` | Renders a scene music loader card | [Music player](music-player.md) |
 | `dnd-sfx` | Renders a sound effect trigger button | [Music player](music-player.md) |
 | `dnd-poi` | Renders a list of points of interest | [Items, spells, traps, and factions](items-spells-traps.md) |
-| `dnd-hexcrawl` | Renders hexcrawl tracker state (internal) | [Hexcrawl tracker](hexcrawl.md) |
+| `dnd-hexcrawl` | Renders hexcrawl tracker state | [Hexcrawl tracker](hexcrawl.md) |
 
-### Code block syntax
+### Inline Controls
 
-Each code block contains either a wiki-link to a note or a JSON configuration object:
+Inline controls are compact HTML buttons inserted by plugin commands. Use them when a cue belongs naturally inside session text.
 
-````
-```dnd-encounter
-[[z_Encounters/Goblin Ambush.md]]
-```
-````
+| Inline control | Data attribute | Command |
+| --- | --- | --- |
+| Sound effect | `data-dnd-sfx` | Insert Inline Sound Effect |
+| Scene music | `data-dnd-music` | Insert Inline Scene Music |
+| Encounter | `data-dnd-encounter` | Insert Inline Encounter Control |
+| Handout | `data-dnd-handout` | Insert Inline Handout Control |
+| Map | `data-dnd-map` | Insert Inline Map Control |
 
-````
-```dnd-music
-{"primaryPlaylistId":"abc","ambientPlaylistId":"def","autoPlay":true}
-```
-````
+Prefer the insert commands over hand-writing inline controls because the command stores the required encoded data.
 
-## Slash commands
+## Slash Commands
 
-Type `/dnd` in any note to open a searchable popup of quick-insert content snippets. See [Adventures and scenes — Scene snippets](adventures-and-scenes.md#scene-snippets) for the full list.
+Type `/dnd` in any note to open a searchable popup of quick-insert content snippets. See [Adventures and scenes - Scene snippets](adventures-and-scenes.md#scene-snippets) for the full list.
 
-## Keyboard shortcuts
+## Keyboard Shortcuts
 
 ### Global
 
@@ -217,21 +257,19 @@ Type `/dnd` in any note to open a searchable popup of quick-insert content snipp
 | --- | --- |
 | `Ctrl+Shift+M` / `Cmd+Shift+M` | Open the Campaign Hub modal |
 
-### Battle map
+See [Battle maps - Keyboard shortcuts](battle-maps.md#keyboard-shortcuts) for map shortcuts.
 
-See [Battle maps — Keyboard shortcuts](battle-maps.md#keyboard-shortcuts) for the full list.
-
-## Vault folder structure
+## Vault Folder Structure
 
 After initialization, the plugin creates the following top-level folders:
 
 | Folder | Purpose |
 | --- | --- |
-| `ttrpgs/` | Campaign data (one subfolder per campaign) |
+| `ttrpgs/` | Campaign data, one subfolder per campaign |
 | `z_Templates/` | Note templates for all entity types |
 | `z_Assets/` | Images, maps, PDFs, and environmental assets |
 | `z_BattlemapTemplates/` | Saved battle map templates |
-| `z_Beastiarity/` | Creature stat blocks (SRD and custom) |
+| `z_Beastiarity/` | Creature stat blocks, SRD and custom |
 | `z_Encounters/` | Standalone encounter notes |
 | `z_Traps/` | Trap notes |
 | `z_Spells/` | SRD spell imports |
@@ -240,24 +278,4 @@ After initialization, the plugin creates the following top-level folders:
 | `z_Log/` | Session logs |
 | `z_Backups/` | Migration backups |
 
-Additional SRD data folders are created when you import SRD content from the settings page:
-
-| Folder | SRD Category |
-| --- | --- |
-| `z_AbilityScores/` | Ability Scores |
-| `z_Classes/` | Classes |
-| `z_Conditions/` | Conditions |
-| `z_DamageTypes/` | Damage Types |
-| `z_Equipment/` | Equipment |
-| `z_Features/` | Features |
-| `z_Languages/` | Languages |
-| `z_MagicSchools/` | Magic Schools |
-| `z_Proficiencies/` | Proficiencies |
-| `z_Races/` | Races |
-| `z_Skills/` | Skills |
-| `z_Subclasses/` | Subclasses |
-| `z_Subraces/` | Subraces |
-| `z_Traits/` | Traits |
-| `z_WeaponProperties/` | Weapon Properties |
-
-Each campaign folder under `ttrpgs/` contains subfolders for Adventures, Sessions, NPCs, PCs, Factions, Items, Spells, and locations.
+Each campaign folder under `ttrpgs/` contains subfolders for adventures, sessions, NPCs, PCs, factions, items, spells, and locations.

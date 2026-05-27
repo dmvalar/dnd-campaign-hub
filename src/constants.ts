@@ -1,3 +1,4 @@
+export const CAMPAIGN_HOME_VIEW_TYPE = "dnd-campaign-home";
 export const SESSION_PREP_VIEW_TYPE = "session-prep-dashboard";
 export const SESSION_RUN_VIEW_TYPE = "session-run-dashboard";
 export const DM_SCREEN_VIEW_TYPE = "dm-screen";

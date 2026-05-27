@@ -51,10 +51,10 @@ export class PCCreationModal extends Modal {
   originalPCPath = "";
   originalPCName = "";
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, pcPath?: string) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, pcPath?: string, campaignPath?: string) {
     super(app);
     this.plugin = plugin;
-    this.campaign = plugin.resolveCampaign();
+    this.campaign = campaignPath || plugin.resolveCampaign();
     if (pcPath) {
       this.isEdit = true;
       this.originalPCPath = pcPath;

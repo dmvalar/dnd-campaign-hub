@@ -19,10 +19,10 @@ export class FactionCreationModal extends Modal {
   enemies = "";
   activeProblem = "";
 
-  constructor(app: App, plugin: DndCampaignHubPlugin) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, campaignPath?: string) {
     super(app);
     this.plugin = plugin;
-    this.campaign = plugin.resolveCampaign();
+    this.campaign = campaignPath || plugin.resolveCampaign();
   }
 
   onOpen() {

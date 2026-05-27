@@ -457,3 +457,142 @@ export function renderSceneMusicBlock(
 export function buildSceneMusicCodeblock(config: SceneMusicConfig): string {
   return '```dnd-music\n' + JSON.stringify(config, null, 2) + '\n```';
 }
+
+// ─────────────────────────────────────────────────────────────────
+//  Inline renderer – <button data-dnd-music="...">Scene Music</button>
+// ─────────────────────────────────────────────────────────────────
+
+export function renderInlineSceneMusicWidgets(
+  el: HTMLElement,
+  _ctx: MarkdownPostProcessorContext,
+  musicPlayer: MusicPlayer,
+  _settings: MusicSettings,
+  onPlayTriggered?: () => void,
+) {
+  el.querySelectorAll<HTMLElement>('[data-dnd-music]').forEach((widget) => {
+    widget.classList.add('dnd-music-inline-btn');
+    if (!widget.getAttribute('role')) widget.setAttribute('role', 'button');
+    if (!widget.getAttribute('tabindex')) widget.setAttribute('tabindex', '0');
+    if (!widget.getAttribute('aria-label')) widget.setAttribute('aria-label', 'Play scene music');
+  });
+}
+
+export function handleInlineSceneMusicInteraction(
+  event: MouseEvent | KeyboardEvent,
+  musicPlayer: MusicPlayer,
+  onPlayTriggered?: () => void,
+): boolean {
+  if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ') return false;
+
+  const target = event.target;
+  if (!(target instanceof Element)) return false;
+
+  const control = target.closest<HTMLElement>('[data-dnd-music]');
+  if (!control) return false;
+
+  const config = parseSceneMusicInlineData(control.getAttribute('data-dnd-music') || '');
+  if (!config) return false;
+
+  event.preventDefault();
+  event.stopPropagation();
+  if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+
+  void (async () => {
+    if (musicPlayer.isTransitioning()) return;
+    try {
+      if (musicPlayer.isScenePlaying(config)) {
+        await musicPlayer.stopAll();
+      } else {
+        if (onPlayTriggered) onPlayTriggered();
+        await musicPlayer.loadSceneMusic(config, config.autoPlay);
+        new Notice('🎵 Scene music loaded' + (config.autoPlay ? ' & playing' : ''));
+      }
+    } finally {
+      control.classList.add('playing');
+      setTimeout(() => control.classList.remove('playing'), 400);
+    }
+  })();
+
+  return true;
+}
+
+export function buildSceneMusicInlineMarkdown(config: SceneMusicConfig, label = 'Scene Music'): string {
+  const data = escapeHtmlAttribute(encodeSceneMusicInlineData(normalizeSceneMusicConfig(config)));
+  const safeLabel = escapeHtmlText(label || 'Scene Music');
+  return `<button type="button" class="dnd-music-inline-btn" data-dnd-music="${data}" aria-label="Play scene music: ${safeLabel}">🎵 ${safeLabel}</button>`;
+}
+
+export function parseSceneMusicCodeblockMarkdown(markdown: string): SceneMusicConfig | null {
+  const trimmed = markdown.trim();
+  const match = trimmed.match(/^```dnd-music\s*\n([\s\S]*?)\n?```$/);
+  const json = match?.[1] ?? trimmed;
+  try {
+    return normalizeSceneMusicConfig(JSON.parse(json) as Partial<SceneMusicConfig>);
+  } catch {
+    return null;
+  }
+}
+
+export function parseSceneMusicInlineMarkdown(markdown: string): SceneMusicConfig | null {
+  const htmlData = markdown.trim().match(/data-dnd-music=(?:"([^"]+)"|'([^']+)')/);
+  const encodedData = htmlData?.[1] ?? htmlData?.[2];
+  return encodedData ? parseSceneMusicInlineData(unescapeHtmlAttribute(encodedData)) : null;
+}
+
+function encodeSceneMusicInlineData(config: SceneMusicConfig): string {
+  return encodeURIComponent(JSON.stringify(config));
+}
+
+function parseSceneMusicInlineData(data: string): SceneMusicConfig | null {
+  try {
+    return normalizeSceneMusicConfig(JSON.parse(decodeURIComponent(data)) as Partial<SceneMusicConfig>);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeSceneMusicConfig(config: Partial<SceneMusicConfig>): SceneMusicConfig {
+  const clampVolume = (value: unknown): number | null | undefined => {
+    if (value === null || value === undefined) return value as null | undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : null;
+  };
+
+  return {
+    primaryPlaylistId: typeof config.primaryPlaylistId === 'string' ? config.primaryPlaylistId : null,
+    primaryTrackPath: typeof config.primaryTrackPath === 'string' ? config.primaryTrackPath : null,
+    ambientPlaylistId: typeof config.ambientPlaylistId === 'string' ? config.ambientPlaylistId : null,
+    ambientTrackPath: typeof config.ambientTrackPath === 'string' ? config.ambientTrackPath : null,
+    primaryVolume: clampVolume(config.primaryVolume),
+    ambientVolume: clampVolume(config.ambientVolume),
+    primaryRepeatMode: config.primaryRepeatMode ?? null,
+    ambientRepeatMode: config.ambientRepeatMode ?? null,
+    primaryShuffle: config.primaryShuffle ?? null,
+    ambientShuffle: config.ambientShuffle ?? null,
+    autoPlay: config.autoPlay !== false,
+  };
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function escapeHtmlText(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function unescapeHtmlAttribute(value: string): string {
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}

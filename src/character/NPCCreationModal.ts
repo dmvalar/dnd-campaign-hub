@@ -55,10 +55,10 @@ export class NPCCreationModal extends Modal {
   // Token appearance widget
   private tokenEditor: TokenEditorWidget | null = null;
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, npcPath?: string) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, npcPath?: string, campaignPath?: string) {
     super(app);
     this.plugin = plugin;
-    this.campaign = plugin.resolveCampaign();
+    this.campaign = campaignPath || plugin.resolveCampaign();
     if (npcPath) {
       this.isEdit = true;
       this.originalNPCPath = npcPath;
@@ -141,10 +141,13 @@ export class NPCCreationModal extends Modal {
         text.inputEl.rows = 3;
       });
 
-    contentEl.createEl("h3", { text: "🎨 Character Details" });
+    const detailsSection = contentEl.createEl("details", { cls: "dnd-advanced-section" });
+    if (this.isEdit) detailsSection.open = true;
+    detailsSection.createEl("summary", { text: "Character details" });
+    const detailsContainer = detailsSection.createDiv({ cls: "dnd-advanced-section-body" });
 
     // Physical Detail
-    new Setting(contentEl)
+    new Setting(detailsContainer)
       .setName("Physical Detail")
       .setDesc("A memorable physical characteristic or appearance note")
       .addTextArea((text) => {
@@ -158,7 +161,7 @@ export class NPCCreationModal extends Modal {
       });
 
     // Speech Pattern
-    new Setting(contentEl)
+    new Setting(detailsContainer)
       .setName("Speech Pattern")
       .setDesc("How do they speak? Any quirks, accents, or mannerisms?")
       .addTextArea((text) => {
@@ -171,10 +174,8 @@ export class NPCCreationModal extends Modal {
         text.inputEl.rows = 2;
       });
 
-    contentEl.createEl("h3", { text: "⚠️ Current Situation" });
-
     // Active Problem
-    new Setting(contentEl)
+    new Setting(detailsContainer)
       .setName("Active Problem")
       .setDesc("What problem or conflict is this NPC currently facing?")
       .addTextArea((text) => {
@@ -188,15 +189,21 @@ export class NPCCreationModal extends Modal {
       });
 
     // ── Token Appearance ──
-    contentEl.createEl("h3", { text: "🎨 Token Appearance" });
+    const tokenDetails = contentEl.createEl("details", { cls: "dnd-advanced-section" });
+    if (this.isEdit) tokenDetails.open = true;
+    tokenDetails.createEl("summary", { text: "Token appearance" });
+    const tokenDetailsBody = tokenDetails.createDiv({ cls: "dnd-advanced-section-body" });
 
-    const tokenContainer = contentEl.createDiv();
+    const tokenContainer = tokenDetailsBody.createDiv();
     this.initTokenEditor(tokenContainer);
 
     // ── Combat Statistics (optional statblock) ──
-    contentEl.createEl("h3", { text: "⚔️ Combat Statistics (Optional)" });
+    const combatDetails = contentEl.createEl("details", { cls: "dnd-advanced-section" });
+    if (this.hasStatblock || this.isEdit) combatDetails.open = true;
+    combatDetails.createEl("summary", { text: "Combat statistics" });
+    const combatDetailsBody = combatDetails.createDiv({ cls: "dnd-advanced-section-body" });
 
-    new Setting(contentEl)
+    new Setting(combatDetailsBody)
       .setName("Enable Combat Stats")
       .setDesc("Add a statblock so this NPC can be used in the Initiative Tracker and Encounter Builder")
       .addToggle((toggle) => {
@@ -209,7 +216,7 @@ export class NPCCreationModal extends Modal {
       });
 
     if (this.hasStatblock) {
-      this.renderStatblockFields(contentEl);
+      this.renderStatblockFields(combatDetailsBody);
     }
 
     // Buttons

@@ -34,13 +34,15 @@ export class MapCreationModal extends Modal {
   private insertCodeBlock: boolean = true;
   /** When true the modal creates a battlemap template note in z_BattlemapTemplates/ */
   private templateMode: boolean = false;
+  private campaignPath: string;
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, mapManager: MapManager, editConfig?: any, editElement?: HTMLElement, insertCodeBlock: boolean = true, templateMode: boolean = false) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, mapManager: MapManager, editConfig?: any, editElement?: HTMLElement, insertCodeBlock: boolean = true, templateMode: boolean = false, campaignPath?: string) {
     super(app);
     this.plugin = plugin;
     this.mapManager = mapManager;
     this.insertCodeBlock = insertCodeBlock;
     this.templateMode = templateMode;
+    this.campaignPath = campaignPath || plugin.getActiveCampaignPath();
     if (editConfig) {
       this.editMode = true;
       // Normalize editConfig to match MapData interface (mapId -> id)
@@ -936,6 +938,9 @@ export class MapCreationModal extends Modal {
       }
 
       this.close();
+      if (!this.editMode && !this.templateMode) {
+        this.plugin.showCreationNextSteps("map", this.campaignPath, null, this.mapName.trim());
+      }
     } catch (error) {
       console.error('Error creating map:', error);
       new Notice('Failed to create map');

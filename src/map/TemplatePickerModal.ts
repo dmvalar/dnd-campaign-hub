@@ -37,6 +37,7 @@ export class TemplatePickerModal extends Modal {
   private mapManager: MapManager;
   /** If true the resulting code block is inserted at the cursor in the active note */
   private insertCodeBlock: boolean;
+  private campaignPath: string;
 
   // UI state
   private templates: TemplateInfo[] = [];
@@ -55,11 +56,13 @@ export class TemplatePickerModal extends Modal {
     plugin: DndCampaignHubPlugin,
     mapManager: MapManager,
     insertCodeBlock = true,
+    campaignPath?: string,
   ) {
     super(app);
     this.plugin = plugin;
     this.mapManager = mapManager;
     this.insertCodeBlock = insertCodeBlock;
+    this.campaignPath = campaignPath || plugin.getActiveCampaignPath();
   }
 
   async onOpen() {
@@ -530,6 +533,7 @@ export class TemplatePickerModal extends Modal {
       }
 
       this.close();
+      this.plugin.showCreationNextSteps("map", this.campaignPath, null, this.mapName.trim());
     } catch (err) {
       console.error('[TemplatePickerModal] Error creating battlemap from template:', err);
       new Notice('❌ Failed to create battlemap from template');

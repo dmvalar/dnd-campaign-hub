@@ -73,15 +73,21 @@ If the plugin does not appear, check that the folder is named exactly `dnd-campa
 
 On Windows, also make sure the files did not accidentally get renamed to something like `manifest.json.txt`. If file extensions are hidden, Windows can make this hard to see.
 
-## Initialize D&D Campaign Hub
+## Run the Setup Wizard
 
-Before creating a campaign, initialize the vault. This creates the folders and templates D&D Campaign Hub needs.
+Before creating a campaign, run the setup wizard. It prepares the vault folders and helps you create or select a campaign.
 
 1. Open the Command Palette:
    - Windows/Linux: `Ctrl+P`
    - macOS: `Command+P`
-2. Search for **Initialize D&D Campaign Hub**.
+2. Search for **D&D Hub: Open Setup Wizard**.
 3. Run the command.
+
+The wizard guides you through:
+
+- Initializing the vault folder structure.
+- Creating or selecting a campaign.
+- Opening optional systems such as music, maps, and parties.
 
 The plugin creates shared folders such as:
 
@@ -91,11 +97,11 @@ The plugin creates shared folders such as:
 - `z_Backups/` for migration backups.
 - Additional support folders for spells, tables, battlemap templates, databases, and logs.
 
-If you accidentally run the command again later, that is okay. It is meant to prepare the vault structure, not delete your campaign.
+You can re-run the setup wizard later from the Command Palette or from **Settings** -> **D&D Campaign Hub** -> **Setup**.
 
 ## Create your first campaign
 
-After initialization, create your campaign.
+If you did not create a campaign through the setup wizard, create one directly.
 
 1. Open the Command Palette again.
 2. Run **Create New Campaign**.
@@ -128,28 +134,25 @@ ttrpgs/
 
 The plugin also creates a party for the campaign automatically, so you can start adding player characters later.
 
-## Open the Campaign Hub
+## Open Campaign Home
 
-You can open the main hub at any time:
+You can open the main campaign dashboard at any time:
 
 1. Open the Command Palette.
-2. Run **Open D&D Campaign Hub**.
+2. Run **D&D Hub: Open Campaign Home**.
 
-You can also use the default shortcut:
+Campaign Home shows the active campaign, latest session focus, party status, recent scenes, recent maps, audio status, and suggested next steps.
 
-- Windows/Linux: `Ctrl+Shift+M`
-- macOS: `Command+Shift+M`
-
-From the hub, you can create and browse campaign content such as PCs, NPCs, adventures, encounters, items, creatures, factions, sessions, and battle maps.
+Use the campaign dropdown in Campaign Home when your vault contains more than one campaign. Actions launched from Campaign Home use that selected campaign.
 
 ## Good next steps
 
 Once your first campaign exists, a good setup order is:
 
-1. Create your player characters with **Create New PC**.
-2. Add important NPCs with **Create New NPC**.
-3. Create an adventure with **Create New Adventure**.
-4. Create your first battle map with **Create Battle Map**.
-5. Open the [Campaign management guide](campaign-management.md) when you want to manage multiple campaigns or learn how roles work.
+1. Open **D&D Hub: Open Campaign Home**.
+2. Select your campaign from the dropdown.
+3. Use **Create Content** to create player characters, NPCs, adventures, scenes, encounters, or maps.
+4. Use **New Session** to create the next session note.
+5. Use **D&D Hub: Start Session** when you are ready to play.
 
 For a broader overview of all systems, continue with [Getting started](getting-started.md).

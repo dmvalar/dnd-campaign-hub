@@ -26,6 +26,10 @@ export interface ProjectionTarget {
 
 export interface DndCampaignHubSettings {
   pluginVersion: string;
+  /** Campaign selected in Campaign Home; used as the plugin-wide active campaign. */
+  activeCampaignPath: string;
+  /** Whether the user has completed or dismissed the onboarding setup wizard. */
+  onboardingSetupComplete: boolean;
   tabletopCalibration: TabletopCalibration | null;
   /** Per-monitor projection targets (keyed by screenKey). */
   projectionTargets: ProjectionTarget[];
@@ -51,6 +55,8 @@ export interface DndCampaignHubSettings {
 
 export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   pluginVersion: "0.0.0",
+  activeCampaignPath: "",
+  onboardingSetupComplete: false,
   tabletopCalibration: null,
   projectionTargets: [],
   lastProjectionScreenKey: "",

@@ -26,10 +26,12 @@ export class ItemCreationModal extends Modal {
   isEdit = false;
   originalItemPath = "";
   originalItemName = "";
+  campaignPath = "";
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, itemPath?: string) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, itemPath?: string, campaignPath?: string) {
     super(app);
     this.plugin = plugin;
+    this.campaignPath = campaignPath || plugin.resolveCampaign();
     if (itemPath) {
       this.isEdit = true;
       this.originalItemPath = itemPath;
@@ -212,7 +214,9 @@ export class ItemCreationModal extends Modal {
     // Campaign Selection
     const campaigns = await this.getAllCampaigns();
     if (campaigns.length > 0) {
-      let selectedCampaign = campaigns[0]?.path || "";
+      let selectedCampaign = campaigns.some((campaign) => campaign.path === this.campaignPath)
+        ? this.campaignPath
+        : campaigns[0]?.path || "";
       
       contentEl.createEl("h3", { text: "Save Location" });
       new Setting(contentEl)

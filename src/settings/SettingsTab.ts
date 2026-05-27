@@ -1,7 +1,9 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { MapManagerModal } from "../map/MapManagerModal";
 import { PurgeConfirmModal } from "../hub/PurgeConfirmModal";
+import { MusicSettingsModal } from "../music/MusicSettingsModal";
+import type { MusicSettings } from "../music/types";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -76,12 +78,126 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
       cls: "dnd-settings-version",
     });
 
-    // ── 1. Battle Maps & Combat ─────────────────────────────────────────
-    const maps = addSection(containerEl, "Battle Maps & Combat", "Map management, combat behaviour, and dynamic lighting.");
+    // ── 1. Setup ────────────────────────────────────────────────────────
+    const setup = addSection(
+      containerEl,
+      "Setup",
+      "Start or adjust the core workflow: active campaign, starter folders, and first-run choices.",
+      { startOpen: true },
+    );
+
+    new Setting(setup)
+      .setName("Setup wizard")
+      .setDesc("Choose the campaign structure, starter content, and optional systems without digging through every setting.")
+      .addButton((btn) =>
+        btn
+          .setButtonText(this.plugin.settings.onboardingSetupComplete ? "Re-run Setup Wizard" : "Open Setup Wizard")
+          .setCta()
+          .onClick(() => {
+            this.plugin.openSetupWizard();
+          })
+      );
+
+    new Setting(setup)
+      .setName("Setup checklist")
+      .setDesc(
+        this.plugin.settings.onboardingSetupComplete
+          ? "The first-run setup is marked complete. Reset this when you want the plugin to treat setup as unfinished again."
+          : "The first-run setup is currently marked incomplete."
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText(this.plugin.settings.onboardingSetupComplete ? "Reset Checklist" : "Mark Complete")
+          .onClick(async () => {
+            this.plugin.settings.onboardingSetupComplete = !this.plugin.settings.onboardingSetupComplete;
+            await this.plugin.saveSettings();
+            new Notice(
+              this.plugin.settings.onboardingSetupComplete
+                ? "Setup checklist marked complete."
+                : "Setup checklist reset."
+            );
+            void this.display();
+          })
+      );
+
+    new Setting(setup)
+      .setName("Campaign Home")
+      .setDesc("Open the main campaign control surface. The selected campaign there is used by creation workflows.")
+      .addButton((btn) =>
+        btn
+          .setButtonText("Open Campaign Home")
+          .onClick(() => {
+            void this.plugin.openCampaignHome(this.plugin.getActiveCampaignPath());
+          })
+      );
+
+    new Setting(setup)
+      .setName("Create content")
+      .setDesc("Open the unified creation menu for sessions, scenes, characters, encounters, maps, and world notes.")
+      .addButton((btn) =>
+        btn
+          .setButtonText("Create Content")
+          .onClick(() => {
+            this.plugin.openCreateContent(this.plugin.getActiveCampaignPath());
+          })
+      );
+
+    // ── 2. Audio & Projection ───────────────────────────────────────────
+    const media = addSection(
+      containerEl,
+      "Audio & Projection",
+      "Configure music, sound effects, handouts, and player-facing screens used during sessions.",
+    );
+
+    new Setting(media)
+      .setName("Music and SFX settings")
+      .setDesc("Choose the audio folder, build playlists, configure the soundboard, and tune playback behaviour.")
+      .addButton((btn) =>
+        btn
+          .setButtonText("Open Music Settings")
+          .setCta()
+          .onClick(() => {
+            new MusicSettingsModal(
+              this.app,
+              this.plugin.settings.musicSettings,
+              async (updated: MusicSettings) => {
+                this.plugin.settings.musicSettings = updated;
+                this.plugin.musicPlayer.reloadSettings(updated);
+                await this.plugin.saveSettings();
+                new Notice("Music settings saved.");
+              },
+            ).open();
+          })
+      );
+
+    new Setting(media)
+      .setName("Music player")
+      .setDesc("Open the live player for playlists, ambient layers, and sound effects.")
+      .addButton((btn) =>
+        btn
+          .setButtonText("Open Music Player")
+          .onClick(() => {
+            void this.plugin.ensureMusicPlayerOpen();
+          })
+      );
+
+    new Setting(media)
+      .setName("Session projection")
+      .setDesc("Manage player-facing screens for scenes, handouts, maps, and session information.")
+      .addButton((btn) =>
+        btn
+          .setButtonText("Open Projection Hub")
+          .onClick(() => {
+            this.plugin.openSessionProjectionHub();
+          })
+      );
+
+    // ── 3. Maps & Encounters ────────────────────────────────────────────
+    const maps = addSection(containerEl, "Maps & Encounters", "Map setup, encounter table maps, combat behaviour, and dynamic lighting.");
 
     new Setting(maps)
       .setName("Map Manager")
-      .setDesc("Create, edit, and delete your battle maps and world maps.")
+      .setDesc("Create and edit maps used by scenes, encounters, and inline map controls.")
       .addButton((btn) =>
         btn
           .setButtonText("Open Map Manager")
@@ -94,7 +210,7 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
     new Setting(maps)
       .setName("Auto-pan to active combatant")
       .setDesc(
-        "Smoothly pan the projected player view to center on the active combatant's token each time the turn changes."
+        "During combat, smoothly center the projected player map on the active combatant when the turn changes."
       )
       .addToggle((toggle) =>
         toggle
@@ -108,7 +224,7 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
     new Setting(maps)
       .setName("Vision update mode")
       .setDesc(
-        "Controls when fog of war recalculates during token movement."
+        "Choose whether fog of war updates while dragging tokens or only after dropping them."
       )
       .addDropdown((dd) =>
         dd
@@ -124,7 +240,7 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
     new Setting(maps)
       .setName("Map canvas resolution")
       .setDesc(
-        "Multiplier for overlay canvas buffers (tokens, fog, grid). Higher values produce sharper tokens on small maps but use more memory. Requires reopening your map."
+        "Higher values make tokens, fog, and grids sharper on some maps, but use more memory. Reopen maps after changing this."
       )
       .addDropdown((dd) =>
         dd
@@ -138,12 +254,12 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
           })
       );
 
-    // ── 3. SRD Data Import ──────────────────────────────────────────────
-    const srd = addSection(containerEl, "SRD Data Import", "Download D&D 5e System Reference Document data from the official API.");
+    // ── 4. Reference Data ───────────────────────────────────────────────
+    const srd = addSection(containerEl, "Reference Data", "Import optional D&D 5e SRD notes and creature tokens for use as campaign reference.");
 
     new Setting(srd)
       .setName("Import all SRD reference data")
-      .setDesc("Downloads conditions, equipment, races, features, and more into system folders (z_Conditions, z_Equipment, …).")
+      .setDesc("Creates reference notes for conditions, equipment, races, features, and other SRD categories.")
       .addButton((btn) =>
         btn
           .setButtonText("Import All")
@@ -194,8 +310,7 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
     new Setting(srd)
       .setName("Import SRD creature tokens")
       .setDesc(
-        "Downloads all 334 SRD creatures with artwork, creating creature notes and battlemap tokens. " +
-        "Existing creatures will be overwritten."
+        "Creates SRD creature notes and battlemap tokens. Existing imported creatures with matching paths may be overwritten."
       )
       .addButton((btn) => {
         const statusEl = srd.createDiv({ cls: "dnd-settings-import-status" });
@@ -225,12 +340,12 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
           });
       });
 
-    // ── 4. Maintenance ──────────────────────────────────────────────────
-    const maintenance = addSection(containerEl, "Maintenance", "Migration tools and plugin information.");
+    // ── 5. Maintenance ──────────────────────────────────────────────────
+    const maintenance = addSection(containerEl, "Maintenance", "Update generated notes after plugin/template changes.");
 
     new Setting(maintenance)
       .setName("Migrate campaign files")
-      .setDesc("Safely update your notes to the latest template versions. All content is preserved; backups are created automatically.")
+      .setDesc("Update older generated notes to the latest template versions. Backups are created before files are changed.")
       .addButton((btn) =>
         btn
           .setButtonText("Run Migrations")

@@ -1,28 +1,96 @@
-# Get started
+# Get Started
 
-This guide walks you through installing D&D Campaign Hub and setting up your first campaign.
+This quickstart gets a new vault from install to a runnable first session.
 
-If you are installing the plugin from GitHub for the first time, start with the more detailed [First Steps guide](first-steps.md).
+If you are installing the plugin manually from GitHub, see the more detailed [First Steps guide](first-steps.md).
 
-## Install the plugin
+## Install
 
-### From community plugins (recommended)
+### Community Plugins
 
-1. Open **Settings** → **Community plugins** → **Browse**.
+1. Open **Settings** -> **Community plugins** -> **Browse**.
 2. Search for **D&D Campaign Hub**.
 3. Select **Install**, then **Enable**.
 
-### Manual installation
+### Manual Install
 
 1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/kmumenthaler/dnd-campaign-hub/releases).
-2. Create a folder called `dnd-campaign-hub` inside your vault's `.obsidian/plugins/` folder.
+2. Create `.obsidian/plugins/dnd-campaign-hub/` inside your vault.
 3. Copy the three files into that folder.
-4. Reload Obsidian.
-5. Open **Settings** → **Community plugins** and enable **D&D Campaign Hub**.
+4. Reload Obsidian and enable **D&D Campaign Hub** under **Community plugins**.
 
-## Install recommended plugins
+## First 15 Minutes
 
-The plugin works standalone with no required dependencies. The following community plugins are recommended for enhanced features:
+### 1. Run Setup
+
+Open the Command Palette and run **D&D Hub: Open Setup Wizard**.
+
+Use the wizard to choose or create:
+
+![Setup Wizard](assets/usability/setup-wizard.png)
+
+| Choice | What it does |
+| --- | --- |
+| Campaign folder | Creates the campaign structure under `ttrpgs/` |
+| Audio folder | Connects music, playlists, and inline sound effects |
+| Map/token folders | Prepares battle maps and token storage |
+| Starter content | Creates a campaign, first session, and party folder |
+
+You can skip optional systems and return later from **Settings** -> **D&D Campaign Hub** -> **Setup**.
+
+### 2. Open Campaign Home
+
+Run **D&D Hub: Open Campaign Home**.
+
+Campaign Home is the main place to orient yourself. Select the active campaign from the dropdown. That selection is used by session creation, encounter building, party tools, and other campaign-aware actions.
+
+![Campaign Home](assets/usability/campaign-home.png)
+
+Use these buttons first:
+
+| Button | Use it when |
+| --- | --- |
+| **New Session** | You need the next session note |
+| **Continue Last Session** | You want to reopen the latest session and linked scene/adventure |
+| **Create Content** | You want one menu for sessions, scenes, characters, encounters, maps, and world notes |
+| **Build Encounter** | You want the encounter builder with the campaign party selected |
+| **Open Party** | You want to review or update the campaign party |
+
+### 3. Prepare
+
+For a minimal first session:
+
+1. Select your campaign in Campaign Home.
+2. Select **New Session**.
+3. Add a short session title.
+4. Link an adventure if you already have one, or leave it blank.
+5. Use **Create Content** to add one scene.
+
+Scenes can link maps, encounters, music, sound effects, and handouts. Missing links are shown as next-step prompts in the prep and run dashboards.
+
+![Create Content](assets/usability/create-content.png)
+
+See [Prepare a Session](prepare-a-session.md) for the full workflow.
+
+### 4. Run
+
+When it is time to play, run **D&D Hub: Start Session**.
+
+The Session Run Dashboard is the live control surface. It shows the current scene and gives quick access to linked maps, encounters, music, sound effects, handouts, and party state.
+
+![Session Run Dashboard](assets/usability/session-run-dashboard.png)
+
+See [Run a Session](run-a-session.md) for the live workflow.
+
+### 5. Review and Continue
+
+After a session, keep the session note as the record of what happened. Next time, use **Continue Last Session** from Campaign Home to reopen the latest session note and its linked adventure scene when available.
+
+See [Recover or Continue a Session](recover-continue-session.md) for details.
+
+## Optional Plugins
+
+D&D Campaign Hub works standalone. These community plugins can improve specific workflows:
 
 | Plugin | Purpose |
 | --- | --- |
@@ -30,62 +98,28 @@ The plugin works standalone with no required dependencies. The following communi
 | [Templater](https://github.com/SilentVoid13/Templater) | Template engine for dynamic content |
 | [Fantasy Statblocks](https://github.com/javalent/fantasy-statblocks) | Creature and PC stat block rendering |
 
-The plugin checks for missing optional plugins on startup and in **Settings** → **D&D Campaign Hub**.
+## Main Workflow Commands
 
-## Initialize the vault
-
-Before creating campaigns, set up the vault folder structure.
-
-1. Open the Command Palette (`Ctrl+P` on Windows/Linux, `Command+P` on macOS).
-2. Run **Initialize D&D Campaign Hub**.
-3. The plugin creates the following folders:
-
-| Folder | Purpose |
+| Command | Purpose |
 | --- | --- |
-| `ttrpgs/` | Campaign root folder |
-| `z_Templates/` | Reusable note templates |
-| `z_Assets/` | Images and media files |
-| `z_Beastiarity/` | Creature stat blocks and images |
-| `z_BattlemapTemplates/` | Reusable battlemap setups |
-| `z_Spells/` | Imported SRD spell notes |
-| `z_Backups/` | Timestamped backups from migrations |
-| `z_Databases/` | Campaign databases |
-| `z_Tables/` | Random tables |
-| `z_Log/` | Session logs |
+| `D&D Hub: Open Setup Wizard` | Run or revisit first-time setup |
+| `D&D Hub: Open Campaign Home` | Open the main campaign dashboard |
+| `D&D Hub: Create Content` | Create common campaign content from one menu |
+| `D&D Hub: Prepare Next Session` | Open the prep dashboard |
+| `D&D Hub: Start Session` | Open the live run dashboard |
+| `D&D Hub: Open GM Tools` | Open common live-play tools |
 
-## Create your first campaign
+## Next Guides
 
-1. Open the Command Palette and run **Create New Campaign**, or open the hub with `Ctrl+Shift+M` (Windows/Linux) or `Command+Shift+M` (macOS) and select **New Campaign**.
-2. Fill in the fields:
-   - **Campaign Name** — for example, "Lost Mines of Phandelver".
-   - **Your Role** — select **Game Master / DM** or **Player**. GMs get full access to all creation tools. Players get read-only views.
-   - **Game System** — choose from D&D 5e, Pathfinder 2e, Call of Cthulhu, Savage Worlds, FATE Core, OSR, or Other/Custom.
-   - **Fantasy Calendar** — optionally link a Calendarium calendar for in-game date tracking.
-3. Select **Create Campaign**.
-
-The plugin creates a campaign folder under `ttrpgs/` with a campaign dashboard note and a `World.md` file.
-
-## Open the Campaign Hub
-
-Press `Ctrl+Shift+M` (Windows/Linux) or `Command+Shift+M` (macOS) to open the hub modal at any time. It provides quick access to create sessions, NPCs, PCs, adventures, encounters, items, spells, traps, factions, and creatures, and to browse existing campaign content.
-
-## Next steps
-
-- [Campaign management](campaign-management.md) — manage multiple campaigns and roles.
-- [Sessions](sessions.md) — create session notes and use the prep and run dashboards.
-- [Adventures and scenes](adventures-and-scenes.md) — structure your adventures with acts and scenes.
-- [Characters and creatures](characters-and-creatures.md) — create PCs, NPCs, and full creature stat blocks.
-- [Items, spells, traps, and factions](items-spells-traps.md) — create game entities and points of interest.
-- [Battle maps](battle-maps.md) — create interactive maps with tokens, fog of war, and lighting.
-- [Encounter builder](encounter-builder.md) — build balanced encounters with difficulty calculation.
-- [Hexcrawl tracker](hexcrawl.md) — overland travel with terrain, weather, and random encounters.
-- [Music player](music-player.md) — dual-layer audio, soundboard, and scene-linked music.
-- [Party management](party-management.md) — built-in Party Manager for roster and encounter loading.
-- [DM screen](dm-screen.md) — quick-reference rules panel.
-- [Settings and reference](settings-and-reference.md) — plugin settings, commands, code blocks, and vault structure.
- - [Map Manager & Views](map-manager.md) — organize battle maps, map views, and GM/Player map workflows.
- - [Marker system](marker-system.md) — token/marker library, token sizing, and marker placement API.
- - [Templates & Migration](templates.md) — templates, `template_version` rules, and migration guidelines.
- - [Env Assets](envasset.md) — environment asset library, picking, and context menus.
- - [Combat Tracker](combat-tracker.md) — combat tracker overview, player view, and integration points.
- - [Encounter System](encounter-system.md) — encounter generation, SRD client, and encounter tables.
+- [Prepare a Session](prepare-a-session.md)
+- [Run a Session](run-a-session.md)
+- [Build a Scene with Map, Encounter, and Music](build-scene-map-encounter-music.md)
+- [Recover or Continue a Session](recover-continue-session.md)
+- [Campaign management](campaign-management.md)
+- [Sessions](sessions.md)
+- [Adventures and scenes](adventures-and-scenes.md)
+- [Battle maps](battle-maps.md)
+- [Encounter builder](encounter-builder.md)
+- [Music player](music-player.md)
+- [Party management](party-management.md)
+- [Settings and reference](settings-and-reference.md)

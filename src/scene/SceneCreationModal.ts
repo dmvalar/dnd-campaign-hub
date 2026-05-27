@@ -51,10 +51,11 @@ export class SceneCreationModal extends Modal {
   isEdit = false;
   originalScenePath = "";
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, scenePath?: string) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, scenePath?: string, campaignPath?: string) {
     super(app);
     this.plugin = plugin;
     this.encounterBuilder = new EncounterBuilder(app, plugin);
+    this.campaignPath = campaignPath || "";
     if (adventurePath) {
       this.adventurePath = adventurePath;
     }
@@ -257,8 +258,13 @@ export class SceneCreationModal extends Modal {
         .setValue(this.sceneName)
         .onChange(value => this.sceneName = value));
 
+    const advancedDetails = contentEl.createEl("details", { cls: "dnd-advanced-section" });
+    if (this.isEdit) advancedDetails.open = true;
+    advancedDetails.createEl("summary", { text: "Advanced scene details" });
+    const advancedContainer = advancedDetails.createDiv({ cls: "dnd-advanced-section-body" });
+
     // Act Selection
-    new Setting(contentEl)
+    new Setting(advancedContainer)
       .setName("Act")
       .setDesc("Which act does this scene belong to?")
       .addDropdown(dropdown => dropdown
@@ -269,7 +275,7 @@ export class SceneCreationModal extends Modal {
         .onChange(value => this.act = value));
 
     // Scene Number
-    const sceneNumberSetting = new Setting(contentEl)
+    const sceneNumberSetting = new Setting(advancedContainer)
       .setName("Scene Number")
       .setDesc("Position in the adventure (existing scenes will be renumbered if needed)")
       .addText(text => text
@@ -278,7 +284,7 @@ export class SceneCreationModal extends Modal {
         .onChange(value => this.sceneNumber = value));
 
     // Duration
-    new Setting(contentEl)
+    new Setting(advancedContainer)
       .setName("Duration")
       .setDesc("Estimated scene duration")
       .addDropdown(dropdown => dropdown
@@ -308,7 +314,7 @@ export class SceneCreationModal extends Modal {
         }));
 
     // Difficulty
-    new Setting(contentEl)
+    new Setting(advancedContainer)
       .setName("Difficulty")
       .setDesc("Challenge level")
       .addDropdown(dropdown => dropdown
@@ -378,6 +384,13 @@ export class SceneCreationModal extends Modal {
   }
 
   async getAllGMCampaigns(): Promise<Array<{ path: string; name: string }>> {
+    if (this.campaignPath) {
+      const folder = this.app.vault.getAbstractFileByPath(this.campaignPath);
+      if (folder instanceof TFolder) {
+        return [{ path: folder.path, name: folder.name }];
+      }
+    }
+
     const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
     const gmCampaigns: Array<{ path: string; name: string }> = [];
 

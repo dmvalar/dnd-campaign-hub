@@ -236,15 +236,40 @@ export class MapManagerModal extends Modal {
 
     if (filtered.length === 0) {
       const emptyEl = this.listContainer.createDiv({ cls: 'dnd-map-manager-empty' });
-      emptyEl.style.padding = '32px';
-      emptyEl.style.textAlign = 'center';
-      emptyEl.style.color = 'var(--text-muted)';
       if (this.filterMode === 'templates') {
-        emptyEl.setText(this.searchQuery
-          ? 'No templates match your search.'
-          : 'No templates yet. Mark a map as template to get started.');
+        emptyEl.createEl('p', {
+          text: this.searchQuery ? 'No templates match your search.' : 'No map templates yet.',
+        });
+        emptyEl.createEl('p', {
+          text: this.searchQuery
+            ? 'Try a different search term or clear the filter.'
+            : 'Templates let you reuse walls, lighting, fog, terrain, and grid setup.',
+          cls: 'dnd-map-manager-empty-hint',
+        });
+        if (!this.searchQuery) {
+          const action = emptyEl.createEl('button', { text: 'Create Template', cls: 'mod-cta' });
+          action.addEventListener('click', () => {
+            this.close();
+            new MapCreationModal(this.app, this.plugin, this.mapManager, undefined, undefined, false, true).open();
+          });
+        }
       } else {
-        emptyEl.setText(this.searchQuery ? 'No maps match your search.' : 'No maps created yet. Click "New Map" to get started.');
+        emptyEl.createEl('p', {
+          text: this.searchQuery ? 'No maps match your search.' : 'No active maps yet.',
+        });
+        emptyEl.createEl('p', {
+          text: this.searchQuery
+            ? 'Try a different search term or clear the filter.'
+            : 'Create a map from a template or image so scenes and encounters can reference it.',
+          cls: 'dnd-map-manager-empty-hint',
+        });
+        if (!this.searchQuery) {
+          const action = emptyEl.createEl('button', { text: 'Create Map', cls: 'mod-cta' });
+          action.addEventListener('click', () => {
+            this.close();
+            new TemplatePickerModal(this.app, this.plugin, this.mapManager, false).open();
+          });
+        }
       }
       return;
     }

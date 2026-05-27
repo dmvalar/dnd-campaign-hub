@@ -19,10 +19,10 @@ export class AdventureCreationModal extends Modal {
   originalPath = "";
   originalStatus = "planning";
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, campaignPath?: string) {
     super(app);
     this.plugin = plugin;
-    this.campaign = plugin.resolveCampaign();
+    this.campaign = campaignPath || plugin.resolveCampaign();
     if (adventurePath) {
       this.isEdit = true;
       this.originalPath = adventurePath;
@@ -102,9 +102,11 @@ export class AdventureCreationModal extends Modal {
       return;
     }
 
-    // Default to first GM campaign
-    if (allCampaigns.length > 0 && allCampaigns[0]) {
+    // Default to first GM campaign only if the provided campaign is not valid here.
+    if (!allCampaigns.some((campaign) => campaign.path === this.campaign) && allCampaigns.length > 0 && allCampaigns[0]) {
       this.campaign = allCampaigns[0].path;
+      this.isGM = true;
+    } else {
       this.isGM = true;
     }
 

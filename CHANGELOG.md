@@ -7,10 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-05-27
+
 ### Added
 
+- **Campaign Home** — Added a dedicated campaign dashboard with active campaign selection, session focus, campaign counters, suggested next steps, recent scenes, recent maps, and primary workflow actions.
+- **High-level workflow commands** — Added `D&D Hub: Open Campaign Home`, `D&D Hub: Start Session`, `D&D Hub: Prepare Next Session`, `D&D Hub: Create Content`, `D&D Hub: Open GM Tools`, and `D&D Hub: Open Setup Wizard`.
+- **Setup Wizard** — Added an explicit first-run setup checklist for vault initialization, campaign creation/selection, and optional systems such as music, maps, and parties.
+- **Unified Create Content modal** — Added a workflow-grouped creation menu for sessions, scenes, adventures, characters, encounters, maps, assets, and reference content.
+- **Creation next steps** — Added follow-up actions after creating sessions, scenes, encounters, and maps so creation flows naturally into prep or play.
+- **Inline Smart Controls** — Added inline controls for sound effects, scene music, encounters, handouts, and maps so session notes can contain compact playable controls inside prose.
 - **Inline Sound Effect Widgets** — Sound effects can now be inserted directly into note text as compact inline play buttons using `dnd-sfx:` Markdown links.
+- **Campaign Home ribbon icon** — Added a left-side ribbon entry point for opening Campaign Home.
 - **Party Member Absence** — Party Manager can now mark members absent globally, keeping them visible in the party while excluding them from encounter creation, combat loading, party selection, map-linked encounters, and active combat member adds.
+- **Workflow documentation** — Added new guides for getting started, preparing a session, running a session, building scenes with maps/encounters/music, and continuing the latest session, with screenshots.
+
+### Changed
+
+- **Active campaign propagation** — Campaign Home is now the preferred active-campaign source for campaign-aware creation and play workflows.
+- **Continue Last Session** — Now opens the latest session note and the most relevant linked in-progress adventure scene when available, falling back to adventure or session notes as needed.
+- **Session Run Dashboard** — Refined into a live control surface with current scene navigation, map/encounter/music/SFX/handout/party status, and missing-link prompts.
+- **Session Prep and Campaign Home empty states** — Added clearer action-oriented empty states across core dashboards and managers.
+- **Note action bars** — Updated campaign, session, scene, adventure, and encounter note actions around likely workflow next steps.
+- **Templates** — Simplified generated campaign, adventure, session, and scene note bodies so new notes are easier to read immediately after creation.
+- **Settings** — Reorganized settings into Setup, Audio & Projection, Maps & Encounters, Reference Data, Maintenance, and Danger Zone.
+- **Documentation** — Refreshed README, getting started, campaign management, sessions, and settings/reference docs to match the new workflow-first UI.
+
+### Fixed
+
+- **Campaign-aware creation** — Fixed session, party, encounter, and content creation flows that could default to the wrong campaign instead of the Campaign Home selection.
+- **Session focus freshness** — Updated dashboard session focus and continuation logic so latest/in-progress session and scene context is preferred over stale completed scene data.
+- **Dashboard counters and recent maps** — Corrected Campaign Home encounter/map counts and recent map display to rely on available plugin data instead of unavailable analytics.
+- **Music playback for inline SFX** — Inline sound effects now route through the plugin music player instead of opening external `dnd-sfx` links.
+- **Confusing inactive actions** — Removed or replaced several dead-end buttons in live session workflows.
+
 
 ## [0.12.0] - 2026-05-23
 

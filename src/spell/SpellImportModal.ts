@@ -13,12 +13,14 @@ export class SpellImportModal extends Modal {
   filterSchools: string[] = [];
   filterClasses: string[] = [];
   isLoading = false;
+  campaignPath = "";
   private readonly CACHE_PATH = ".obsidian/plugins/dnd-campaign-hub/spell-cache.json";
   private readonly CACHE_EXPIRY_DAYS = 7;
 
-  constructor(app: App, plugin: DndCampaignHubPlugin) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, campaignPath?: string) {
     super(app);
     this.plugin = plugin;
+    this.campaignPath = campaignPath || plugin.resolveCampaign();
   }
 
   async loadSpellCache(): Promise<any[] | null> {
@@ -525,7 +527,7 @@ export class SpellImportModal extends Modal {
       this.selectedSpell = spell;
 
       // Show modal with spell details
-      new SpellDetailsModal(this.app, this.plugin, spell).open();
+      new SpellDetailsModal(this.app, this.plugin, spell, this.campaignPath).open();
       this.close();
     } catch (error) {
       new Notice("❌ Failed to load spell details");
@@ -574,7 +576,7 @@ export class SpellImportModal extends Modal {
 
   async createCustomSpell(spellName: string) {
     try {
-      const spellPath = `${this.plugin.resolveCampaign()}/Spells`;
+      const spellPath = `${this.campaignPath || this.plugin.resolveCampaign()}/Spells`;
       await this.plugin.ensureFolderExists(spellPath);
 
       const template = this.plugin.getDefaultSpellTemplate();

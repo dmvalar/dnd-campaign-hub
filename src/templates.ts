@@ -83,7 +83,7 @@ type: adventure
 
 export const SESSION_GM_TEMPLATE = `---
 type: session
-template_version: 1.5.0
+template_version: 1.6.1
 campaign: 
 world: 
 adventure: 
@@ -110,16 +110,21 @@ art: ""
 ---
 # Session 
 
+\`\`\`dnd-hub
+\`\`\`
+
 ## Session Summary
 
 > [!tldr] 
 >  ^summary
 
----
-
 ## Housekeeping
 
+- 
+
 ## Recap
+
+- 
 
 ## Strong start
 
@@ -136,19 +141,10 @@ scene-navigator
 - [ ] 
 - [ ] 
 - [ ] 
-- [ ] 
-- [ ] 
-- [ ] 
-- [ ] 
-- [ ] 
-- [ ] 
-- [ ] 
 
 ## Loot
 
 - [ ] 
-
----
 
 ## Log
 
@@ -156,7 +152,7 @@ scene-navigator
 
 export const SESSION_PLAYER_TEMPLATE = `---
 type: session
-template_version: 1.2.1
+template_version: 1.6.1
 campaign: 
 world: 
 sessionNum: 
@@ -179,16 +175,17 @@ art: ""
 ---
 # Session
 
+\`\`\`dnd-hub
+\`\`\`
+
 ## Session Summary
 
  > [!tldr] 
 >  ^summary
 
----
-
 ## Recap
 
----
+- 
 
 ## Log
 
@@ -456,7 +453,7 @@ creature: {{name}}
 
 export const ADVENTURE_TEMPLATE = `---
 type: adventure
-template_version: 1.4.0
+template_version: 1.4.1
 name: 
 campaign: 
 world: 
@@ -470,11 +467,6 @@ date:
 
 # {{name}}
 
-**Status:** 🎬 Planning  
-**Level:** {{LEVEL_RANGE}} | **Current Act:** 1 of 3  
-**Expected Sessions:** {{EXPECTED_SESSIONS}}  
-**Sessions Played:** 
-
 \`\`\`dnd-hub
 \`\`\`
 
@@ -486,51 +478,28 @@ date:
 
 *How do the PCs learn about this and get involved?*
 
----
-
 ## Scenes
 
 \`\`\`dnd-hub-view
 adventure-scenes
 \`\`\`
 
----
-
 ## GM Prep Notes
 
-### Session Pacing
-*How do you plan to pace this adventure across sessions?*
-
-### Backup Plans
-*What if PCs go off-script?*
-
 ### Secrets & Clues
-- [ ] Clue 1
-- [ ] Clue 2
-- [ ] Clue 3
-- [ ] Secret 1
-- [ ] Secret 2
+- [ ] 
+- [ ] 
+- [ ] 
 
-### Resolution Options
-**Success:** *What happens if PCs succeed?*
+### Flexible Notes
 
-**Failure:** *What happens if they fail or give up?*
+- 
 
----
-
-## Key NPCs
-
-*Link important NPCs from your campaign*
-
----
-
-## Treasure & Rewards
+## Rewards
 
 *Track loot and XP for this adventure*
 
-**XP Milestones:**
-- Total XP: 
-- Level up at: 
+- 
 `;
 
 // ============================================================================
@@ -539,7 +508,7 @@ adventure-scenes
 
 export const SCENE_TEMPLATE = `---
 type: scene
-template_version: 2.3.0
+template_version: 2.3.1
 adventure: "{{ADVENTURE_NAME}}"
 campaign: "{{CAMPAIGN}}"
 world: "{{WORLD}}"
@@ -567,7 +536,13 @@ date: {{DATE}}
 \`\`\`dnd-hub
 \`\`\`
 
----
+## What Happens?
+
+- 
+
+## Notes
+
+- 
 `;
 
 export const TRAP_TEMPLATE = `---
@@ -763,7 +738,7 @@ How the spell scales with level.
 
 export const CAMPAIGN_TEMPLATE = `---
 type: campaign
-template_version: 1.1.0
+template_version: 1.2.1
 status: active
 dm: 
 players: []
@@ -774,21 +749,24 @@ current_session:
 
 # Campaign
 
+\`\`\`dnd-hub
+\`\`\`
+
 ## Overview
-Brief description of the campaign.
+
+- 
 
 ## Players
-- Player 1
-- Player 2
 
-## Key NPCs
-- [[NPC Name]]
+- 
 
-## Adventures
-- [[Adventure Name]]
+## Current Focus
 
-## Sessions
-- [[Session 1]]
+- 
+
+## Notes
+
+- 
 `;
 
 // Keep one canonical session schema to prevent frontmatter/version drift.

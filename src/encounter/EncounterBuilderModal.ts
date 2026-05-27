@@ -31,10 +31,21 @@ export class EncounterBuilderModal extends Modal {
   partyMemberListContainer: HTMLElement | null = null;
   private partySelector: PartySelector | null = null;
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, encounterPath?: string) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, encounterPath?: string, campaignPath?: string) {
     super(app);
     this.plugin = plugin;
     this.encounterBuilder = new EncounterBuilder(app, plugin);
+    if (campaignPath) {
+      this.campaignPath = campaignPath;
+      const campaignName = campaignPath.split("/").pop() || campaignPath;
+      const party = plugin.partyManager.getPartiesForCampaign(campaignPath)[0]
+        || plugin.partyManager.resolveParty(undefined, campaignPath)
+        || plugin.partyManager.resolveParty(undefined, campaignName);
+      if (party) {
+        this.selectedPartyId = party.id;
+        this.selectedPartyName = party.name;
+      }
+    }
     if (encounterPath) {
       this.isEdit = true;
       this.originalEncounterPath = encounterPath;
@@ -226,6 +237,10 @@ export class EncounterBuilderModal extends Modal {
       },
     });
     await this.partySelector.render();
+    this.selectedPartyId = this.partySelector.getSelectedPartyId();
+    this.selectedPartyName = this.partySelector.getSelectedPartyName();
+    this.selectedPartyMembers = this.partySelector.getSelectedMembers();
+    this.syncEncounterBuilder();
   }
 
   async renderPartyMemberList() {
@@ -1013,9 +1028,11 @@ export class EncounterBuilderModal extends Modal {
     this.creatureListContainer.empty();
 
     if (this.creatures.length === 0) {
-      this.creatureListContainer.createEl("p", {
-        text: "No creatures added yet. Add creatures below.",
-        cls: "setting-item-description"
+      const empty = this.creatureListContainer.createDiv({ cls: "encounter-creature-empty-state" });
+      empty.createEl("p", { text: "No creatures in this encounter yet." });
+      empty.createEl("p", {
+        text: "Search your bestiary, import a creature, or add a manual entry below.",
+        cls: "setting-item-description",
       });
       return;
     }

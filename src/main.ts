@@ -19,6 +19,7 @@ import { MapController } from "./map/MapController";
 import { MapCreationModal, BATTLEMAP_TEMPLATE_FOLDER } from "./map/MapCreationModal";
 import { MapManagerModal } from "./map/MapManagerModal";
 import { TemplatePickerModal } from "./map/TemplatePickerModal";
+import { buildMapInlineMarkdown, handleInlineMapInteraction, parseMapCodeblockMarkdown, parseMapInlineMarkdown, renderInlineMapWidgets } from "./map/InlineMapBlock";
 import { magicWandDetect } from "./map/MagicWandWallModal";
 import { MarkerLibrary } from "./marker/MarkerLibrary";
 import { MarkerReference, MarkerDefinition, MarkerType, CREATURE_SIZE_SQUARES, CreatureSize, Layer } from "./marker/MarkerTypes";
@@ -31,7 +32,7 @@ import { DEFAULT_PLAYBACK_STATE } from "./music/types";
 import type { MusicSettings, SceneMusicConfig, MusicPlaybackState } from "./music/types";
 import { DEFAULT_MUSIC_SETTINGS, AUDIO_EXTENSIONS } from "./music/types";
 import { MusicPlayerLeafView, MUSIC_PLAYER_VIEW_TYPE } from "./music/MusicPlayerView";
-import { SceneMusicModal, renderSceneMusicBlock, buildSceneMusicCodeblock } from "./music/SceneMusicBlock";
+import { SceneMusicModal, renderSceneMusicBlock, buildSceneMusicCodeblock, buildSceneMusicInlineMarkdown, handleInlineSceneMusicInteraction, parseSceneMusicCodeblockMarkdown, parseSceneMusicInlineMarkdown, renderInlineSceneMusicWidgets } from "./music/SceneMusicBlock";
 import { SoundEffectModal, renderSoundEffectBlock, buildSoundEffectCodeblock, buildSoundEffectInlineMarkdown, handleInlineSoundEffectInteraction, parseSoundEffectCodeblockMarkdown, parseSoundEffectInlineMarkdown, renderInlineSoundEffectWidgets } from "./music/SoundEffectBlock";
 import { SceneSnippetSuggest } from "./scene/SceneSnippets";
 import { RandomEncounterTableModal } from "./encounter/RandomEncounterTableModal";
@@ -85,6 +86,7 @@ import type {
 import type { DndCampaignHubSettings, TabletopCalibration } from './types';
 import { DEFAULT_SETTINGS } from './types';
 import {
+  CAMPAIGN_HOME_VIEW_TYPE,
   SESSION_PREP_VIEW_TYPE,
   SESSION_RUN_VIEW_TYPE,
   DM_SCREEN_VIEW_TYPE,
@@ -141,6 +143,11 @@ import { SpellImportModal } from './spell/SpellImportModal';
 import { SpellDetailsModal } from './spell/SpellDetailsModal';
 import { DndCampaignHubSettingTab } from './settings/SettingsTab';
 import { DndHubModal } from './hub/DndHubModal';
+import { CampaignHomeView } from './hub/CampaignHomeView';
+import { CreateContentModal } from './hub/CreateContentModal';
+import { CreationNextStepsModal } from './hub/CreationNextStepsModal';
+import type { CreationNextStepKind } from './hub/CreationNextStepsModal';
+import { SetupWizardModal } from './hub/SetupWizardModal';
 import { PurgeConfirmModal } from './hub/PurgeConfirmModal';
 import { DeleteMapConfirmModal } from './map-views/DeleteMapConfirmModal';
 import { TabletopCalibrationModal } from './map-views/TabletopCalibrationModal';
@@ -149,6 +156,7 @@ import { PlayerMapView } from './map-views/PlayerMapView';
 import { ProjectionManager } from './projection/ProjectionManager';
 import { SessionProjectionManager, IdleScreenView, SessionProjectionHubModal, HandoutProjectionView } from './projection';
 import type { HandoutContentType } from './projection/types';
+import { buildHandoutInlineMarkdown, handleInlineHandoutInteraction, parseHandoutInlineMarkdown, renderInlineHandoutWidgets } from './projection/InlineHandoutBlock';
 import { PursuitTracker } from './pursuit/PursuitTracker';
 import { PursuitTrackerView } from './pursuit/PursuitTrackerView';
 import { PursuitPlayerView } from './pursuit/PursuitPlayerView';
@@ -157,7 +165,7 @@ import { CombatPursuitSync } from './pursuit/CombatPursuitSync';
 
 // ── Extracted function modules ──
 import { renderMapView as renderMapViewFn } from './map-views/renderMapView';
-import { renderEncounterView as renderEncounterViewFn } from './encounter/renderEncounterView';
+import { buildEncounterInlineMarkdown, handleInlineEncounterInteraction, parseEncounterCodeblockMarkdown, parseEncounterInlineMarkdown, renderEncounterView as renderEncounterViewFn, renderInlineEncounterWidgets } from './encounter/renderEncounterView';
 import { renderPoiView as renderPoiViewFn } from './poi/renderPoiView';
 import { renderPartyView as renderPartyViewFn } from './party/renderPartyView';
 import {
@@ -272,12 +280,26 @@ export default class DndCampaignHubPlugin extends Plugin {
   _playerMapViews: Set<PlayerMapView> = new Set();
   _gmMapViews: Set<GmMapView> = new Set();
   _hexcrawlBridge: HexcrawlBridge | null = null;
+  private pendingCreationNextSteps: { kind: CreationNextStepKind; campaignPath: string; armedAt: number } | null = null;
   /** Debounced save state: per-mapId pending config + timer */
   _pendingSaves = new Map<string, { config: any; el: HTMLElement; timer: ReturnType<typeof setTimeout> }>();
   static readonly SAVE_DEBOUNCE_MS = 1000;
 
   async onload() {
     await this.loadSettings();
+
+    this.settings.activeCampaignPath = this.normalizeActiveCampaignPath(this.settings.activeCampaignPath);
+    await this.saveSettings();
+
+    this.addRibbonIcon("layout-dashboard", "Open Campaign Home", () => {
+      void this.openCampaignHome(this.getActiveCampaignPath());
+    });
+
+    // Register the Campaign Home view
+    this.registerView(
+      CAMPAIGN_HOME_VIEW_TYPE,
+      (leaf) => new CampaignHomeView(leaf, this)
+    );
 
     // Register the Session Prep Dashboard view
     this.registerView(
@@ -453,18 +475,36 @@ export default class DndCampaignHubPlugin extends Plugin {
       renderSoundEffectBlock(source, el, ctx, this.musicPlayer, this.settings.musicSettings, () => this.ensureMusicPlayerOpen(), this.app);
     });
 
-    // Register markdown post processor for true inline sound effect widgets
+    // Register markdown post processor for true inline audio widgets
     this.registerMarkdownPostProcessor((el, ctx) => {
       renderInlineSoundEffectWidgets(el, ctx, this.musicPlayer, this.settings.musicSettings, () => this.ensureMusicPlayerOpen());
+      renderInlineSceneMusicWidgets(el, ctx, this.musicPlayer, this.settings.musicSettings, () => this.ensureMusicPlayerOpen());
+      renderInlineEncounterWidgets(el);
+      renderInlineHandoutWidgets(el);
+      renderInlineMapWidgets(el);
     });
 
     this.registerDomEvent(document, 'click', (event) => {
+      if (handleInlineMapInteraction(event, this)) return;
+      if (handleInlineHandoutInteraction(event, this)) return;
+      if (handleInlineEncounterInteraction(event, this)) return;
+      if (handleInlineSceneMusicInteraction(event, this.musicPlayer, () => this.ensureMusicPlayerOpen())) return;
       handleInlineSoundEffectInteraction(event, this.musicPlayer, () => this.ensureMusicPlayerOpen());
     }, true);
 
     this.registerDomEvent(document, 'keydown', (event) => {
+      if (handleInlineMapInteraction(event, this)) return;
+      if (handleInlineHandoutInteraction(event, this)) return;
+      if (handleInlineEncounterInteraction(event, this)) return;
+      if (handleInlineSceneMusicInteraction(event, this.musicPlayer, () => this.ensureMusicPlayerOpen())) return;
       handleInlineSoundEffectInteraction(event, this.musicPlayer, () => this.ensureMusicPlayerOpen());
     }, true);
+
+    this.registerEvent(
+      this.app.workspace.on("file-open", (file) => {
+        this.maybeShowCreationNextSteps(file);
+      })
+    );
 
     // Register markdown code block processor for encounter table cards
     this.registerMarkdownCodeBlockProcessor('dnd-encounter-table', (source, el, ctx) => {
@@ -563,6 +603,42 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     // Add commands for the features available in the preview release
+    this.addCommand({
+      id: "open-campaign-home",
+      name: "D&D Hub: Open Campaign Home",
+      callback: () => this.openCampaignHome(),
+    });
+
+    this.addCommand({
+      id: "workflow-start-session",
+      name: "D&D Hub: Start Session",
+      callback: () => this.openSessionRunDashboard(),
+    });
+
+    this.addCommand({
+      id: "workflow-prepare-next-session",
+      name: "D&D Hub: Prepare Next Session",
+      callback: () => this.openSessionPrepDashboard(),
+    });
+
+    this.addCommand({
+      id: "workflow-create-content",
+      name: "D&D Hub: Create Content",
+      callback: () => this.openCreateContent(),
+    });
+
+    this.addCommand({
+      id: "workflow-open-gm-tools",
+      name: "D&D Hub: Open GM Tools",
+      callback: () => this.openGMTools(),
+    });
+
+    this.addCommand({
+      id: "run-setup-wizard",
+      name: "D&D Hub: Open Setup Wizard",
+      callback: () => this.openSetupWizard(),
+    });
+
     this.addCommand({
       id: "create-campaign",
       name: "Create New Campaign",
@@ -854,6 +930,35 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "insert-inline-map",
+      name: "Insert Inline Map Control",
+      editorCallback: (editor: Editor) => {
+        import("./map/InlineMapBlock").then(({ InsertMapWidgetModal }) => {
+          new InsertMapWidgetModal(this.app, this, (config) => {
+            editor.replaceSelection(buildMapInlineMarkdown(config) + " ");
+            new Notice("Inline map control inserted");
+          }).open();
+        });
+      },
+    });
+
+    this.addCommand({
+      id: "convert-map-widget-to-inline",
+      name: "Convert Selected Map Block to Inline Control",
+      editorCallback: (editor: Editor) => {
+        const selected = editor.getSelection();
+        const config = parseMapCodeblockMarkdown(selected) || parseMapInlineMarkdown(selected);
+        if (!config) {
+          new Notice("Select a complete dnd-map block or inline map control first.");
+          return;
+        }
+
+        editor.replaceSelection(buildMapInlineMarkdown(config) + " ");
+        new Notice("Map converted to inline control");
+      },
+    });
+
+    this.addCommand({
       id: "create-map",
       name: "🗺️ Create Battle Map (from template)",
       callback: () => this.createMap(),
@@ -1081,6 +1186,68 @@ export default class DndCampaignHubPlugin extends Plugin {
             editor.replaceSelection(codeblock + '\n');
           }).open();
         });
+      },
+    });
+
+    this.addCommand({
+      id: "insert-inline-encounter",
+      name: "⚔️ Insert Inline Encounter Control",
+      editorCallback: (editor) => {
+        import('./encounter/InsertEncounterWidgetModal').then(({ InsertEncounterWidgetModal }) => {
+          new InsertEncounterWidgetModal(this.app, this, (codeblock) => {
+            const config = parseEncounterCodeblockMarkdown(codeblock);
+            if (!config) {
+              new Notice("Could not create inline encounter control.");
+              return;
+            }
+            editor.replaceSelection(buildEncounterInlineMarkdown(config) + ' ');
+            new Notice('Inline encounter control inserted');
+          }).open();
+        });
+      },
+    });
+
+    this.addCommand({
+      id: "insert-inline-handout",
+      name: "Insert Inline Handout Control",
+      editorCallback: (editor: Editor) => {
+        import('./projection/InlineHandoutBlock').then(({ InsertHandoutWidgetModal }) => {
+          new InsertHandoutWidgetModal(this.app, this, (config) => {
+            editor.replaceSelection(buildHandoutInlineMarkdown(config) + ' ');
+            new Notice('Inline handout control inserted');
+          }).open();
+        });
+      },
+    });
+
+    this.addCommand({
+      id: "convert-handout-widget-to-inline",
+      name: "Convert Selected Handout Control to Inline",
+      editorCallback: (editor: Editor) => {
+        const selected = editor.getSelection();
+        const config = parseHandoutInlineMarkdown(selected);
+        if (!config) {
+          new Notice('Select an inline handout control first.');
+          return;
+        }
+
+        editor.replaceSelection(buildHandoutInlineMarkdown(config) + ' ');
+        new Notice('Handout control refreshed');
+      },
+    });
+
+    this.addCommand({
+      id: "convert-encounter-widget-to-inline",
+      name: "⚔️ Convert Selected Encounter Widget to Inline Control",
+      editorCallback: (editor) => {
+        const selected = editor.getSelection();
+        const config = parseEncounterCodeblockMarkdown(selected) || parseEncounterInlineMarkdown(selected);
+        if (!config) {
+          new Notice("Select a complete dnd-encounter block or inline encounter control first.");
+          return;
+        }
+        editor.replaceSelection(buildEncounterInlineMarkdown(config) + ' ');
+        new Notice('Encounter converted to inline control');
       },
     });
 
@@ -1404,6 +1571,39 @@ export default class DndCampaignHubPlugin extends Plugin {
             new Notice('Scene music block inserted');
           }
         ).open();
+      },
+    });
+
+    this.addCommand({
+      id: "insert-inline-scene-music",
+      name: "🎵 Insert Inline Scene Music",
+      editorCallback: (editor: Editor) => {
+        new SceneMusicModal(
+          this.app,
+          this.settings.musicSettings,
+          null,
+          (config) => {
+            const inlineWidget = buildSceneMusicInlineMarkdown(config);
+            editor.replaceSelection(inlineWidget + ' ');
+            new Notice('Inline scene music inserted');
+          }
+        ).open();
+      },
+    });
+
+    this.addCommand({
+      id: "convert-scene-music-block-to-inline",
+      name: "🎵 Convert Selected Scene Music to Inline Widget",
+      editorCallback: (editor: Editor) => {
+        const selected = editor.getSelection();
+        const config = parseSceneMusicCodeblockMarkdown(selected) || parseSceneMusicInlineMarkdown(selected);
+        if (!config) {
+          new Notice('Select a complete dnd-music block or inline scene music first');
+          return;
+        }
+
+        editor.replaceSelection(buildSceneMusicInlineMarkdown(config) + ' ');
+        new Notice('Scene music converted to inline widget');
       },
     });
 
@@ -1760,11 +1960,22 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const type = (cache?.frontmatter?.plugin_type ?? cache?.frontmatter?.type) as string | undefined;
 		if (!type) return;
 
-		const container = el.createDiv({ cls: "dnd-hub-actions" });
+		const container = el.createDiv({
+			cls: "dnd-hub-actions",
+			attr: { "aria-label": "D&D Hub note actions" },
+		});
 
-		const createBtn = (text: string, cls: string, handler: () => void) => {
-			const btn = container.createEl("button", { text, cls: `dnd-hub-btn ${cls}` });
-			btn.addEventListener("click", handler);
+		const createBtn = (text: string, cls: string, handler: () => void | Promise<void>, title = text) => {
+			const btn = container.createEl("button", {
+				text,
+				cls: `dnd-hub-btn ${cls}`,
+				attr: {
+					type: "button",
+					title,
+					"aria-label": title,
+				},
+			});
+			btn.addEventListener("click", () => void handler());
 			return btn;
 		};
 
@@ -1772,7 +1983,22 @@ export default class DndCampaignHubPlugin extends Plugin {
 			(this.app as any).commands.executeCommandById(`dnd-campaign-hub:${id}`);
 		};
 
+		const frontmatter = cache?.frontmatter || {};
+		const campaignPathForNote = () => {
+			const pathMatch = ctx.sourcePath.match(/^ttrpgs\/[^\/]+/);
+			if (pathMatch?.[0]) return pathMatch[0];
+			if (type === "campaign" && file.parent?.path) return file.parent.path;
+			return this.getActiveCampaignPath();
+		};
+
 		switch (type) {
+			case "campaign":
+				createBtn("🏠 Campaign Home", "dnd-hub-btn-extra", () => this.openCampaignHome(campaignPathForNote()), "Open this campaign in Campaign Home");
+				createBtn("📜 New Session", "dnd-hub-btn-create", () => this.createSession(campaignPathForNote()), "Create a new session for this campaign");
+				createBtn("✨ Create Content", "dnd-hub-btn-create", () => this.openCreateContent(campaignPathForNote()), "Create campaign content");
+				createBtn("⚔️ Open Party", "dnd-hub-btn-extra", () => this.openPartyManager(campaignPathForNote()), "Open the party for this campaign");
+				break;
+
 			case "world":
 				createBtn("🛡️ Create New PC", "dnd-hub-btn-create", cmd("create-pc"));
 				createBtn("📥 Import PC", "dnd-hub-btn-create", cmd("import-pc"));
@@ -1800,8 +2026,23 @@ export default class DndCampaignHubPlugin extends Plugin {
 				break;
 
 			case "scene":
+				createBtn("▶️ Start Scene", "dnd-hub-btn-extra", async () => {
+					await this.updateSceneFrontmatter(file, { status: "in-progress" });
+					await this.openSessionRunDashboard(campaignPathForNote());
+				}, "Mark this scene in progress and open the run dashboard");
+				createBtn("🎛️ Run Dashboard", "dnd-hub-btn-extra", () => this.openSessionRunDashboard(campaignPathForNote()), "Open the session run dashboard");
+				if (!frontmatter.tracker_encounter && !frontmatter.encounter_file) {
+					createBtn("⚔️ Build Encounter", "dnd-hub-btn-create", () => this.createEncounter(campaignPathForNote()), "Build an encounter for this campaign");
+				}
 				createBtn("✏️ Edit Scene", "dnd-hub-btn-edit", cmd("edit-scene"));
 				createBtn("🗑️ Delete Scene", "dnd-hub-btn-delete", cmd("delete-scene"));
+				break;
+
+			case "session":
+				createBtn("▶️ Start Session", "dnd-hub-btn-extra", () => this.openSessionRunDashboard(campaignPathForNote()), "Open the session run dashboard");
+				createBtn("🧭 Prep Dashboard", "dnd-hub-btn-extra", () => this.openSessionPrepDashboard(campaignPathForNote()), "Open the preparation dashboard");
+				createBtn("🏠 Campaign Home", "dnd-hub-btn-extra", () => this.openCampaignHome(campaignPathForNote()), "Open this campaign in Campaign Home");
+				createBtn("🏁 End Session", "dnd-hub-btn-extra", () => new EndSessionModal(this.app, this, file).open(), "Record the ending scene for this session");
 				break;
 
 			case "adventure": {
@@ -2090,9 +2331,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 		new CampaignCreationModal(this.app, this).open();
 	}
 
-	async createNpc() {
+	async createNpc(campaignPathOverride?: string) {
 		// Open NPC creation modal instead of simple name prompt
-		new NPCCreationModal(this.app, this).open();
+		new NPCCreationModal(this.app, this, undefined, campaignPathOverride).open();
 	}
 
 	async editNpc(npcPath: string) {
@@ -2100,14 +2341,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 		new NPCCreationModal(this.app, this, npcPath).open();
 	}
 
-	async createPc() {
+	async createPc(campaignPathOverride?: string) {
 		// Open PC creation modal
-		new PCCreationModal(this.app, this).open();
+		new PCCreationModal(this.app, this, undefined, campaignPathOverride).open();
 	}
 
-	async importPc() {
+	async importPc(campaignPathOverride?: string) {
 		// Open import PC modal for cross-campaign import
-		new ImportPCModal(this.app, this).open();
+		new ImportPCModal(this.app, this, campaignPathOverride).open();
 	}
 
 	async editPc(pcPath: string) {
@@ -2115,9 +2356,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 		new PCCreationModal(this.app, this, pcPath).open();
 	}
 
-	async createAdventure() {
+	async createAdventure(campaignPathOverride?: string) {
 		// Open Adventure creation modal
-		new AdventureCreationModal(this.app, this).open();
+		new AdventureCreationModal(this.app, this, undefined, campaignPathOverride).open();
 	}
 
 	async editAdventure(adventurePath: string) {
@@ -2174,14 +2415,14 @@ export default class DndCampaignHubPlugin extends Plugin {
 		}
 	}
 
-	async createScene() {
+	async createScene(campaignPathOverride?: string) {
 		// Open Scene creation modal
-		new SceneCreationModal(this.app, this).open();
+		new SceneCreationModal(this.app, this, undefined, undefined, campaignPathOverride).open();
 	}
 
-	async createTrap() {
+	async createTrap(adventurePath?: string, scenePath?: string, campaignPathOverride?: string) {
 		// Open Trap creation modal
-		new TrapCreationModal(this.app, this).open();
+		new TrapCreationModal(this.app, this, adventurePath, scenePath, undefined, campaignPathOverride).open();
 	}
 
 	async editTrap(trapPath: string) {
@@ -2189,9 +2430,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 		new TrapCreationModal(this.app, this, undefined, undefined, trapPath).open();
 	}
 
-	async createItem() {
+	async createItem(campaignPathOverride?: string) {
 		// Open Item creation modal
-		new ItemCreationModal(this.app, this).open();
+		new ItemCreationModal(this.app, this, undefined, campaignPathOverride).open();
 	}
 
 	async editItem(itemPath: string) {
@@ -2199,9 +2440,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 		new ItemCreationModal(this.app, this, itemPath).open();
 	}
 
-	async createCreature() {
+	async createCreature(campaignPathOverride?: string) {
 		// Open Creature creation modal
-		new CreatureCreationModal(this.app, this).open();
+		new CreatureCreationModal(this.app, this, undefined, campaignPathOverride).open();
 	}
 
 	async editCreature(creaturePath: string) {
@@ -2260,9 +2501,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 		}
 	}
 
-	async createEncounter() {
+	async createEncounter(campaignPathOverride?: string) {
 		// Open Encounter Builder modal
-		new EncounterBuilderModal(this.app, this).open();
+		new EncounterBuilderModal(this.app, this, undefined, campaignPathOverride || this.getActiveCampaignPath()).open();
 	}
 
 	async editEncounter(encounterPath: string) {
@@ -2510,14 +2751,308 @@ export default class DndCampaignHubPlugin extends Plugin {
 		}
 	}
 
-	async createSession() {
-		const campaignPath = this.resolveCampaign();
+	async createSession(campaignPathOverride?: string) {
+		const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
 		// Open session creation modal
 		new SessionCreationModal(this.app, this, undefined, campaignPath).open();
 	}
 
-	async openSessionPrepDashboard() {
-		const campaignPath = this.resolveCampaign();
+	async openCampaignHome(campaignPathOverride?: string) {
+		const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
+		if (campaignPath) {
+			await this.setActiveCampaignPath(campaignPath);
+		}
+		const existing = this.app.workspace.getLeavesOfType(CAMPAIGN_HOME_VIEW_TYPE);
+		if (existing.length > 0 && existing[0]) {
+			this.app.workspace.revealLeaf(existing[0]);
+			const view = existing[0].view as CampaignHomeView;
+			view.setCampaign(campaignPath);
+			return;
+		}
+
+		const leaf = this.app.workspace.getLeaf(false);
+		if (leaf) {
+			await leaf.setViewState({
+				type: CAMPAIGN_HOME_VIEW_TYPE,
+				active: true,
+			});
+			const view = leaf.view as CampaignHomeView;
+			view.setCampaign(campaignPath);
+			this.app.workspace.revealLeaf(leaf);
+		}
+	}
+
+	openCreateContent(campaignPathOverride?: string) {
+		new CreateContentModal(this, campaignPathOverride || this.getActiveCampaignPath()).open();
+	}
+
+	async setActiveCampaignPath(campaignPath: string) {
+		if (!campaignPath || this.settings.activeCampaignPath === campaignPath) return;
+		this.settings.activeCampaignPath = campaignPath;
+		await this.saveSettings();
+		this.syncCampaignAwareViews(campaignPath);
+	}
+
+	getActiveCampaignPath(): string {
+		return this.normalizeActiveCampaignPath(this.settings.activeCampaignPath)
+			|| this.detectCampaignFromActiveFile()
+			|| this.getAllCampaigns()[0]?.path
+			|| "";
+	}
+
+	private normalizeActiveCampaignPath(campaignPath: string): string {
+		if (!campaignPath) return "";
+		const campaign = this.getAllCampaigns().find((candidate) => candidate.path === campaignPath);
+		return campaign?.path || "";
+	}
+
+	private syncCampaignAwareViews(campaignPath: string) {
+		for (const leaf of this.app.workspace.getLeavesOfType(SESSION_RUN_VIEW_TYPE)) {
+			const view = leaf.view as SessionRunDashboardView;
+			view.setCampaign(campaignPath);
+		}
+		for (const leaf of this.app.workspace.getLeavesOfType(SESSION_PREP_VIEW_TYPE)) {
+			const view = leaf.view as SessionPrepDashboardView;
+			view.setCampaign(campaignPath);
+		}
+	}
+
+	armCreationNextSteps(kind: CreationNextStepKind, campaignPath: string) {
+		this.pendingCreationNextSteps = {
+			kind,
+			campaignPath,
+			armedAt: Date.now(),
+		};
+	}
+
+	private maybeShowCreationNextSteps(file: TFile | null) {
+		const pending = this.pendingCreationNextSteps;
+		if (!file || !pending) return;
+
+		const isExpired = Date.now() - pending.armedAt > 10 * 60 * 1000;
+		if (isExpired) {
+			this.pendingCreationNextSteps = null;
+			return;
+		}
+
+		if (!this.fileMatchesCreationKind(file, pending.kind)) return;
+
+		this.pendingCreationNextSteps = null;
+		window.setTimeout(() => {
+			new CreationNextStepsModal(this, file, pending.kind, pending.campaignPath).open();
+		}, 250);
+	}
+
+	showCreationNextSteps(kind: CreationNextStepKind, campaignPath: string, file: TFile | null, fallbackName = "") {
+		new CreationNextStepsModal(this, file, kind, campaignPath || this.getActiveCampaignPath(), fallbackName).open();
+	}
+
+	private fileMatchesCreationKind(file: TFile, kind: CreationNextStepKind): boolean {
+		const type = String(this.app.metadataCache.getFileCache(file)?.frontmatter?.type || "").toLowerCase();
+		const expectedTypes: Record<CreationNextStepKind, string[]> = {
+			session: ["session"],
+			scene: ["scene"],
+			adventure: ["adventure"],
+			pc: ["player", "pc"],
+			npc: ["npc"],
+			faction: ["faction"],
+			encounter: ["encounter"],
+			map: ["map"],
+			creature: ["creature"],
+			trap: ["trap"],
+			item: ["item"],
+			spell: ["spell"],
+		};
+
+		return expectedTypes[kind].includes(type);
+	}
+
+	openSetupWizard() {
+		new SetupWizardModal(this).open();
+	}
+
+	async completeOnboardingSetup() {
+		this.settings.onboardingSetupComplete = true;
+		await this.saveSettings();
+	}
+
+	async openGMTools() {
+		await this.openDMScreen();
+		await this.openCombatTracker();
+		await this.openPursuitTracker();
+		this.ensureMusicPlayerOpen();
+	}
+
+	openMapManager() {
+		new MapManagerModal(this.app, this, this.mapManager).open();
+	}
+
+	openSessionProjectionHub() {
+		new SessionProjectionHubModal(this).open();
+	}
+
+	openPartyManager(campaignPathOverride?: string) {
+		const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
+		const campaignName = campaignPath.split("/").pop() || campaignPath;
+		const party = this.partyManager.getPartiesForCampaign(campaignPath)[0]
+			|| this.partyManager.resolveParty(undefined, campaignPath)
+			|| this.partyManager.resolveParty(undefined, campaignName);
+		new PartyManagerModal(this.app, this, party?.id).open();
+	}
+
+	async continueLastSession(campaignPathOverride?: string) {
+		const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
+		if (!campaignPath) {
+			new Notice("No campaign found. Create or select a campaign first.");
+			return;
+		}
+
+		const sessionFile = this.getLatestSessionFile(campaignPath);
+		if (!sessionFile) {
+			new Notice("No session note found for the selected campaign.");
+			return;
+		}
+
+		const sessionLeaf = this.app.workspace.getLeaf(false);
+		await sessionLeaf.openFile(sessionFile);
+
+		const contextFile = this.resolveSessionContinuationFile(sessionFile);
+		if (contextFile) {
+			const contextLeaf = this.app.workspace.getLeaf("split", "vertical");
+			await contextLeaf.openFile(contextFile);
+		}
+	}
+
+	private getLatestSessionFile(campaignPath: string): TFile | null {
+		const sessions = this.app.vault.getMarkdownFiles().filter((file) => {
+			if (!(file.path === campaignPath || file.path.startsWith(`${campaignPath}/`))) return false;
+			const cache = this.app.metadataCache.getFileCache(file);
+			return cache?.frontmatter?.type === "session";
+		});
+
+		sessions.sort((a, b) => {
+			const cacheA = this.app.metadataCache.getFileCache(a);
+			const cacheB = this.app.metadataCache.getFileCache(b);
+			const aNum = this.getSessionNumber(a, cacheA?.frontmatter);
+			const bNum = this.getSessionNumber(b, cacheB?.frontmatter);
+			if (aNum !== bNum) return bNum - aNum;
+
+			const aDate = Date.parse(String(cacheA?.frontmatter?.date || ""));
+			const bDate = Date.parse(String(cacheB?.frontmatter?.date || ""));
+			if (Number.isFinite(aDate) && Number.isFinite(bDate) && aDate !== bDate) return bDate - aDate;
+
+			return b.stat.mtime - a.stat.mtime;
+		});
+
+		return sessions[0] || null;
+	}
+
+	private getSessionNumber(file: TFile, frontmatter: any): number {
+		const rawNumber = frontmatter?.sessionNum ?? frontmatter?.session_number;
+		const parsed = Number(rawNumber);
+		if (Number.isFinite(parsed) && parsed > 0) return parsed;
+
+		let match = file.basename.match(/Session\s+(\d+)/i);
+		if (match?.[1]) return parseInt(match[1], 10);
+
+		match = file.basename.match(/^(\d{3})_\d{8}$/);
+		if (match?.[1]) return parseInt(match[1], 10);
+
+		return 0;
+	}
+
+	private resolveSessionContinuationFile(sessionFile: TFile): TFile | null {
+		const fm = this.app.metadataCache.getFileCache(sessionFile)?.frontmatter;
+		if (!fm) return null;
+
+		const adventureFile = this.resolveFrontmatterLink(fm.adventure, sessionFile.path);
+		const linkedScenes = [
+			this.resolveFrontmatterLink(fm.starting_scene, sessionFile.path),
+			this.resolveFrontmatterLink(fm.ending_scene, sessionFile.path),
+		].filter((file): file is TFile => file instanceof TFile);
+
+		const inProgressLinked = linkedScenes.find((file) => this.getSceneStatus(file) === "in-progress");
+		if (inProgressLinked) return inProgressLinked;
+
+		const adventureInProgress = adventureFile ? this.getContinuationSceneForAdventure(adventureFile, "in-progress") : null;
+		if (adventureInProgress) return adventureInProgress;
+
+		const notStartedLinked = linkedScenes.find((file) => this.getSceneStatus(file) === "not-started");
+		if (notStartedLinked) return notStartedLinked;
+
+		if (adventureFile) return adventureFile;
+
+		return linkedScenes.find((file) => this.getSceneStatus(file) !== "completed") || linkedScenes[0] || null;
+	}
+
+	private getContinuationSceneForAdventure(adventureFile: TFile, preferredStatus: string): TFile | null {
+		const scenes = this.getScenesForAdventureFile(adventureFile)
+			.filter((scene) => scene.status === preferredStatus);
+
+		return scenes.length > 0 ? scenes[scenes.length - 1]!.file : null;
+	}
+
+	private getScenesForAdventureFile(adventureFile: TFile): Array<{ file: TFile; sceneNumber: number; status: string }> {
+		const advFolder = adventureFile.parent;
+		if (!advFolder) return [];
+
+		const candidatePrefixes: string[] = [];
+		if (advFolder.name === adventureFile.basename) {
+			candidatePrefixes.push(`${advFolder.path}/`);
+		}
+		candidatePrefixes.push(`${advFolder.path}/${adventureFile.basename} - Scenes/`);
+		candidatePrefixes.push(`${advFolder.path}/${adventureFile.basename}/`);
+		candidatePrefixes.push(`${advFolder.path}/`);
+
+		const seen = new Set<string>();
+		const scenes: Array<{ file: TFile; sceneNumber: number; status: string }> = [];
+		for (const file of this.app.vault.getMarkdownFiles()) {
+			if (seen.has(file.path)) continue;
+			if (!candidatePrefixes.some((prefix) => file.path.startsWith(prefix))) continue;
+
+			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+			if (!fm || fm.type !== "scene") continue;
+
+			seen.add(file.path);
+			scenes.push({
+				file,
+				sceneNumber: Number(fm.scene_number ?? file.name.match(/Scene\s+(\d+)/i)?.[1] ?? 0) || 0,
+				status: String(fm.status || "not-started"),
+			});
+		}
+
+		return scenes.sort((a, b) => a.sceneNumber - b.sceneNumber);
+	}
+
+	private getSceneStatus(file: TFile): string {
+		return String(this.app.metadataCache.getFileCache(file)?.frontmatter?.status || "not-started");
+	}
+
+	private resolveFrontmatterLink(value: unknown, sourcePath: string): TFile | null {
+		if (!value) return null;
+		const raw = Array.isArray(value) ? value[0] : value;
+		if (typeof raw !== "string") return null;
+
+		const linkpath = this.extractLinkPath(raw);
+		if (!linkpath) return null;
+
+		const linked = this.app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
+		return linked instanceof TFile ? linked : null;
+	}
+
+	private extractLinkPath(raw: string): string {
+		const trimmed = raw.trim();
+		const wiki = trimmed.match(/^\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]$/);
+		if (wiki?.[1]) return wiki[1].trim();
+
+		const markdown = trimmed.match(/^\[[^\]]+\]\(([^)#]+)(?:#[^)]+)?\)$/);
+		if (markdown?.[1]) return markdown[1].trim();
+
+		return trimmed.replace(/^["']|["']$/g, "");
+	}
+
+	async openSessionPrepDashboard(campaignPathOverride?: string) {
+		const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
 		
 		// Check if view is already open
 		const existing = this.app.workspace.getLeavesOfType(SESSION_PREP_VIEW_TYPE);
@@ -2542,8 +3077,8 @@ export default class DndCampaignHubPlugin extends Plugin {
 		}
 	}
 
-	async openSessionRunDashboard() {
-		const campaignPath = this.resolveCampaign();
+	async openSessionRunDashboard(campaignPathOverride?: string) {
+		const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
 		
 		// Check if dashboard view is already open
 		const existing = this.app.workspace.getLeavesOfType(SESSION_RUN_VIEW_TYPE);
@@ -2987,27 +3522,25 @@ export default class DndCampaignHubPlugin extends Plugin {
 	 * Returns empty string if no campaigns exist.
 	 */
 	resolveCampaign(): string {
-		return this.detectCampaignFromActiveFile()
-			|| this.getAllCampaigns()[0]?.path
-			|| "";
+		return this.getActiveCampaignPath();
 	}
 
-	async createSpell() {
+	async createSpell(campaignPathOverride?: string) {
 		// Open Spell Import/Creation modal with SRD API integration
-		new SpellImportModal(this.app, this).open();
+		new SpellImportModal(this.app, this, campaignPathOverride || this.getActiveCampaignPath()).open();
 	}
 
-	async createMap() {
+	async createMap(campaignPathOverride?: string) {
 		// Open Template Picker — battlemaps created from templates
-		new TemplatePickerModal(this.app, this, this.mapManager).open();
+		new TemplatePickerModal(this.app, this, this.mapManager, true, campaignPathOverride || this.getActiveCampaignPath()).open();
 	}
 
 	/**
 	 * Open the MapCreationModal in direct mode — image → grid config → insert map.
 	 * Bypasses the template workflow for quick one-off maps.
 	 */
-	async createMapDirect() {
-		new MapCreationModal(this.app, this, this.mapManager).open();
+	async createMapDirect(campaignPathOverride?: string) {
+		new MapCreationModal(this.app, this, this.mapManager, undefined, undefined, true, false, campaignPathOverride || this.getActiveCampaignPath()).open();
 	}
 
 	/**
@@ -3091,9 +3624,9 @@ export default class DndCampaignHubPlugin extends Plugin {
 		return drawFilledHexPointyStretchedFn(ctx, cx, cy, rx, ry);
 	}
 
-	async createFaction() {
+	async createFaction(campaignPathOverride?: string) {
 		// Open Faction creation modal
-		new FactionCreationModal(this.app, this).open();
+		new FactionCreationModal(this.app, this, campaignPathOverride).open();
 	}
 
 	async importAllSRDData() {

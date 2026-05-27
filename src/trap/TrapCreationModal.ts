@@ -16,6 +16,7 @@ export class TrapCreationModal extends Modal {
   trapInitiative = 20;
   adventurePath = "";
   scenePath = "";
+  campaignPath = "";
   
   elements: TrapElement[] = [];
   countermeasures: TrapCountermeasure[] = [];
@@ -30,11 +31,12 @@ export class TrapCreationModal extends Modal {
   originalTrapName = "";
   originalElements: TrapElement[] = [];
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, scenePath?: string, trapPath?: string) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, scenePath?: string, trapPath?: string, campaignPath?: string) {
     super(app);
     this.plugin = plugin;
     if (adventurePath) this.adventurePath = adventurePath;
     if (scenePath) this.scenePath = scenePath;
+    if (campaignPath) this.campaignPath = campaignPath;
     if (trapPath) {
       this.isEdit = true;
       this.originalTrapPath = trapPath;
@@ -662,6 +664,9 @@ export class TrapCreationModal extends Modal {
           if (worldMatch && worldMatch[1]) worldName = worldMatch[1].trim();
         }
       }
+      if (!campaignName && this.campaignPath) {
+        campaignName = this.campaignPath.split("/").pop() || "";
+      }
 
       let trapPath: string;
       let trapFile: TFile | null = null;
@@ -714,8 +719,10 @@ export class TrapCreationModal extends Modal {
         let trapsFolder = "z_Traps";
         
         // If we have a campaign, create in campaign's z_Traps folder
-        if (campaignName) {
-          trapsFolder = `${campaignName}/z_Traps`;
+        if (this.campaignPath) {
+          trapsFolder = `${this.campaignPath}/z_Traps`;
+        } else if (campaignName) {
+          trapsFolder = `ttrpgs/${campaignName}/z_Traps`;
         }
         
         // Ensure z_Traps folder exists

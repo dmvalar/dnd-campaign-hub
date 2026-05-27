@@ -325,8 +325,12 @@ export class SessionCreationModal extends Modal {
       await refreshScenePicker(this.adventurePath);
     }
 
+    const advancedDetails = contentEl.createEl("details", { cls: "dnd-advanced-section" });
+    advancedDetails.createEl("summary", { text: "Advanced session details" });
+    const advancedContainer = advancedDetails.createDiv({ cls: "dnd-advanced-section-body" });
+
     // Session Date (real world)
-    new Setting(contentEl)
+    new Setting(advancedContainer)
       .setName("Session Date")
       .setDesc("Date when this session was/will be played (real world)")
       .addText((text) =>
@@ -350,22 +354,22 @@ export class SessionCreationModal extends Modal {
 
     // Calendar section
     if (this.calendar && this.selectedCalendarData) {
-      contentEl.createEl("h3", { text: `📅 In-Game Calendar: ${this.selectedCalendarData.name || this.calendar}` });
+      advancedContainer.createEl("h3", { text: `📅 In-Game Calendar: ${this.selectedCalendarData.name || this.calendar}` });
 
       const monthData = this.selectedCalendarData.static?.months || [];
 
       // Start Date (from previous session or campaign) - Read only display
-      new Setting(contentEl)
+      new Setting(advancedContainer)
         .setName("Start Date (In-Game)")
         .setDesc(`Starts: ${this.getDateDisplay(this.startYear, this.startMonth, this.startDay, monthData)}`);
 
       // End Date (user sets this)
-      const endDateSetting = new Setting(contentEl)
+      const endDateSetting = new Setting(advancedContainer)
         .setName("End Date (In-Game)")
         .setDesc("When does this session end in your world?");
 
       // Display current end date
-      const endDateDisplay = contentEl.createEl("div", {
+      const endDateDisplay = advancedContainer.createEl("div", {
         cls: "dnd-date-display",
         text: this.getDateDisplay(this.endYear, this.endMonth, this.endDay, monthData)
       });
@@ -382,7 +386,7 @@ export class SessionCreationModal extends Modal {
     }
 
     // Location
-    new Setting(contentEl)
+    new Setting(advancedContainer)
       .setName("Location")
       .setDesc("Where does this session take place in your world?")
       .addText((text) =>
@@ -394,7 +398,7 @@ export class SessionCreationModal extends Modal {
       );
 
     // Party selection (dropdown only, no member checkboxes)
-    const partyContainer = contentEl.createDiv({ cls: "dnd-party-selection" });
+    const partyContainer = advancedContainer.createDiv({ cls: "dnd-party-selection" });
 
     // Auto-resolve the campaign party as default
     const defaultParty = this.plugin.partyManager.resolveParty(undefined, campaignName);

@@ -8,10 +8,10 @@ export class ImportPCModal extends Modal {
   selectedPC: TFile | null = null;
   importMode: "clone" | "link" = "clone";
 
-  constructor(app: App, plugin: DndCampaignHubPlugin) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, campaignPath?: string) {
     super(app);
     this.plugin = plugin;
-    this.targetCampaign = plugin.resolveCampaign();
+    this.targetCampaign = campaignPath || plugin.resolveCampaign();
   }
 
   async onOpen() {

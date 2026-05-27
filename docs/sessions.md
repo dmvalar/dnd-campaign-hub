@@ -4,7 +4,7 @@ Session notes track what happens at each game table meeting. D&D Campaign Hub au
 
 ## Create a session
 
-1. Open the Command Palette and run **Create New Session**.
+1. Open **D&D Hub: Open Campaign Home**, select the active campaign, and choose **New Session**. You can also run **Create New Session** directly from the Command Palette.
 2. Fill in the fields:
    - **Session Number** — auto-incremented based on existing sessions (read-only).
    - **Session Title** — for example, "The Goblin Ambush".
@@ -30,7 +30,7 @@ The Session Prep Dashboard is a sidebar panel for pre-session planning.
 
 ### Open the dashboard
 
-Run **Open Session Prep Dashboard** from the Command Palette. The panel opens in the left sidebar.
+Run **D&D Hub: Prepare Next Session** from the Command Palette. The panel opens in the left sidebar.
 
 ### Sections
 
@@ -55,18 +55,19 @@ The Session Run Dashboard is a sidebar panel for live play.
 
 ### Open the dashboard
 
-Run **Open Session Run Dashboard** from the Command Palette.
+Run **D&D Hub: Start Session** from the Command Palette.
 
 ### Sections
 
-- **Read-Only Toggle** — switch between read-only mode (locks all notes to preview) and editable mode.
+- **Current Scene** — navigate prepared scenes and open linked maps, encounters, music, sound effects, handouts, and party context.
+- **Missing Link Prompts** — add useful links when a scene is missing maps, encounters, music, handouts, or party data.
 - **Timers** — create named timers for tracking combat rounds, rest periods, or any timed event. Each timer shows hours, minutes, and seconds with resume, pause, and remove controls.
 - **Dice Roller** — buttons for d4, d6, d8, d10, d12, d20, and d100. Results appear in a history list of the last ten rolls.
-- **Scene Music** — auto-detects `dnd-music` code blocks in the open scene note. Shows the primary and ambient playlist names with load, play, and stop controls.
+- **Scene Music and SFX** — play linked scene music and trigger sound effects through the music player.
+- **Encounter and Map Controls** — start linked encounters and open linked GM maps.
+- **Handouts** — open projection controls for linked handouts.
 - **Quick Notes** — a text area that auto-saves every 30 seconds to the session note's "Quick Notes" section. Select **Save Now** to save immediately.
 - **SRD Quick Search** — search across imported SRD data (spells, equipment, classes). Results appear as cards with a type badge, name, and preview text. Select a result to open it in a new tab.
-- **Quick Actions** — the same creation buttons as the Prep Dashboard.
-- **Setup Session Layout** — select this to auto-open the scene, adventure, and session notes in a split layout, open the Initiative Tracker, and collapse frontmatter properties for a clean workspace.
 
 ## Session Projection
 

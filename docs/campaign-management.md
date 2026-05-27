@@ -4,7 +4,7 @@ D&D Campaign Hub supports multiple campaigns in the same vault. Each campaign ha
 
 ## Create a campaign
 
-1. Open the Command Palette and run **Create New Campaign**, or select **New Campaign** from the hub (`Ctrl+Shift+M`).
+1. Open the Command Palette and run **D&D Hub: Open Setup Wizard**, or run **Create New Campaign** directly.
 2. Fill in the campaign details:
    - **Campaign Name** — the display name and folder name.
    - **Your Role** — Game Master / DM or Player.
@@ -28,9 +28,11 @@ ttrpgs/
 
 ## Switch between campaigns
 
-The plugin auto-detects the active campaign from the note you have open. If Obsidian cannot determine the campaign from the current file, the plugin prompts you to choose one.
+Open **D&D Hub: Open Campaign Home** and choose the active campaign from the dropdown.
 
-You can also set a default campaign in **Settings** → **D&D Campaign Hub** → **Campaign Settings**.
+Campaign Home is the preferred campaign switcher. Actions launched from Campaign Home, including session creation, encounter building, party tools, and content creation, use the selected campaign.
+
+The plugin still auto-detects campaign context from the note you have open when a workflow is launched outside Campaign Home. If Obsidian cannot determine the campaign from the current file, the plugin prompts you to choose one.
 
 ## Roles
 
@@ -41,15 +43,17 @@ The role is stored in `World.md` as a `role` frontmatter field.
 
 Most creation modals filter the campaign dropdown to show only campaigns where you are the GM.
 
-## Campaign Hub modal
+## Campaign Home and legacy hub
 
-Press `Ctrl+Shift+M` (Windows/Linux) or `Command+Shift+M` (macOS) to open the hub modal.
+Run **D&D Hub: Open Campaign Home** for the main campaign dashboard.
 
 ### Quick actions
 
-The hub shows a grid of creation buttons:
+Campaign Home shows the active campaign, latest session focus, party status, saved maps, audio status, recent scenes, recent maps, and suggested next steps.
 
-- New Campaign, New NPC, New PC, New Faction, New Adventure, New Encounter, New Trap, New Item, New Creature.
+Primary actions include **New Session**, **Continue Last Session**, **Create Content**, **Add Scene**, **Build Encounter**, **Open Party**, **Open Music**, and **Open Map Manager**.
+
+The older hub modal is still available through **Open D&D Campaign Hub** and `Ctrl+Shift+M` / `Command+Shift+M`.
 
 ### Browse vault
 

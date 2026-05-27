@@ -59,7 +59,7 @@ export class CreatureCreationModal extends Modal {
   // Token appearance widget
   private tokenEditor: TokenEditorWidget | null = null;
 
-  constructor(app: App, plugin: DndCampaignHubPlugin, creaturePath?: string) {
+  constructor(app: App, plugin: DndCampaignHubPlugin, creaturePath?: string, _campaignPath?: string) {
     super(app);
     this.plugin = plugin;
     if (creaturePath) {
