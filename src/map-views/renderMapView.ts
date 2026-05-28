@@ -1,4 +1,4 @@
-import { App, Menu, Modal, Notice, Setting, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
+import { App, MarkdownRenderer, Menu, Modal, Notice, Setting, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import type { MapMediaElement } from "../constants";
 import { PLAYER_MAP_VIEW_TYPE, GM_MAP_VIEW_TYPE } from "../constants";
@@ -288,6 +288,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			config.markers = savedData.markers || [];
 			config.drawings = savedData.drawings || [];
 			config.textAnnotations = savedData.textAnnotations || [];
+			config.roomAnnotations = savedData.roomAnnotations || [];
+			config.roomAnnotationDefaults = savedData.roomAnnotationDefaults || { badgeSize: 32, fontSize: 14, fontColor: '#111827' };
 			config.aoeEffects = []; // AoE effects are session-only, never persisted
 			config.tunnels = savedData.tunnels || [];
 			// Regenerate wall geometry for any tunnels loaded without cached walls (#38)
@@ -374,7 +376,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			}
 
 			// Tool state
-    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'walllight-draw' | 'elevation-paint' | 'difficult-terrain' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' | 'env-asset' = 'pan';
+    let activeTool: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'walllight-draw' | 'elevation-paint' | 'difficult-terrain' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' | 'env-asset' | 'room-annotation' = 'pan';
 		// Background editing view — controls which element type is prominent and interactable
 		type BackgroundEditView = 'all' | 'walls' | 'lights' | 'fog' | 'elevation' | 'difficult-terrain' | 'env-assets';
 		let backgroundEditView: BackgroundEditView = 'all';
@@ -436,6 +438,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		};
 		// Initialise config.envAssets if missing
 		if (!config.envAssets) config.envAssets = [];
+		if (!config.roomAnnotations) config.roomAnnotations = [];
+		if (!config.roomAnnotationDefaults) config.roomAnnotationDefaults = { badgeSize: 32, fontSize: 14, fontColor: '#111827' };
+		if (!config.roomAnnotationDefaults.fontColor) config.roomAnnotationDefaults.fontColor = '#111827';
+
+		let draggingRoomAnnotation: any | null = null;
+		let roomAnnotationDragOffset: { x: number; y: number } | null = null;
+		let roomAnnotationDragStarted = false;
 
 		// Light dragging state
 		let draggingLightIndex = -1; // Index of light being dragged (-1 = none)
@@ -1846,6 +1855,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				aoeEffects: any[];
 				tunnels: any[];
 				envAssets: any[];
+				roomAnnotations: any[];
+				roomAnnotationDefaults: any;
 				// Grid configuration
 				gridSize: number;
 				gridSizeW?: number;
@@ -1882,6 +1893,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				aoeEffects: structuredClone(config.aoeEffects || []),
 				tunnels: structuredClone(config.tunnels || []),
 				envAssets: structuredClone(config.envAssets || []),
+				roomAnnotations: structuredClone(config.roomAnnotations || []),
+				roomAnnotationDefaults: structuredClone(config.roomAnnotationDefaults || { badgeSize: 32, fontSize: 14, fontColor: '#111827' }),
 				gridSize: config.gridSize,
 				gridSizeW: config.gridSizeW,
 				gridSizeH: config.gridSizeH,
@@ -1908,6 +1921,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				config.aoeEffects = s.aoeEffects;
 				config.tunnels = s.tunnels;
 				config.envAssets = s.envAssets || [];
+				config.roomAnnotations = s.roomAnnotations || [];
+				config.roomAnnotationDefaults = s.roomAnnotationDefaults || { badgeSize: 32, fontSize: 14, fontColor: '#111827' };
+				if (!config.roomAnnotationDefaults.fontColor) config.roomAnnotationDefaults.fontColor = '#111827';
 				config.gridSize = s.gridSize;
 				config.gridSizeW = s.gridSizeW;
 				config.gridSizeH = s.gridSizeH;
@@ -2198,6 +2214,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		const highlightIcon = config.gridType === 'square' ? '⬜' : '⬡';
 		const highlightBtn = createToolBtn(commonToolGroup, highlightIcon, 'Highlight', false, false, 'h');
 		const poiBtn = createToolBtn(commonToolGroup, '📍', 'Point of Interest', false, false, 'p');
+		const roomAnnotationBtn = createToolBtn(commonToolGroup, '#', 'DM Room Note', false, false, 'n');
 		const markerBtn = createToolBtn(commonToolGroup, '🎯', 'Marker', false, false, 'm');
 		const drawBtn = createToolBtn(commonToolGroup, '✏', 'Draw', false, false, 'd');
 		const rulerBtn = createToolBtn(commonToolGroup, '📏', 'Ruler', false, false, 'r');
@@ -3084,7 +3101,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		
 		// Helper: show/hide grid tools (calibrate, move-grid) based on whether annotations exist
 		const updateGridToolsVisibility = () => {
-			const hasAnnotations = (config.highlights?.length > 0) || (config.markers?.length > 0) || (config.drawings?.length > 0) || (config.aoeEffects?.length > 0) || (config.textAnnotations?.length > 0);
+			const hasAnnotations = (config.highlights?.length > 0) || (config.markers?.length > 0) || (config.drawings?.length > 0) || (config.aoeEffects?.length > 0) || (config.textAnnotations?.length > 0) || (config.roomAnnotations?.length > 0);
 			const isHexcrawl = (config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical');
 			
 			// For hexcrawl maps, highlights are stored as col/row so grid can still be moved
@@ -4506,7 +4523,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		let startX = 0;
 		let startY = 0;
 		// Middle mouse button temporary pan state
-		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'walllight-draw' | 'elevation-paint' | 'difficult-terrain' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' | 'env-asset' | null = null;
+		let previousToolBeforePan: 'pan' | 'select' | 'highlight' | 'draw' | 'ruler' | 'target-distance' | 'eraser' | 'move-grid' | 'marker' | 'aoe' | 'fog' | 'walls' | 'lights' | 'walllight-draw' | 'elevation-paint' | 'difficult-terrain' | 'player-view' | 'poi' | 'terrain-paint' | 'climate-paint' | 'hexcrawl-move' | 'set-start-hex' | 'hex-desc' | 'magic-wand' | 'env-asset' | 'room-annotation' | null = null;
 		let isTemporaryPan = false;
 		let gridCanvas: HTMLCanvasElement | null = null;
 		let terrainCanvas: HTMLCanvasElement | null = null;
@@ -5711,6 +5728,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							ctx.fillText('↻', 0, rotY);
 							ctx.restore();
 						}
+					}
+				}
+
+				if (config.roomAnnotations && config.roomAnnotations.length > 0) {
+					if (config.activeLayer === 'DM') {
+						config.roomAnnotations.forEach((annotation: any) => {
+							drawRoomAnnotation(ctx, annotation);
+						});
 					}
 				}
 
@@ -7564,6 +7589,325 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				return null;
 			};
 
+			const getRoomAnnotationRadius = (): number => {
+				return Math.max(12, Math.min(80, (config.roomAnnotationDefaults?.badgeSize || 32) / 2));
+			};
+
+			const getRoomAnnotationBadgeSize = (annotation: any): number => {
+				return Math.max(24, Math.min(160, Number(annotation?.badgeSize || config.roomAnnotationDefaults?.badgeSize || 32)));
+			};
+
+			const getRoomAnnotationFontSize = (annotation: any): number => {
+				return Math.max(8, Math.min(72, Number(annotation?.fontSize || config.roomAnnotationDefaults?.fontSize || 14)));
+			};
+
+			const getRoomAnnotationFontColor = (annotation: any): string => {
+				return annotation?.fontColor || config.roomAnnotationDefaults?.fontColor || '#111827';
+			};
+
+			const getContrastingTextOutline = (fontColor: string): string => {
+				const hex = fontColor.replace('#', '');
+				if (!/^[0-9a-f]{6}$/i.test(hex)) return 'rgba(255, 255, 255, 0.65)';
+				const r = parseInt(hex.slice(0, 2), 16);
+				const g = parseInt(hex.slice(2, 4), 16);
+				const b = parseInt(hex.slice(4, 6), 16);
+				const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+				return luminance > 0.5 ? 'rgba(0, 0, 0, 0.55)' : 'rgba(255, 255, 255, 0.7)';
+			};
+
+			const getRoomAnnotationBounds = (annotation: any): { x: number; y: number; w: number; h: number; r: number } => {
+				const badgeSize = getRoomAnnotationBadgeSize(annotation);
+				const radius = badgeSize / 2;
+				const rawLabel = String(annotation?.label || annotation?.heading || '?').trim() || '?';
+				const fontSize = getRoomAnnotationFontSize(annotation);
+				let textWidth = rawLabel.length * fontSize * 0.62;
+				const ctx = annotationCanvas?.getContext('2d');
+				if (ctx) {
+					ctx.save();
+					ctx.font = `bold ${fontSize}px sans-serif`;
+					textWidth = ctx.measureText(rawLabel).width;
+					ctx.restore();
+				}
+				const paddingX = Math.max(10, radius * 0.45);
+				const width = Math.max(radius * 2, textWidth + paddingX * 2);
+				const height = badgeSize;
+				return {
+					x: annotation.position.x - width / 2,
+					y: annotation.position.y - height / 2,
+					w: width,
+					h: height,
+					r: radius,
+				};
+			};
+
+			const drawRoomAnnotation = (ctx: CanvasRenderingContext2D, annotation: any) => {
+				if (!annotation?.position) return;
+				const rawLabel = String(annotation.label || annotation.heading || '?').trim() || '?';
+				const bounds = getRoomAnnotationBounds(annotation);
+				ctx.save();
+				ctx.globalAlpha = config.activeLayer === 'DM' ? 1 : 0.45;
+				ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+				ctx.shadowBlur = 8;
+				ctx.fillStyle = annotation.color || '#facc15';
+				ctx.beginPath();
+				ctx.roundRect(bounds.x, bounds.y, bounds.w, bounds.h, bounds.r);
+				ctx.fill();
+				ctx.shadowBlur = 0;
+				ctx.strokeStyle = '#1f2937';
+				ctx.lineWidth = 3;
+				ctx.stroke();
+				ctx.globalAlpha = 1;
+				ctx.shadowColor = 'transparent';
+				ctx.shadowBlur = 0;
+				const fontColor = getRoomAnnotationFontColor(annotation);
+				ctx.fillStyle = fontColor;
+				const fontSize = getRoomAnnotationFontSize(annotation);
+				const label = rawLabel;
+				ctx.font = `bold ${fontSize}px sans-serif`;
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				ctx.lineWidth = Math.max(2, fontSize * 0.14);
+				ctx.strokeStyle = getContrastingTextOutline(fontColor);
+				ctx.strokeText(label, annotation.position.x, annotation.position.y);
+				ctx.fillText(label, annotation.position.x, annotation.position.y);
+				ctx.restore();
+			};
+
+			const findRoomAnnotationAtPoint = (px: number, py: number): any | null => {
+				if (config.activeLayer !== 'DM') return null;
+				if (!config.roomAnnotations) return null;
+				for (let i = config.roomAnnotations.length - 1; i >= 0; i--) {
+					const annotation = config.roomAnnotations[i];
+					const bounds = getRoomAnnotationBounds(annotation);
+					const pad = 6;
+					if (
+						px >= bounds.x - pad &&
+						px <= bounds.x + bounds.w + pad &&
+						py >= bounds.y - pad &&
+						py <= bounds.y + bounds.h + pad
+					) return annotation;
+				}
+				return null;
+			};
+
+			const getHeadingOptions = (path: string): Array<{ heading: string; level: number; line: number }> => {
+				const file = path ? plugin.app.vault.getAbstractFileByPath(path) : null;
+				if (!(file instanceof TFile)) return [];
+				const headings = plugin.app.metadataCache.getFileCache(file)?.headings || [];
+				return headings.map((h: any) => ({
+					heading: h.heading,
+					level: h.level || 1,
+					line: h.position?.start?.line ?? 0,
+				}));
+			};
+
+			const getRoomAnnotationNotePath = (annotation: any): string => annotation.notePath || notePath || '';
+
+			const getLinkedSectionExcerpt = async (annotation: any): Promise<string> => {
+				const path = getRoomAnnotationNotePath(annotation);
+				const heading = String(annotation.heading || '').trim();
+				if (!path || !heading) return '';
+				const file = plugin.app.vault.getAbstractFileByPath(path);
+				if (!(file instanceof TFile)) return '';
+				const headings = getHeadingOptions(path);
+				const current = headings.find((h) => h.heading === heading);
+				if (!current) return '';
+				const next = headings.find((h) => h.line > current.line && h.level <= current.level);
+				const content = await plugin.app.vault.cachedRead(file);
+				const lines = content.split(/\r?\n/);
+				const body = lines
+					.slice(current.line + 1, next ? next.line : undefined)
+					.join('\n')
+					.trim();
+				return body.length > 1800 ? `${body.slice(0, 1800).trim()}...` : body;
+			};
+
+			const closeRoomAnnotationPopover = () => {
+				viewport.querySelectorAll('.dnd-map-room-popover').forEach((p) => p.remove());
+			};
+
+			const showRoomAnnotationPopover = async (annotation: any, clientX: number, clientY: number) => {
+				closeRoomAnnotationPopover();
+				const popover = viewport.createDiv({ cls: 'dnd-map-room-popover' });
+				popover.addEventListener('mousedown', (ev) => ev.stopPropagation());
+				popover.addEventListener('click', (ev) => ev.stopPropagation());
+				popover.addEventListener('wheel', (ev) => ev.stopPropagation());
+				const title = popover.createDiv({ cls: 'dnd-map-room-popover-title' });
+				title.setText(annotation.heading || annotation.label || 'Room note');
+				const meta = popover.createDiv({ cls: 'dnd-map-room-popover-meta' });
+				meta.setText(getRoomAnnotationNotePath(annotation) || 'No linked note');
+				const body = popover.createDiv({ cls: 'dnd-map-room-popover-body' });
+				body.setText('Loading...');
+				const actions = popover.createDiv({ cls: 'dnd-map-room-popover-actions' });
+				const openBtn = actions.createEl('button', { text: 'Open Note' });
+				openBtn.addEventListener('click', async () => {
+					const path = getRoomAnnotationNotePath(annotation);
+					const file = path ? plugin.app.vault.getAbstractFileByPath(path) : null;
+					if (file instanceof TFile) {
+						await plugin.app.workspace.getLeaf(false).openFile(file);
+						closeRoomAnnotationPopover();
+					}
+				});
+				const editBtn = actions.createEl('button', { text: 'Edit' });
+				editBtn.addEventListener('click', () => {
+					closeRoomAnnotationPopover();
+					openRoomAnnotationModal(annotation);
+				});
+				const rect = viewport.getBoundingClientRect();
+				popover.style.left = `${Math.min(Math.max(8, clientX - rect.left + 10), Math.max(8, rect.width - 330))}px`;
+				popover.style.top = `${Math.min(Math.max(8, clientY - rect.top + 10), Math.max(8, rect.height - 220))}px`;
+				const excerpt = await getLinkedSectionExcerpt(annotation);
+				body.empty();
+				if (excerpt) {
+					await MarkdownRenderer.render(plugin.app, excerpt, body, getRoomAnnotationNotePath(annotation), plugin);
+				} else {
+					body.setText('No section preview available.');
+				}
+				setTimeout(() => {
+					const outside = (ev: MouseEvent) => {
+						if (!popover.contains(ev.target as Node)) {
+							closeRoomAnnotationPopover();
+							document.removeEventListener('mousedown', outside, true);
+						}
+					};
+					document.addEventListener('mousedown', outside, true);
+				}, 0);
+			};
+
+			const openRoomAnnotationModal = (annotation: any) => {
+				const headingOptions = getHeadingOptions(getRoomAnnotationNotePath(annotation));
+				const modal = new (class extends Modal {
+					onOpen() {
+						const { contentEl } = this;
+						contentEl.empty();
+						contentEl.addClass('dnd-room-annotation-modal');
+						contentEl.createEl('h3', { text: annotation.id ? 'Edit DM Room Note' : 'Create DM Room Note' });
+
+						let label = annotation.label || '';
+						let heading = annotation.heading || '';
+						let notePathValue = getRoomAnnotationNotePath(annotation);
+						let color = annotation.color || '#facc15';
+						let fontColor = getRoomAnnotationFontColor(annotation);
+						let badgeSize = getRoomAnnotationBadgeSize(annotation);
+						let fontSize = getRoomAnnotationFontSize(annotation);
+
+						new Setting(contentEl)
+							.setName('Label')
+							.setDesc('Short number or text shown on the DM map layer.')
+							.addText((text) => text
+								.setPlaceholder('1')
+								.setValue(label)
+								.onChange((value) => { label = value; }));
+
+						new Setting(contentEl)
+							.setName('Linked note')
+							.setDesc('Defaults to the note containing this map.')
+							.addText((text) => text
+								.setPlaceholder(notePath || 'Path/To/Note.md')
+								.setValue(notePathValue)
+								.onChange((value) => { notePathValue = value; }));
+
+						const listId = `dnd-room-heading-${Date.now()}`;
+						const datalist = contentEl.createEl('datalist', { attr: { id: listId } });
+						for (const option of headingOptions) {
+							datalist.createEl('option', { attr: { value: option.heading } });
+						}
+
+						new Setting(contentEl)
+							.setName('Section')
+							.setDesc('Choose a heading from the linked note for the quick preview.')
+							.addText((text) => {
+								text
+									.setPlaceholder('Room 1')
+									.setValue(heading)
+									.onChange((value) => {
+										heading = value;
+										if (!label.trim()) label = value.match(/\d+/)?.[0] || value.slice(0, 3);
+									});
+								text.inputEl.setAttribute('list', listId);
+							});
+
+						new Setting(contentEl)
+							.setName('Badge color')
+							.addColorPicker((picker) => picker
+								.setValue(color)
+								.onChange((value) => { color = value; }));
+
+						new Setting(contentEl)
+							.setName('Font color')
+							.addColorPicker((picker) => picker
+								.setValue(fontColor)
+								.onChange((value) => { fontColor = value; }));
+
+						new Setting(contentEl)
+							.setName('Badge size')
+							.setDesc('Height of the annotation badge. Saved as the default for this map.')
+							.addText((text) => text
+								.setPlaceholder('32')
+								.setValue(String(badgeSize))
+								.onChange((value) => {
+									badgeSize = Math.max(24, Math.min(160, parseInt(value, 10) || 32));
+								}));
+
+						new Setting(contentEl)
+							.setName('Font size')
+							.setDesc('Text size inside the badge. Saved as the default for this map.')
+							.addText((text) => text
+								.setPlaceholder('14')
+								.setValue(String(fontSize))
+								.onChange((value) => {
+									fontSize = Math.max(8, Math.min(72, parseInt(value, 10) || 14));
+								}));
+
+						new Setting(contentEl)
+							.addButton((btn) => btn
+								.setButtonText('Save')
+								.setCta()
+								.onClick(() => {
+									const now = Date.now();
+									saveToHistory();
+									annotation.id = annotation.id || `room_${now}_${Math.random().toString(36).slice(2, 8)}`;
+									annotation.label = label.trim() || heading.match(/\d+/)?.[0] || heading.trim() || '?';
+									annotation.notePath = notePathValue.trim() || notePath || '';
+									annotation.heading = heading.trim();
+									annotation.color = color;
+									annotation.fontColor = fontColor;
+									annotation.badgeSize = badgeSize;
+									annotation.fontSize = fontSize;
+									config.roomAnnotationDefaults = { badgeSize, fontSize, fontColor };
+									annotation.createdAt = annotation.createdAt || now;
+									annotation.updatedAt = now;
+									if (!config.roomAnnotations) config.roomAnnotations = [];
+									if (!config.roomAnnotations.includes(annotation)) config.roomAnnotations.push(annotation);
+									redrawAnnotations();
+									plugin.saveMapAnnotations(config, el);
+									updateGridToolsVisibility();
+									this.close();
+								}))
+							.addButton((btn) => btn
+								.setButtonText('Cancel')
+								.onClick(() => this.close()));
+					}
+				})(plugin.app);
+				modal.open();
+			};
+
+			const showRoomAnnotationContextMenu = (annotation: any, e: MouseEvent) => {
+				const menu = new Menu();
+				menu.addItem((item) => item.setTitle('Open Preview').onClick(() => showRoomAnnotationPopover(annotation, e.clientX, e.clientY)));
+				menu.addItem((item) => item.setTitle('Edit').onClick(() => openRoomAnnotationModal(annotation)));
+				menu.addSeparator();
+				menu.addItem((item) => item.setTitle('Delete').onClick(() => {
+					saveToHistory();
+					const idx = (config.roomAnnotations || []).indexOf(annotation);
+					if (idx >= 0) config.roomAnnotations.splice(idx, 1);
+					closeRoomAnnotationPopover();
+					redrawAnnotations();
+					plugin.saveMapAnnotations(config, el);
+				}));
+				menu.showAtMouseEvent(e);
+			};
+
 			const hitTestTextTransformHandle = (px: number, py: number, ta: any): TransformHandle | 'rotate' | null => {
 				const dx = px - ta.position.x;
 				const dy = py - ta.position.y;
@@ -9019,7 +9363,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					setBackgroundEditView(bgToolViewMap[tool]);
 				}
 
-			[panBtn, selectBtn, highlightBtn, poiBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, targetDistBtn, aoeBtn, fogBtn, wallsBtn, lightsBtn, elevationPaintBtn, moveGridBtn, terrainPaintBtn, climatePaintBtn, setStartHexBtn, hexDescBtn, envAssetBtn].forEach(btn => btn.removeClass('active'));
+			[panBtn, selectBtn, highlightBtn, poiBtn, roomAnnotationBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, targetDistBtn, aoeBtn, fogBtn, wallsBtn, lightsBtn, elevationPaintBtn, moveGridBtn, terrainPaintBtn, climatePaintBtn, setStartHexBtn, hexDescBtn, envAssetBtn].forEach(btn => btn.removeClass('active'));
 
 				// Cancel calibration when switching tools
 				if (isCalibrating) {
@@ -9203,6 +9547,14 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					difficultTerrainBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
 					new Notice('Difficult Terrain: Click or drag to mark tiles. Movement costs double.', 3000);
+				} else if (tool === 'room-annotation') {
+					if (config.activeLayer !== 'DM') {
+						layerButtons['DM']?.click();
+						new Notice('Switched to DM layer for room notes', 2000);
+					}
+					roomAnnotationBtn.addClass('active');
+					viewport.style.cursor = 'crosshair';
+					new Notice('DM Room Notes: Click to place or open a room note annotation', 3000);
 				} else if (tool === 'poi') {
 					poiBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
@@ -9282,6 +9634,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			});
 			poiBtn.addEventListener('click', () => {
 				setActiveTool('poi');
+			});
+			roomAnnotationBtn.addEventListener('click', () => {
+				setActiveTool('room-annotation');
 			});
 			markerBtn.addEventListener('click', async () => {
 				// Show marker picker to select or create marker
@@ -9578,6 +9933,12 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					startY = e.clientY;
 					viewport.style.cursor = 'grabbing';
 				} else if (activeTool === 'select') {
+					const roomHit = findRoomAnnotationAtPoint(mapPos.x, mapPos.y);
+					if (roomHit) {
+						showRoomAnnotationPopover(roomHit, e.clientX, e.clientY);
+						return;
+					}
+
 					// Check if clicking on a PoI icon (hexcrawl maps)
 					if ((config.gridType === 'hex-horizontal' || config.gridType === 'hex-vertical') && config.poiReferences && config.poiReferences.length > 0) {
 						const hex = pixelToHex(mapPos.x, mapPos.y);
@@ -9880,6 +10241,30 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						).open();
 					});
 					
+				} else if (activeTool === 'room-annotation') {
+					const roomHit = findRoomAnnotationAtPoint(mapPos.x, mapPos.y);
+					if (roomHit) {
+						saveToHistory();
+						draggingRoomAnnotation = roomHit;
+						roomAnnotationDragOffset = {
+							x: mapPos.x - roomHit.position.x,
+							y: mapPos.y - roomHit.position.y,
+						};
+						roomAnnotationDragStarted = false;
+						viewport.style.cursor = 'grabbing';
+					} else {
+						const annotation: any = {
+							position: { x: mapPos.x, y: mapPos.y },
+							label: String((config.roomAnnotations || []).length + 1),
+							notePath: notePath || '',
+							heading: '',
+							color: '#facc15',
+							fontColor: config.roomAnnotationDefaults?.fontColor || '#111827',
+							badgeSize: config.roomAnnotationDefaults?.badgeSize || 32,
+							fontSize: config.roomAnnotationDefaults?.fontSize || 14,
+						};
+						openRoomAnnotationModal(annotation);
+					}
 				} else if (activeTool === 'draw') {
 					if (activeDrawSubTool === 'pen') {
 						isDrawing = true;
@@ -11051,6 +11436,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						if (removed) annotEraserHadRemoval = true;
 					}
 					redrawAnnotations();
+				} else if (activeTool === 'room-annotation' && draggingRoomAnnotation && roomAnnotationDragOffset) {
+					const nextX = mapPos.x - roomAnnotationDragOffset.x;
+					const nextY = mapPos.y - roomAnnotationDragOffset.y;
+					if (
+						Math.abs(nextX - draggingRoomAnnotation.position.x) > 1 ||
+						Math.abs(nextY - draggingRoomAnnotation.position.y) > 1
+					) {
+						roomAnnotationDragStarted = true;
+					}
+					draggingRoomAnnotation.position.x = nextX;
+					draggingRoomAnnotation.position.y = nextY;
+					draggingRoomAnnotation.updatedAt = Date.now();
+					redrawAnnotations();
 				} else if (activeTool === 'eraser' && isErasing) {
 					// Brush-style eraser: continuously delete annotations under cursor while dragging
 					eraserCursorPos = { x: mapPos.x, y: mapPos.y };
@@ -11307,7 +11705,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						activeTool = previousToolBeforePan;
 						previousToolBeforePan = null;
 						// Re-highlight the correct toolbar button without opening pickers
-						[panBtn, selectBtn, highlightBtn, poiBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, targetDistBtn, aoeBtn, fogBtn, wallsBtn, lightsBtn, elevationPaintBtn, moveGridBtn, terrainPaintBtn, climatePaintBtn, setStartHexBtn, hexDescBtn, envAssetBtn].forEach(btn => btn.removeClass('active'));
+						[panBtn, selectBtn, highlightBtn, poiBtn, roomAnnotationBtn, markerBtn, drawBtn, eraserBtn, rulerBtn, targetDistBtn, aoeBtn, fogBtn, wallsBtn, lightsBtn, elevationPaintBtn, moveGridBtn, terrainPaintBtn, climatePaintBtn, setStartHexBtn, hexDescBtn, envAssetBtn].forEach(btn => btn.removeClass('active'));
 						if (activeTool === 'walls' || activeTool === 'magic-wand') wallsBtn.addClass('active');
 						else if (activeTool === 'lights' || activeTool === 'walllight-draw') lightsBtn.addClass('active');
 						else if (activeTool === 'fog') fogBtn.addClass('active');
@@ -11321,6 +11719,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						else if (activeTool === 'aoe') aoeBtn.addClass('active');
 						else if (activeTool === 'marker') markerBtn.addClass('active');
 						else if (activeTool === 'poi') poiBtn.addClass('active');
+						else if (activeTool === 'room-annotation') roomAnnotationBtn.addClass('active');
 						else if (activeTool === 'elevation-paint') elevationPaintBtn.addClass('active');
 						else if (activeTool === 'move-grid') moveGridBtn.addClass('active');
 						else if (activeTool === 'terrain-paint') terrainPaintBtn.addClass('active');
@@ -11330,6 +11729,21 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						else if (activeTool === 'env-asset') envAssetBtn.addClass('active');
 						// Restore cursor
 						viewport.style.cursor = activeTool === 'pan' ? 'grab' : 'default';
+					}
+					return;
+				}
+
+				if (activeTool === 'room-annotation' && draggingRoomAnnotation) {
+					const moved = roomAnnotationDragStarted;
+					const annotation = draggingRoomAnnotation;
+					draggingRoomAnnotation = null;
+					roomAnnotationDragOffset = null;
+					roomAnnotationDragStarted = false;
+					viewport.style.cursor = 'crosshair';
+					redrawAnnotations();
+					plugin.saveMapAnnotations(config, el);
+					if (!moved) {
+						showRoomAnnotationPopover(annotation, e.clientX, e.clientY);
 					}
 					return;
 				}
@@ -11781,6 +12195,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					textAnnotTransformStart = null;
 					textAnnotRotateStart = 0;
 					viewport.style.cursor = 'default';
+				} else if (activeTool === 'room-annotation' && draggingRoomAnnotation) {
+					draggingRoomAnnotation = null;
+					roomAnnotationDragOffset = null;
+					roomAnnotationDragStarted = false;
+					viewport.style.cursor = 'crosshair';
+					redrawAnnotations();
+					plugin.saveMapAnnotations(config, el);
 				} else if (activeTool === 'move-grid' && isDragging) {
 					isDragging = false;
 					viewport.style.cursor = 'move';
@@ -11870,7 +12291,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						m: 'marker', d: 'draw', r: 'ruler', t: 'target-distance',
 						a: 'aoe', x: 'eraser', f: 'fog', w: 'walls',
 						l: 'lights', e: 'elevation-paint', g: 'move-grid',
-						n: 'env-asset',
+						n: 'room-annotation',
 					};
 					const tool = toolMap[e.key.toLowerCase()];
 					if (tool) {
@@ -12204,6 +12625,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					return;
 				}
 				const mapPos = screenToMap(e.clientX, e.clientY);
+
+				const hitRoomAnnotation = findRoomAnnotationAtPoint(mapPos.x, mapPos.y);
+				if (hitRoomAnnotation) {
+					e.preventDefault();
+					showRoomAnnotationContextMenu(hitRoomAnnotation, e);
+					return;
+				}
 
 				// ── Text annotation context menu (draw-text or select tool) ──
 				if (activeTool === 'select' || (activeTool === 'draw' && activeDrawSubTool === 'text')) {
