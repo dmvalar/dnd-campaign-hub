@@ -11,7 +11,7 @@
 
 // ── Schema version ───────────────────────────────────────────────────
 /** Bump this whenever the annotation shape changes. */
-export const MAP_SCHEMA_VERSION = 2;
+export const MAP_SCHEMA_VERSION = 4;
 
 // ── Canonical defaults ───────────────────────────────────────────────
 /**
@@ -44,6 +44,12 @@ export function getMapAnnotationDefaults(): Record<string, any> {
     markers: [],
     drawings: [],
     textAnnotations: [],
+    roomAnnotations: [],
+    roomAnnotationDefaults: {
+      badgeSize: 32,
+      fontSize: 14,
+      fontColor: '#111827',
+    },
     tunnels: [],
     poiReferences: [],
     hexTerrains: [],

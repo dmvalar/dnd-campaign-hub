@@ -4,7 +4,7 @@
 
 import type { HexTerrain, HexClimate, HexcrawlState, TerrainType, ClimateType } from '../hexcrawl/types';
 
-export type MapTool = 'pan' | 'select' | 'draw' | 'ruler' | 'target-distance' | 'poi';
+export type MapTool = 'pan' | 'select' | 'draw' | 'ruler' | 'target-distance' | 'poi' | 'room-annotation';
 
 export type PoiType = 'settlement' | 'dungeon' | 'landmark' | 'danger' | 'quest' | 'custom';
 
@@ -65,6 +65,8 @@ export interface MapData {
   tokens: Token[];
   highlights?: HexHighlight[];
   drawings?: Drawing[];
+  roomAnnotations?: RoomAnnotation[];
+  roomAnnotationDefaults?: RoomAnnotationDefaults;
   markers?: Marker[];
   poiReferences?: PoiReference[]; // Points of Interest on hexcrawl maps
   hexTerrains?: HexTerrain[]; // Per-hex terrain assignments for hexcrawl
@@ -112,6 +114,26 @@ export interface Marker {
   icon: string;
   label?: string;
   color?: string;
+}
+
+export interface RoomAnnotation {
+  id: string;
+  position: Point;
+  label: string;
+  notePath?: string;
+  heading?: string;
+  color?: string;
+  fontColor?: string;
+  badgeSize?: number;
+  fontSize?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface RoomAnnotationDefaults {
+  badgeSize: number;
+  fontSize: number;
+  fontColor: string;
 }
 
 export interface GridDetection {
