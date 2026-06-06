@@ -525,7 +525,7 @@ requires_attunement: ${this.requiresAttunement}`;
     frontmatter += `\ncampaign: '${campaignName}'
 world: '${worldName}'
 date: ${currentDate}
-template_version: '1.2.0'
+template_version: '1.3.0'
 ---
 
 `;

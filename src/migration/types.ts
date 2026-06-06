@@ -73,7 +73,7 @@ export const TEMPLATE_VERSIONS: Record<string, string> = {
   adventure: "1.4.1",
   scene: "2.3.1",
   faction: "1.2.0",
-  item: "1.2.0",
+  item: "1.3.0",
   spell: "1.2.0",
   campaign: "1.2.1",
   trap: "1.3.2",
