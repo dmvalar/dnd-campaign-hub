@@ -689,7 +689,7 @@ date:
 
 export const ITEM_TEMPLATE = `---
 type: item
-template_version: 1.1.0
+template_version: 1.3.0
 rarity: common
 attunement: no
 ---

@@ -1145,6 +1145,20 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    {
+      id: "item-1.3.0",
+      entityTypes: ["item"],
+      targetVersion: "1.3.0",
+      description: "Ensure item notes have dynamic action buttons",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+        if (!out.includes("```dnd-hub")) {
+          out = insertAfterTitle(out, DND_HUB_BLOCK);
+        }
+        return setFrontmatterField(out, "template_version", "1.3.0");
+      },
+    },
+
     // ── Spell ────────────────────────────────────────────────────────────
 
     {
