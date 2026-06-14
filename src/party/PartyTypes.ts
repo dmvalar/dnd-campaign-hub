@@ -26,6 +26,10 @@ export interface ResolvedPartyMember {
   thp: number;
   ac: number;
   initBonus: number;
+  /** Optional encounter difficulty override for expected damage per round. */
+  combatDpr?: number;
+  /** Optional encounter difficulty override for average attack bonus. */
+  combatAttackBonus?: number;
   /** token_id from frontmatter for map integration. */
   tokenId?: string;
   /** Player name (the real person). */

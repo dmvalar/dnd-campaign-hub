@@ -646,7 +646,15 @@
 .dnd-difficulty-header {
   display: flex;
   align-items: center;
+  gap: 8px;
   margin-bottom: 10px;
+}
+
+.dnd-difficulty-label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
 }
 
 .dnd-difficulty-badge {
@@ -659,7 +667,6 @@
 }
 
 .dnd-rounds-estimate {
-  margin-left: 10px;
   opacity: 0.8;
 }
 

@@ -1121,6 +1121,10 @@ export class EncounterBuilderModal extends Modal {
     const difficultyCard = this.difficultyContainer.createDiv({ cls: "dnd-difficulty-card" });
 
     const header = difficultyCard.createDiv({ cls: "dnd-difficulty-header" });
+    header.createEl("span", {
+      text: "Combat Estimate",
+      cls: "dnd-difficulty-label"
+    });
 
     const difficultyBadge = header.createEl("span", {
       text: result.analysis.difficulty,
@@ -1176,9 +1180,26 @@ export class EncounterBuilderModal extends Modal {
           ${(enemyAEMod * 100).toFixed(0)}% efficiency
         </div>`
       : '';
+    const xp = result.analysis.xpDifficulty;
+    const dprOverrides = result.partyStats.dprOverrideCount || 0;
+    const attackOverrides = result.partyStats.attackOverrideCount || 0;
+    const partyCount = result.partyStats.memberCount || 0;
+    const overrideInfo = dprOverrides > 0 || attackOverrides > 0
+      ? `<div style="margin-bottom: 8px; opacity: 0.85;">
+          <strong>Tuned Party Stats:</strong> DPR ${dprOverrides}/${partyCount}, Attack ${attackOverrides}/${partyCount}
+        </div>`
+      : '';
+    const xpInfo = xp
+      ? `<div style="margin-bottom: 8px; padding: 8px; background: var(--background-secondary); border-radius: 4px;">
+          <strong>DMG XP Budget:</strong> ${xp.rating}
+          (${xp.adjustedXp.toLocaleString()} adjusted XP; ${xp.baseXp.toLocaleString()} base XP ×${xp.multiplier})
+        </div>`
+      : '';
 
     analysisSummary.innerHTML = `
       ${actionEconomyInfo}
+      ${overrideInfo}
+      ${xpInfo}
       <div style="margin-bottom: 8px;"><strong>📊 3-Round Analysis:</strong></div>
       <div>Party deals: <strong>${partyDamage3Rounds.toFixed(0)}</strong> damage → Enemies at <strong>${enemyHPAfter3.toFixed(0)}</strong> HP (${((enemyHPAfter3 / result.enemyStats.totalHP) * 100).toFixed(0)}%)</div>
       <div>Enemies deal: <strong>${enemyDamage3Rounds.toFixed(0)}</strong> damage → Party at <strong>${partyHPAfter3.toFixed(0)}</strong> HP (${((partyHPAfter3 / result.partyStats.totalHP) * 100).toFixed(0)}%)</div>
@@ -1308,285 +1329,10 @@ export class EncounterBuilderModal extends Modal {
   }
 
   async calculateEncounterDifficulty(): Promise<any> {
-    // First, consolidate any trap elements
-    await this.consolidateTrapElements();
-    
-    // Calculate enemy stats with real statblock data when available
-    let enemyTotalHP = 0;
-    let enemyTotalAC = 0;
-    let enemyTotalDPR = 0;
-    let enemyTotalAttackBonus = 0;
-    let enemyCount = 0;
-    
-    // Track friendly creatures to add to party
-    let friendlyTotalHP = 0;
-    let friendlyTotalAC = 0;
-    let friendlyTotalDPR = 0;
-    let friendlyTotalAttackBonus = 0;
-    let friendlyCount = 0;
-    
-    // Track Pack Tactics creatures for post-processing
-    const packTacticsCreatures: { attackBonus: number; count: number }[] = [];
-    
-    for (const creature of this.creatures) {
-      const count = creature.count || 1;
-      
-      
-      // Handle friendly creatures - add them to the party side
-      if (creature.isFriendly) {
-        
-        // Get stats for friendly creature (same logic as enemies)
-        let realStats = null;
-        if (creature.path && typeof creature.path === 'string') {
-          realStats = await this.parseStatblockStats(creature.path);
-        }
-        
-        const crStats = this.getCRStats(creature.cr);
-        const hp = creature.hp || realStats?.hp || crStats.hp;
-        const ac = creature.ac || realStats?.ac || crStats.ac;
-        const dpr = realStats?.dpr || crStats.dpr;
-        const attackBonus = realStats?.attackBonus || crStats.attackBonus;
-        
-        
-        friendlyTotalHP += hp * count;
-        friendlyTotalAC += ac * count;
-        friendlyTotalDPR += dpr * count;
-        friendlyTotalAttackBonus += attackBonus * count;
-        friendlyCount += count;
-        continue;
-      }
-      
-      // Handle traps differently from creatures
-      if (creature.isTrap && creature.trapData) {
-        const trapStats = await this.plugin.encounterBuilder.calculateTrapStats(creature.trapData);
-        
-        const hp = trapStats.hp;
-        const ac = trapStats.ac;
-        const dpr = trapStats.dpr;
-        const attackBonus = trapStats.attackBonus;
-        
-        
-        // Traps don't add to HP pool (they're hazards, not damage sponges)
-        // But they DO contribute DPR, AC (for difficulty calculation), and count as threats
-        enemyTotalAC += ac * count;
-        enemyTotalDPR += dpr * count;
-        enemyTotalAttackBonus += attackBonus * count;
-        enemyCount += count;
-        continue;
-      }
-      
-      // Try to get real stats from statblock if available
-      let realStats = null;
-      if (creature.path && typeof creature.path === 'string') {
-        realStats = await this.parseStatblockStats(creature.path);
-      }
-      
-      // Fall back to CR-based estimates if no statblock or parsing failed
-      const crStats = this.getCRStats(creature.cr);
-      
-      const hp = creature.hp || realStats?.hp || crStats.hp;
-      const ac = creature.ac || realStats?.ac || crStats.ac;
-      const dpr = realStats?.dpr || crStats.dpr;
-      const attackBonus = realStats?.attackBonus || crStats.attackBonus;
-      
-      // Track Pack Tactics for post-loop adjustment
-      if (realStats?.hasPackTactics) {
-        packTacticsCreatures.push({ attackBonus, count });
-      }
-
-      enemyTotalHP += hp * count;
-      enemyTotalAC += ac * count;
-      enemyTotalDPR += dpr * count;
-      enemyTotalAttackBonus += attackBonus * count;
-      enemyCount += count;
-    }
-    
-    // Apply Pack Tactics bonus only when the creature has allies (enemyCount > 1)
-    if (enemyCount > 1) {
-      for (const pt of packTacticsCreatures) {
-        enemyTotalAttackBonus += 4 * pt.count;
-      }
-    }
-
-    const avgEnemyAC = enemyCount > 0 ? enemyTotalAC / enemyCount : 13;
-    const avgEnemyAttackBonus = enemyCount > 0 ? enemyTotalAttackBonus / enemyCount : 3;
-    
-    // Get party stats
-    const partyMembers = await this.getPartyForDifficulty();
-    
-    let partyTotalHP = 0;
-    let partyTotalAC = 0;
-    let partyTotalDPR = 0;
-    let partyTotalAttackBonus = 0;
-    let totalLevel = 0;
-    
-    for (const member of partyMembers) {
-      const levelStats = this.getLevelStats(member.level);
-      
-      const memberHP = Number(member.hp) || 0;
-      const memberAC = Number(member.ac) || 0;
-      
-      partyTotalHP += memberHP > 0 ? memberHP : levelStats.hp;
-      partyTotalAC += memberAC > 0 ? memberAC : levelStats.ac;
-      partyTotalDPR += levelStats.dpr;
-      partyTotalAttackBonus += levelStats.attackBonus;
-      totalLevel += member.level;
-    }
-    
-    // Add friendly creatures to party totals
-    
-    partyTotalHP += friendlyTotalHP;
-    partyTotalAC += friendlyTotalAC;
-    partyTotalDPR += friendlyTotalDPR;
-    partyTotalAttackBonus += friendlyTotalAttackBonus;
-    
-    const memberCount = partyMembers.length + friendlyCount;
-    const pcMemberCount = partyMembers.length;
-    
-    let avgPartyAC: number;
-    let avgPartyAttackBonus: number;
-    let avgLevel: number;
-    let effectivePartyCount: number; // Track effective count for action economy
-    
-    if (memberCount > 0) {
-      avgPartyAC = partyTotalAC / memberCount;
-      avgPartyAttackBonus = partyTotalAttackBonus / memberCount;
-      avgLevel = pcMemberCount > 0 ? totalLevel / pcMemberCount : 3;
-      effectivePartyCount = memberCount;
-    } else {
-      const defaultStats = this.getLevelStats(3);
-      partyTotalHP = defaultStats.hp * 4;
-      partyTotalDPR = defaultStats.dpr * 4;
-      avgPartyAC = defaultStats.ac;
-      avgPartyAttackBonus = defaultStats.attackBonus;
-      avgLevel = 3;
-      effectivePartyCount = 4; // Default to 4-person party
-    }
-    
-    // Calculate hit chances
-    const partyHitChance = this.calculateHitChance(avgPartyAttackBonus, avgEnemyAC);
-    const enemyHitChance = this.calculateHitChance(avgEnemyAttackBonus, avgPartyAC);
-    
-    // === ACTION ECONOMY ADJUSTMENT ===
-    // In D&D 5e, action economy affects combat through:
-    // 1. Focus Fire: More creatures can eliminate threats faster
-    // 2. Action Efficiency: Fewer creatures waste actions on downed targets
-    // 3. Target Distribution: Very few creatures can't threaten all enemies
-    
-    const partyActionCount = effectivePartyCount;
-    const enemyActionCount = enemyCount;
-    
-    // Calculate action economy modifiers based on creature count disparity
-    let partyActionEconomyMod = 1.0;
-    let enemyActionEconomyMod = 1.0;
-    
-    if (partyActionCount > 0 && enemyActionCount > 0) {
-      const actionRatio = partyActionCount / enemyActionCount;
-      
-      if (actionRatio > 2.0) {
-        // Extreme party advantage: 6+ PCs vs 1-2 enemies
-        // Party can focus fire and chain eliminate threats
-        partyActionEconomyMod = 1.0 + Math.min((actionRatio - 1) * 0.1, 0.25); // Up to +25%
-        // Very few enemies spread damage thin, but still somewhat effective
-        enemyActionEconomyMod = Math.max(0.85, 1.0 - (actionRatio - 2) * 0.05); // Down to 85%
-      } else if (actionRatio < 0.5) {
-        // Extreme enemy advantage: outnumbered 2:1 or worse
-        // Party spread too thin, can't focus effectively
-        const inverseRatio = enemyActionCount / partyActionCount;
-        partyActionEconomyMod = Math.max(0.85, 1.0 - (inverseRatio - 2) * 0.05); // Down to 85%
-        enemyActionEconomyMod = 1.0 + Math.min((inverseRatio - 1) * 0.1, 0.25); // Up to +25%
-      }
-      // Between 0.5-2.0 ratio: relatively balanced, minimal adjustment
-    }
-    
-    // Calculate effective DPR with action economy adjustments
-    const partyBaseDPR = this.calculateEffectiveDPR(partyTotalDPR, partyHitChance);
-    const enemyBaseDPR = this.calculateEffectiveDPR(enemyTotalDPR, enemyHitChance);
-    
-    const partyEffectiveDPR = partyBaseDPR * partyActionEconomyMod;
-    const enemyEffectiveDPR = enemyBaseDPR * enemyActionEconomyMod;
-    
-    // Calculate rounds to defeat
-    const roundsToDefeatEnemies = this.calculateRoundsToDefeat(enemyTotalHP, partyEffectiveDPR);
-    const roundsToDefeatParty = this.calculateRoundsToDefeat(partyTotalHP, enemyEffectiveDPR);
-    
-    // Survival ratio
-    const survivalRatio = roundsToDefeatParty / roundsToDefeatEnemies;
-    
-    // Determine difficulty
-    let difficulty: string;
-    let difficultyColor: string;
-    
-    if (survivalRatio >= 4 || roundsToDefeatEnemies <= 1) {
-      difficulty = "Trivial";
-      difficultyColor = "#888888";
-    } else if (survivalRatio >= 2.5) {
-      difficulty = "Easy";
-      difficultyColor = "#00aa00";
-    } else if (survivalRatio >= 1.5) {
-      difficulty = "Medium";
-      difficultyColor = "#aaaa00";
-    } else if (survivalRatio >= 1.0) {
-      difficulty = "Hard";
-      difficultyColor = "#ff8800";
-    } else if (survivalRatio >= 0.6) {
-      difficulty = "Deadly";
-      difficultyColor = "#ff0000";
-    } else {
-      difficulty = "TPK Risk";
-      difficultyColor = "#880000";
-    }
-    
-    // Generate summary
-    let summary = "";
-    if (partyMembers.length === 0 && friendlyCount === 0) {
-      summary = `⚠️ No party found. Using default 4-player party (Level 3).\\n`;
-      summary += `Expected duration: ~${roundsToDefeatEnemies} round${roundsToDefeatEnemies !== 1 ? 's' : ''}.`;
-    } else {
-      const partyText = pcMemberCount > 0 ? `${pcMemberCount} PC${pcMemberCount !== 1 ? 's' : ''}` : '';
-      const friendlyText = friendlyCount > 0 ? `${friendlyCount} friendly creature${friendlyCount !== 1 ? 's' : ''}` : '';
-      const combatants = [partyText, friendlyText].filter(t => t).join(' + ');
-      
-      summary = `Party: ${combatants}`;
-      if (pcMemberCount > 0) {
-        summary += ` (Avg Level ${avgLevel.toFixed(1)})`;
-      }
-      summary += `\\n`;
-      summary += `Enemies: ${enemyCount} creatures\\n`;
-      summary += `Expected duration: ~${roundsToDefeatEnemies} round${roundsToDefeatEnemies !== 1 ? 's' : ''}`;
-    }
-    
-    return {
-      enemyStats: {
-        totalHP: enemyTotalHP,
-        avgAC: avgEnemyAC,
-        totalDPR: enemyTotalDPR,
-        avgAttackBonus: avgEnemyAttackBonus,
-        creatureCount: enemyCount
-      },
-      partyStats: {
-        totalHP: partyTotalHP,
-        avgAC: avgPartyAC,
-        totalDPR: partyTotalDPR,
-        avgAttackBonus: avgPartyAttackBonus,
-        memberCount: memberCount,
-        avgLevel: avgLevel
-      },
-      analysis: {
-        partyHitChance,
-        enemyHitChance,
-        partyEffectiveDPR,
-        enemyEffectiveDPR,
-        partyActionEconomyMod,
-        enemyActionEconomyMod,
-        roundsToDefeatEnemies,
-        roundsToDefeatParty,
-        survivalRatio,
-        difficulty,
-        difficultyColor,
-        summary
-      }
-    };
+    this.syncEncounterBuilder();
+    const result = await this.encounterBuilder.calculateEncounterDifficulty();
+    this.creatures = [...this.encounterBuilder.creatures];
+    return result;
   }
 
   generateUniqueId(): string {
@@ -1604,7 +1350,7 @@ export class EncounterBuilderModal extends Modal {
     return this.encounterBuilder.getLevelStats(level);
   }
 
-  async getPartyForDifficulty(): Promise<Array<{ level: number; hp?: number; ac?: number }>> {
+  async getPartyForDifficulty(): Promise<Array<{ level: number; hp?: number; ac?: number; combatDpr?: number; combatAttackBonus?: number }>> {
     this.syncEncounterBuilder();
     return this.encounterBuilder.getPartyForDifficulty();
   }
@@ -1778,6 +1524,8 @@ use_color_names: ${this.useColorNames}`;
               frontmatter += `\n    level: ${m.level}`;
               frontmatter += `\n    hp: ${m.maxHp}`;
               frontmatter += `\n    ac: ${m.ac}`;
+              if (m.combatDpr !== undefined) frontmatter += `\n    combat_dpr: ${m.combatDpr}`;
+              if (m.combatAttackBonus !== undefined) frontmatter += `\n    combat_attack_bonus: ${m.combatAttackBonus}`;
               if (m.notePath) frontmatter += `\n    note_path: ${this.escapeYamlString(m.notePath)}`;
               if (m.tokenId) frontmatter += `\n    token_id: ${this.escapeYamlString(m.tokenId)}`;
               if (m.initBonus !== undefined) frontmatter += `\n    init_bonus: ${m.initBonus}`;
@@ -1803,14 +1551,26 @@ difficulty:
   party_total_hp: ${diffResult.partyStats.totalHP}
   party_avg_ac: ${diffResult.partyStats.avgAC.toFixed(1)}
   party_total_dpr: ${diffResult.partyStats.totalDPR.toFixed(1)}
+  party_dpr_override_count: ${diffResult.partyStats.dprOverrideCount}
+  party_attack_override_count: ${diffResult.partyStats.attackOverrideCount}
   party_hit_chance: ${(diffResult.analysis.partyHitChance * 100).toFixed(0)}
+  party_action_economy_mod: ${diffResult.analysis.partyActionEconomyMod.toFixed(2)}
   party_effective_dpr: ${diffResult.analysis.partyEffectiveDPR.toFixed(0)}
   enemy_count: ${diffResult.enemyStats.creatureCount}
   enemy_total_hp: ${diffResult.enemyStats.totalHP}
   enemy_avg_ac: ${diffResult.enemyStats.avgAC.toFixed(1)}
   enemy_total_dpr: ${diffResult.enemyStats.totalDPR.toFixed(1)}
   enemy_hit_chance: ${(diffResult.analysis.enemyHitChance * 100).toFixed(0)}
+  enemy_action_economy_mod: ${diffResult.analysis.enemyActionEconomyMod.toFixed(2)}
   enemy_effective_dpr: ${diffResult.analysis.enemyEffectiveDPR.toFixed(0)}
+  xp_rating: ${this.escapeYamlString(diffResult.analysis.xpDifficulty.rating)}
+  base_xp: ${diffResult.analysis.xpDifficulty.baseXp}
+  adjusted_xp: ${diffResult.analysis.xpDifficulty.adjustedXp}
+  xp_multiplier: ${diffResult.analysis.xpDifficulty.multiplier}
+  easy_threshold: ${diffResult.analysis.xpDifficulty.thresholds.easy}
+  medium_threshold: ${diffResult.analysis.xpDifficulty.thresholds.medium}
+  hard_threshold: ${diffResult.analysis.xpDifficulty.thresholds.hard}
+  deadly_threshold: ${diffResult.analysis.xpDifficulty.thresholds.deadly}
   rounds_to_defeat: ${diffResult.analysis.roundsToDefeatEnemies}
   rounds_party_survives: ${diffResult.analysis.roundsToDefeatParty}
   survival_ratio: ${diffResult.analysis.survivalRatio.toFixed(2)}

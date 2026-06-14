@@ -647,6 +647,8 @@ export class PartyManagerModal extends Modal {
     addDetail("Attendance", member.absent ? "Absent" : "Present");
     addDetail("Temp HP", member.thp > 0 ? String(member.thp) : undefined);
     addDetail("Init Bonus", initVal);
+    addDetail("Combat DPR", member.combatDpr !== undefined ? String(member.combatDpr) : "Estimated");
+    addDetail("Combat Attack", member.combatAttackBonus !== undefined ? (member.combatAttackBonus >= 0 ? `+${member.combatAttackBonus}` : String(member.combatAttackBonus)) : "Estimated");
     addDetail("Token", member.tokenId ? "Assigned" : "None");
     addDetail("Note", member.notePath.split("/").pop()?.replace(".md", ""));
 
@@ -677,6 +679,7 @@ export class PartyManagerModal extends Modal {
       value: number,
       min: number,
       max: number,
+      step = "1",
     ): HTMLInputElement => {
       const row = parent.createDiv({ cls: "dnd-pm-stat-edit-row" });
       row.createSpan({ text: label, cls: "dnd-pm-detail-label" });
@@ -686,8 +689,37 @@ export class PartyManagerModal extends Modal {
           type: "number",
           min: String(min),
           max: String(max),
-          step: "1",
+          step,
           value: String(value),
+        },
+      });
+      input.addEventListener("click", (e) => e.stopPropagation());
+      input.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (e.key === "Enter") input.blur();
+      });
+      return input;
+    };
+
+    const optionalNumberInput = (
+      parent: HTMLElement,
+      label: string,
+      value: number | undefined,
+      placeholder: string,
+      min: number,
+      max: number,
+      step = "1",
+    ): HTMLInputElement => {
+      const row = parent.createDiv({ cls: "dnd-pm-stat-edit-row" });
+      row.createSpan({ text: label, cls: "dnd-pm-detail-label" });
+      const input = row.createEl("input", {
+        cls: "dnd-pm-stat-input",
+        attr: {
+          type: "number",
+          min: String(min),
+          max: String(max),
+          step,
+          placeholder,
+          value: value !== undefined ? String(value) : "",
         },
       });
       input.addEventListener("click", (e) => e.stopPropagation());
@@ -703,6 +735,11 @@ export class PartyManagerModal extends Modal {
     const maxHpInput = numberInput(editGrid, "Max HP", member.maxHp, 1, 9999);
     const acInput = numberInput(editGrid, "AC", member.ac, 0, 99);
     const initInput = numberInput(editGrid, "Init Bonus", member.initBonus, -99, 99);
+    const levelStats = this.plugin.encounterBuilder.getLevelStats(member.level);
+    const dprPlaceholder = levelStats?.dpr !== undefined ? `Estimate ${Math.round(levelStats.dpr)}` : "Estimate";
+    const attackPlaceholder = levelStats?.attackBonus !== undefined ? `Estimate +${levelStats.attackBonus}` : "Estimate";
+    const dprInput = optionalNumberInput(editGrid, "Combat DPR", member.combatDpr, dprPlaceholder, 0, 999, "0.1");
+    const attackInput = optionalNumberInput(editGrid, "Combat Attack", member.combatAttackBonus, attackPlaceholder, -99, 99, "0.1");
 
     const actions = controls.createDiv({ cls: "dnd-pm-add-row" });
 
@@ -716,6 +753,8 @@ export class PartyManagerModal extends Modal {
         maxHp,
         ac: this.readInt(acInput, member.ac, 0, 99),
         initBonus: this.readInt(initInput, member.initBonus, -99, 99),
+        combatDpr: this.readOptionalNumber(dprInput, 0, 999),
+        combatAttackBonus: this.readOptionalNumber(attackInput, -99, 99),
       });
       new Notice(`${member.name} updated`);
       this.render();
@@ -759,6 +798,13 @@ export class PartyManagerModal extends Modal {
   private readInt(input: HTMLInputElement, fallback: number, min: number, max: number): number {
     const value = parseInt(input.value);
     if (Number.isNaN(value)) return fallback;
+    return Math.max(min, Math.min(max, value));
+  }
+
+  private readOptionalNumber(input: HTMLInputElement, min: number, max: number): number | null {
+    if (input.value.trim() === "") return null;
+    const value = Number(input.value);
+    if (!Number.isFinite(value)) return null;
     return Math.max(min, Math.min(max, value));
   }
 

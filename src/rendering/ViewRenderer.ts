@@ -448,6 +448,7 @@ function renderEncounterDifficulty(el: HTMLElement, app: App, sourcePath: string
 
   // Header with difficulty badge and rounds
   const header = card.createDiv({ cls: "dnd-difficulty-header" });
+  header.createEl("span", { text: "Combat Estimate", cls: "dnd-difficulty-label" });
   const badge = header.createEl("span", { text: diff.rating, cls: "dnd-difficulty-badge" });
   badge.style.backgroundColor = diff.color;
   header.createEl("span", {
@@ -490,8 +491,28 @@ function renderEncounterDifficulty(el: HTMLElement, app: App, sourcePath: string
   const enemyHPAfter3 = Math.max(0, diff.enemy_total_hp - partyDamage3);
   const partyHPPercent = Math.round((partyHPAfter3 / diff.party_total_hp) * 100);
   const enemyHPPercent = Math.round((enemyHPAfter3 / diff.enemy_total_hp) * 100);
+  const xpComparison = diff.xp_rating
+    ? `
+    <div style="margin-bottom: 8px; padding: 8px; background: var(--background-secondary); border-radius: 4px;">
+      <strong>DMG XP Budget:</strong> ${diff.xp_rating}
+      (${Number(diff.adjusted_xp || 0).toLocaleString()} adjusted XP; ${Number(diff.base_xp || 0).toLocaleString()} base XP ×${diff.xp_multiplier || 1})
+      <div style="margin-top: 4px; opacity: 0.8;">
+        Thresholds: Easy ${Number(diff.easy_threshold || 0).toLocaleString()}, Medium ${Number(diff.medium_threshold || 0).toLocaleString()}, Hard ${Number(diff.hard_threshold || 0).toLocaleString()}, Deadly ${Number(diff.deadly_threshold || 0).toLocaleString()}
+      </div>
+    </div>`
+    : "";
+  const dprOverrides = Number(diff.party_dpr_override_count || 0);
+  const attackOverrides = Number(diff.party_attack_override_count || 0);
+  const overrideNote = dprOverrides > 0 || attackOverrides > 0
+    ? `
+    <div style="margin-bottom: 8px; opacity: 0.85;">
+      <strong>Tuned Party Stats:</strong> DPR ${dprOverrides}/${Number(diff.party_count || 0)}, Attack ${attackOverrides}/${Number(diff.party_count || 0)}
+    </div>`
+    : "";
 
   analysis.innerHTML = `
+    ${overrideNote}
+    ${xpComparison}
     <div style="margin-bottom: 8px;"><strong>📊 3-Round Analysis:</strong></div>
     <div>Party deals: <strong>${Math.round(partyDamage3)}</strong> damage → Enemies at <strong>${Math.round(enemyHPAfter3)}</strong> HP (${enemyHPPercent}%)</div>
     <div>Enemies deal: <strong>${Math.round(enemyDamage3)}</strong> damage → Party at <strong>${Math.round(partyHPAfter3)}</strong> HP (${partyHPPercent}%)</div>
