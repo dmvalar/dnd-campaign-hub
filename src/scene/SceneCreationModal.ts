@@ -1958,6 +1958,10 @@ date: ${currentDate}
     
     // Header with difficulty rating
     const header = difficultyCard.createDiv({ cls: "dnd-difficulty-header" });
+    header.createEl("span", {
+      text: "Combat Estimate",
+      cls: "dnd-difficulty-label"
+    });
     
     const difficultyBadge = header.createEl("span", {
       text: result.analysis.difficulty,
@@ -2022,7 +2026,25 @@ date: ${currentDate}
     const partyHPAfter3 = Math.max(0, result.partyStats.totalHP - enemyDamage3Rounds);
     const enemyHPAfter3 = Math.max(0, result.enemyStats.totalHP - partyDamage3Rounds);
     
+    const xp = result.analysis.xpDifficulty;
+    const dprOverrides = result.partyStats.dprOverrideCount || 0;
+    const attackOverrides = result.partyStats.attackOverrideCount || 0;
+    const partyCount = result.partyStats.memberCount || 0;
+    const overrideInfo = dprOverrides > 0 || attackOverrides > 0
+      ? `<div style="margin-bottom: 8px; opacity: 0.85;">
+          <strong>Tuned Party Stats:</strong> DPR ${dprOverrides}/${partyCount}, Attack ${attackOverrides}/${partyCount}
+        </div>`
+      : '';
+    const xpInfo = xp
+      ? `<div style="margin-bottom: 8px; padding: 8px; background: var(--background-modifier-border); border-radius: 4px;">
+          <strong>DMG XP Budget:</strong> ${xp.rating}
+          (${xp.adjustedXp.toLocaleString()} adjusted XP; ${xp.baseXp.toLocaleString()} base XP ×${xp.multiplier})
+        </div>`
+      : '';
+
     analysisSummary.innerHTML = `
+      ${overrideInfo}
+      ${xpInfo}
       <div style="margin-bottom: 8px;"><strong>📊 3-Round Analysis:</strong></div>
       <div>Party deals: <strong>${partyDamage3Rounds.toFixed(0)}</strong> damage → Enemies at <strong>${enemyHPAfter3.toFixed(0)}</strong> HP (${((enemyHPAfter3 / result.enemyStats.totalHP) * 100).toFixed(0)}%)</div>
       <div>Enemies deal: <strong>${enemyDamage3Rounds.toFixed(0)}</strong> damage → Party at <strong>${partyHPAfter3.toFixed(0)}</strong> HP (${((partyHPAfter3 / result.partyStats.totalHP) * 100).toFixed(0)}%)</div>
@@ -2220,14 +2242,26 @@ difficulty:
   party_total_hp: ${diffResult.partyStats.totalHP}
   party_avg_ac: ${diffResult.partyStats.avgAC.toFixed(1)}
   party_total_dpr: ${diffResult.partyStats.totalDPR.toFixed(1)}
+  party_dpr_override_count: ${diffResult.partyStats.dprOverrideCount}
+  party_attack_override_count: ${diffResult.partyStats.attackOverrideCount}
   party_hit_chance: ${(diffResult.analysis.partyHitChance * 100).toFixed(0)}
+  party_action_economy_mod: ${diffResult.analysis.partyActionEconomyMod.toFixed(2)}
   party_effective_dpr: ${diffResult.analysis.partyEffectiveDPR.toFixed(0)}
   enemy_count: ${diffResult.enemyStats.creatureCount}
   enemy_total_hp: ${diffResult.enemyStats.totalHP}
   enemy_avg_ac: ${diffResult.enemyStats.avgAC.toFixed(1)}
   enemy_total_dpr: ${diffResult.enemyStats.totalDPR.toFixed(1)}
   enemy_hit_chance: ${(diffResult.analysis.enemyHitChance * 100).toFixed(0)}
+  enemy_action_economy_mod: ${diffResult.analysis.enemyActionEconomyMod.toFixed(2)}
   enemy_effective_dpr: ${diffResult.analysis.enemyEffectiveDPR.toFixed(0)}
+  xp_rating: ${this.escapeYamlString(diffResult.analysis.xpDifficulty.rating)}
+  base_xp: ${diffResult.analysis.xpDifficulty.baseXp}
+  adjusted_xp: ${diffResult.analysis.xpDifficulty.adjustedXp}
+  xp_multiplier: ${diffResult.analysis.xpDifficulty.multiplier}
+  easy_threshold: ${diffResult.analysis.xpDifficulty.thresholds.easy}
+  medium_threshold: ${diffResult.analysis.xpDifficulty.thresholds.medium}
+  hard_threshold: ${diffResult.analysis.xpDifficulty.thresholds.hard}
+  deadly_threshold: ${diffResult.analysis.xpDifficulty.thresholds.deadly}
   rounds_to_defeat: ${diffResult.analysis.roundsToDefeatEnemies}
   rounds_party_survives: ${diffResult.analysis.roundsToDefeatParty}
   survival_ratio: ${diffResult.analysis.survivalRatio.toFixed(2)}

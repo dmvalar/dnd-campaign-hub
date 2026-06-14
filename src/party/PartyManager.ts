@@ -18,6 +18,8 @@ export interface PartyMemberStatUpdate {
   thp?: number;
   ac?: number;
   initBonus?: number;
+  combatDpr?: number | null;
+  combatAttackBonus?: number | null;
 }
 
 /**
@@ -454,6 +456,11 @@ export class PartyManager {
     const fm = parsed.frontmatter;
     const text = (value: unknown): string | undefined => value == null || value === "" ? undefined : String(value);
     const int = (value: unknown): number => parseInt(String(value ?? ""));
+    const optionalNumber = (value: unknown): number | undefined => {
+      if (value == null || value === "") return undefined;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
 
     return {
       name: text(fm.name) || file.basename,
@@ -464,6 +471,8 @@ export class PartyManager {
       thp: int(fm.thp) || 0,
       ac: int(fm.ac) || 10,
       initBonus: parseInt(String(fm.init_bonus || "0").replace(/[^-\d]/g, "")) || 0,
+      combatDpr: optionalNumber(fm.combat_dpr),
+      combatAttackBonus: optionalNumber(fm.combat_attack_bonus),
       tokenId: text(fm.token_id),
       player: text(fm.player),
       race: text(fm.race) || text(fm.type),
@@ -496,6 +505,14 @@ export class PartyManager {
       if (updates.thp !== undefined) out.thp = Math.max(0, Math.round(updates.thp));
       if (updates.ac !== undefined) out.ac = Math.max(0, Math.round(updates.ac));
       if (updates.initBonus !== undefined) out.init_bonus = Math.round(updates.initBonus);
+      if (updates.combatDpr !== undefined) {
+        if (updates.combatDpr === null) delete out.combat_dpr;
+        else out.combat_dpr = Math.max(0, Math.round(updates.combatDpr * 10) / 10);
+      }
+      if (updates.combatAttackBonus !== undefined) {
+        if (updates.combatAttackBonus === null) delete out.combat_attack_bonus;
+        else out.combat_attack_bonus = Math.round(updates.combatAttackBonus * 10) / 10;
+      }
       return out;
     });
 

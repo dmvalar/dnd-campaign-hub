@@ -1,6 +1,7 @@
 import { App, Notice, TFile, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
 import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
+import { calculateActionEconomyModifiers, calculateXpDifficulty } from "./DifficultyMath";
 
 // Trap-related interfaces
 export interface TrapElement {
@@ -155,10 +156,10 @@ export class EncounterBuilder {
     return { id: party.id, name: party.name };
   }
 
-  async getPartyForDifficulty(): Promise<Array<{ level: number; hp?: number; ac?: number }>> {
+  async getPartyForDifficulty(): Promise<Array<{ level: number; hp?: number; ac?: number; combatDpr?: number; combatAttackBonus?: number }>> {
     if (!this.includeParty) return [];
 
-    const partyMembers: Array<{ level: number; hp?: number; ac?: number }> = [];
+    const partyMembers: Array<{ level: number; hp?: number; ac?: number; combatDpr?: number; combatAttackBonus?: number }> = [];
 
     try {
       const party = this.resolveParty();
@@ -171,6 +172,8 @@ export class EncounterBuilder {
           level: m.level,
           hp: m.maxHp,
           ac: m.ac,
+          combatDpr: m.combatDpr,
+          combatAttackBonus: m.combatAttackBonus,
         });
       }
     } catch (error) {
@@ -201,6 +204,8 @@ export class EncounterBuilder {
           ac: m.ac,
           currentAC: m.ac,
           thp: m.thp,
+          combatDpr: m.combatDpr,
+          combatAttackBonus: m.combatAttackBonus,
           path: m.notePath,
           note: m.notePath,
           tokenId: m.tokenId,
@@ -1140,6 +1145,7 @@ export class EncounterBuilder {
     let enemyTotalAC = 0;
     let enemyTotalDPR = 0;
     let enemyTotalAttackBonus = 0;
+    let enemyBaseXP = 0;
     let enemyCount = 0;
     
     // Track friendly creatures to add to party
@@ -1222,6 +1228,7 @@ export class EncounterBuilder {
       enemyTotalAC += ac * count;
       enemyTotalDPR += dpr * count;
       enemyTotalAttackBonus += attackBonus * count;
+      enemyBaseXP += crStats.xp * count;
       enemyCount += count;
     }
     
@@ -1245,6 +1252,9 @@ export class EncounterBuilder {
     let partyTotalDPR = 0;
     let partyTotalAttackBonus = 0;
     let totalLevel = 0;
+    const partyLevels: number[] = [];
+    let partyDprOverrideCount = 0;
+    let partyAttackOverrideCount = 0;
 
     for (const member of partyMembers) {
       const levelStats = this.getLevelStats(member.level);
@@ -1254,9 +1264,20 @@ export class EncounterBuilder {
 
       partyTotalHP += memberHP > 0 ? memberHP : levelStats.hp;
       partyTotalAC += memberAC > 0 ? memberAC : levelStats.ac;
-      partyTotalDPR += levelStats.dpr;
-      partyTotalAttackBonus += levelStats.attackBonus;
+      if (member.combatDpr !== undefined) {
+        partyTotalDPR += member.combatDpr;
+        partyDprOverrideCount++;
+      } else {
+        partyTotalDPR += levelStats.dpr;
+      }
+      if (member.combatAttackBonus !== undefined) {
+        partyTotalAttackBonus += member.combatAttackBonus;
+        partyAttackOverrideCount++;
+      } else {
+        partyTotalAttackBonus += levelStats.attackBonus;
+      }
       totalLevel += member.level;
+      partyLevels.push(member.level);
     }
     
     // Add friendly creatures to party totals
@@ -1272,11 +1293,13 @@ export class EncounterBuilder {
     let avgPartyAC: number;
     let avgPartyAttackBonus: number;
     let avgLevel: number;
+    let effectivePartyActionCount: number;
 
     if (memberCount > 0) {
       avgPartyAC = partyTotalAC / memberCount;
       avgPartyAttackBonus = partyTotalAttackBonus / memberCount;
       avgLevel = pcMemberCount > 0 ? totalLevel / pcMemberCount : 3;
+      effectivePartyActionCount = memberCount;
     } else {
       const defaultStats = this.getLevelStats(3);
       partyTotalHP = defaultStats.hp * 4;
@@ -1284,15 +1307,21 @@ export class EncounterBuilder {
       avgPartyAC = defaultStats.ac;
       avgPartyAttackBonus = defaultStats.attackBonus;
       avgLevel = 3;
+      effectivePartyActionCount = 4;
+      partyLevels.push(3, 3, 3, 3);
     }
 
     // Calculate hit chances
     const partyHitChance = this.calculateHitChance(avgPartyAttackBonus, avgEnemyAC);
     const enemyHitChance = this.calculateHitChance(avgEnemyAttackBonus, avgPartyAC);
 
+    const { partyActionEconomyMod, enemyActionEconomyMod } = calculateActionEconomyModifiers(effectivePartyActionCount, enemyCount);
+
     // Calculate effective DPR
-    const partyEffectiveDPR = this.calculateEffectiveDPR(partyTotalDPR, partyHitChance);
-    const enemyEffectiveDPR = this.calculateEffectiveDPR(enemyTotalDPR, enemyHitChance);
+    const partyBaseDPR = this.calculateEffectiveDPR(partyTotalDPR, partyHitChance);
+    const enemyBaseDPR = this.calculateEffectiveDPR(enemyTotalDPR, enemyHitChance);
+    const partyEffectiveDPR = partyBaseDPR * partyActionEconomyMod;
+    const enemyEffectiveDPR = enemyBaseDPR * enemyActionEconomyMod;
 
     // Calculate rounds to defeat
     const roundsToDefeatEnemies = this.calculateRoundsToDefeat(enemyTotalHP, partyEffectiveDPR);
@@ -1325,6 +1354,9 @@ export class EncounterBuilder {
       difficultyColor = "#880000";
     }
 
+    const xpPartyLevels = partyLevels.length > 0 ? partyLevels : [3, 3, 3, 3];
+    const xpDifficulty = calculateXpDifficulty(enemyBaseXP, enemyCount, xpPartyLevels);
+
     // Generate summary
     let summary = "";
     if (partyMembers.length === 0 && friendlyCount === 0) {
@@ -1350,6 +1382,7 @@ export class EncounterBuilder {
         avgAC: avgEnemyAC,
         totalDPR: enemyTotalDPR,
         avgAttackBonus: avgEnemyAttackBonus,
+        baseXP: enemyBaseXP,
         creatureCount: enemyCount
       },
       partyStats: {
@@ -1358,18 +1391,23 @@ export class EncounterBuilder {
         totalDPR: partyTotalDPR,
         avgAttackBonus: avgPartyAttackBonus,
         memberCount: memberCount,
-        avgLevel: avgLevel
+        avgLevel: avgLevel,
+        dprOverrideCount: partyDprOverrideCount,
+        attackOverrideCount: partyAttackOverrideCount
       },
       analysis: {
         partyHitChance,
         enemyHitChance,
         partyEffectiveDPR,
         enemyEffectiveDPR,
+        partyActionEconomyMod,
+        enemyActionEconomyMod,
         roundsToDefeatEnemies,
         roundsToDefeatParty,
         survivalRatio,
         difficulty,
         difficultyColor,
+        xpDifficulty,
         summary
       }
     };

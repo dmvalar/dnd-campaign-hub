@@ -13,6 +13,7 @@
 import type { SRDMonster } from "./SRDApiClient";
 import { SRDApiClient } from "./SRDApiClient";
 import { getMonstersForEnvironment } from "./EnvironmentMapping";
+import { calculateActionEconomyModifiers } from "./DifficultyMath";
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -314,8 +315,12 @@ export class EncounterGenerator {
     const partyHitChance = this.diffCalc.calculateHitChance(partyStats.avgAttackBonus, crStats.ac);
     const enemyHitChance = this.diffCalc.calculateHitChance(crStats.attackBonus, partyStats.avgAC);
 
-    const partyEffectiveDPR = partyStats.totalDPR * partyHitChance;
-    const enemyEffectiveDPR = enemyDPR * enemyHitChance;
+    const { partyActionEconomyMod, enemyActionEconomyMod } = calculateActionEconomyModifiers(
+      partyStats.count,
+      monsterCount,
+    );
+    const partyEffectiveDPR = partyStats.totalDPR * partyHitChance * partyActionEconomyMod;
+    const enemyEffectiveDPR = enemyDPR * enemyHitChance * enemyActionEconomyMod;
 
     if (partyEffectiveDPR <= 0) return "TPK Risk";
     if (enemyEffectiveDPR <= 0) return "Trivial";

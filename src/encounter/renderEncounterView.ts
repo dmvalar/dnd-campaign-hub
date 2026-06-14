@@ -321,7 +321,7 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 		const diff = fm.difficulty;
 		if (diff) {
 			const badge = header.createEl('span', {
-				text: diff.rating,
+				text: `Combat ${diff.rating}`,
 				cls: 'dnd-difficulty-badge'
 			});
 			badge.style.backgroundColor = diff.color || '#888888';
@@ -348,6 +348,13 @@ export async function renderEncounterView(plugin: DndCampaignHubPlugin, source: 
 				text: `\u23f1\ufe0f ~${diff.rounds_to_defeat} rounds`,
 				cls: 'dnd-encounter-stat'
 			});
+
+			if (diff.xp_rating) {
+				statsRow.createEl('span', {
+					text: `DMG XP Budget ${diff.xp_rating}`,
+					cls: 'dnd-encounter-stat'
+				});
+			}
 		}
 
 		// Creature summary (collapsed by default)
