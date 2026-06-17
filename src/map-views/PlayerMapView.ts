@@ -123,6 +123,8 @@ export class PlayerMapView extends ItemView {
   private initiativeOverlayEl: HTMLDivElement | null = null;
   private prevInitiativeState: Map<string, { hp: number; maxHP: number; tempHP: number; ac: number; statuses: string }> = new Map();
   private prevInitiativeActiveId: string | null = null;
+  private initiativeFocusReturnTimer: ReturnType<typeof setTimeout> | null = null;
+  private initiativeScrollAnimationId: number | null = null;
   private syncCanvasToImage: (() => void) | null = null;
   private isFullscreen: boolean = false; // Track fullscreen state
   private _pvFlickerFrameId: number | null = null; // Flicker animation loop for player view
@@ -543,6 +545,75 @@ export class PlayerMapView extends ItemView {
       .join('|');
   }
 
+  private clearInitiativeFocusReturnTimer() {
+    if (this.initiativeFocusReturnTimer) {
+      clearTimeout(this.initiativeFocusReturnTimer);
+      this.initiativeFocusReturnTimer = null;
+    }
+  }
+
+  private cancelInitiativeScrollAnimation() {
+    if (this.initiativeScrollAnimationId !== null) {
+      cancelAnimationFrame(this.initiativeScrollAnimationId);
+      this.initiativeScrollAnimationId = null;
+    }
+  }
+
+  private initiativeRowScrollTarget(list: HTMLElement, row: HTMLElement): number {
+    const listRect = list.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    return list.scrollTop + rowRect.top - listRect.top;
+  }
+
+  private fitInitiativeListToVisibleRows(list: HTMLElement, visibleRows: number, anchorRow?: HTMLElement | null) {
+    const rows = Array.from(list.querySelectorAll<HTMLElement>('.dnd-player-initiative-row'));
+    if (rows.length <= visibleRows) {
+      list.style.maxHeight = '';
+      return;
+    }
+
+    const requestedIndex = anchorRow ? rows.indexOf(anchorRow) : 0;
+    const startIndex = Math.max(0, Math.min(requestedIndex, Math.max(0, rows.length - visibleRows)));
+    const first = rows[startIndex];
+    const last = rows[Math.min(rows.length - 1, startIndex + visibleRows - 1)];
+    if (!first || !last) return;
+
+    const firstRect = first.getBoundingClientRect();
+    const lastRect = last.getBoundingClientRect();
+    const height = lastRect.bottom - firstRect.top;
+    list.style.maxHeight = `${Math.ceil(height)}px`;
+  }
+
+  private smoothInitiativeScrollTo(list: HTMLElement, target: number, duration: number, onDone?: () => void) {
+    this.cancelInitiativeScrollAnimation();
+    const start = list.scrollTop;
+    const maxScroll = Math.max(0, list.scrollHeight - list.clientHeight);
+    const clampedTarget = Math.max(0, Math.min(target, maxScroll));
+    const distance = clampedTarget - start;
+    if (Math.abs(distance) < 1) {
+      onDone?.();
+      return;
+    }
+
+    const startTime = performance.now();
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+      list.scrollTop = start + distance * eased;
+
+      if (progress < 1) {
+        this.initiativeScrollAnimationId = requestAnimationFrame(step);
+      } else {
+        this.initiativeScrollAnimationId = null;
+        onDone?.();
+      }
+    };
+    this.initiativeScrollAnimationId = requestAnimationFrame(step);
+  }
+
   private renderInitiativeHP(parent: HTMLElement, combatant: Combatant, isAlly: boolean): HTMLElement {
     const hpWrap = parent.createDiv({ cls: 'dnd-player-initiative-hp' });
     const pct = combatant.maxHP > 0 ? Math.max(0, Math.min(1, combatant.currentHP / combatant.maxHP)) : 0;
@@ -583,6 +654,8 @@ export class PlayerMapView extends ItemView {
       }
       this.prevInitiativeState.clear();
       this.prevInitiativeActiveId = null;
+      this.clearInitiativeFocusReturnTimer();
+      this.cancelInitiativeScrollAnimation();
       return;
     }
 
@@ -592,6 +665,8 @@ export class PlayerMapView extends ItemView {
         this.initiativeOverlayEl.remove();
         this.initiativeOverlayEl = null;
       }
+      this.clearInitiativeFocusReturnTimer();
+      this.cancelInitiativeScrollAnimation();
       return;
     }
 
@@ -606,6 +681,7 @@ export class PlayerMapView extends ItemView {
       : 'medium';
     overlay.removeClass('size-compact', 'size-medium', 'size-large', 'size-huge', 'size-fullscreen');
     overlay.addClass(`size-${size}`);
+    const previousScrollTop = (overlay.querySelector('.dnd-player-initiative-list') as HTMLElement | null)?.scrollTop || 0;
     overlay.empty();
 
     const header = overlay.createDiv({ cls: 'dnd-player-initiative-header' });
@@ -616,27 +692,37 @@ export class PlayerMapView extends ItemView {
     });
 
     const list = overlay.createDiv({ cls: 'dnd-player-initiative-list' });
+    list.scrollTop = previousScrollTop;
     const activeId = state.started ? state.combatants[state.turnIndex]?.id : null;
     const activeChanged = activeId !== this.prevInitiativeActiveId;
-    const activeVisibleIndex = activeId ? visibleCombatants.findIndex((c) => c.id === activeId) : -1;
-    const ordered = activeVisibleIndex >= 0
-      ? [...visibleCombatants.slice(activeVisibleIndex), ...visibleCombatants.slice(0, activeVisibleIndex)]
-      : visibleCombatants;
+    const previousState = new Map(this.prevInitiativeState);
+    const changedCombatant = visibleCombatants.find((combatant) => {
+      const previous = previousState.get(combatant.id);
+      if (!previous) return false;
+      const statusSignature = this.initiativeStatusSignature(combatant);
+      return combatant.currentHP !== previous.hp
+        || combatant.maxHP !== previous.maxHP
+        || combatant.tempHP !== previous.tempHP
+        || combatant.currentAC !== previous.ac
+        || statusSignature !== previous.statuses;
+    });
     const maxRows = size === 'fullscreen' ? 18 : size === 'huge' ? 14 : size === 'large' ? 10 : size === 'compact' ? 4 : 6;
-    const shown = ordered.slice(0, maxRows);
+    list.style.setProperty('--dnd-player-initiative-visible-rows', String(maxRows));
 
-    for (const combatant of shown) {
+    for (const combatant of visibleCombatants) {
       const isActive = !!activeId && combatant.id === activeId;
+      const isFocusedChange = !!changedCombatant && combatant.id === changedCombatant.id;
       const isAlly = combatant.player || combatant.friendly;
       const isDead = combatant.dead ?? combatant.currentHP <= 0;
-      const previous = this.prevInitiativeState.get(combatant.id);
+      const previous = previousState.get(combatant.id);
       const statusSignature = this.initiativeStatusSignature(combatant);
       const rowClasses = ['dnd-player-initiative-row'];
       if (isActive) rowClasses.push('is-active');
+      if (isFocusedChange && !isActive) rowClasses.push('is-focus-change');
       if (isAlly) rowClasses.push('is-ally');
       else rowClasses.push('is-enemy');
       if (isDead) rowClasses.push('is-dead');
-      if (previous) {
+      if (previous && !isFocusedChange) {
         if (combatant.currentHP < previous.hp) rowClasses.push('is-damaged');
         else if (combatant.currentHP > previous.hp) rowClasses.push('is-healed');
         if (combatant.tempHP !== previous.tempHP) rowClasses.push('is-temp-changed');
@@ -648,6 +734,7 @@ export class PlayerMapView extends ItemView {
       }
       const row = list.createDiv({
         cls: rowClasses.join(' '),
+        attr: { 'data-combatant-id': combatant.id },
       });
       row.createEl('span', {
         cls: 'dnd-player-initiative-score',
@@ -682,13 +769,13 @@ export class PlayerMapView extends ItemView {
         }
       }
       const hpWrap = this.renderInitiativeHP(row, combatant, isAlly);
-      if (previous && combatant.currentHP !== previous.hp) {
+      if (previous && !isFocusedChange && combatant.currentHP !== previous.hp) {
         const delta = combatant.currentHP - previous.hp;
         hpWrap.createEl('span', {
           cls: `dnd-player-initiative-hp-delta ${delta > 0 ? 'is-heal' : 'is-damage'}`,
           text: `${delta > 0 ? '+' : ''}${delta}`,
         });
-      } else if (previous && combatant.tempHP !== previous.tempHP) {
+      } else if (previous && !isFocusedChange && combatant.tempHP !== previous.tempHP) {
         const delta = combatant.tempHP - previous.tempHP;
         hpWrap.createEl('span', {
           cls: `dnd-player-initiative-hp-delta ${delta > 0 ? 'is-temp-gain' : 'is-temp-loss'}`,
@@ -698,21 +785,85 @@ export class PlayerMapView extends ItemView {
       if (isActive) {
         row.createEl('span', { cls: 'dnd-player-initiative-turn', text: 'Turn' });
       }
-
+    }
+    for (const combatant of visibleCombatants) {
       this.prevInitiativeState.set(combatant.id, {
         hp: combatant.currentHP,
         maxHP: combatant.maxHP,
         tempHP: combatant.tempHP,
         ac: combatant.currentAC,
-        statuses: statusSignature,
+        statuses: this.initiativeStatusSignature(combatant),
       });
     }
     this.prevInitiativeActiveId = activeId || null;
 
-    if (ordered.length > shown.length) {
+    if (visibleCombatants.length > maxRows) {
       overlay.createDiv({
         cls: 'dnd-player-initiative-more',
-        text: `+${ordered.length - shown.length} more`,
+        text: `${visibleCombatants.length} participants`,
+      });
+    }
+
+    this.clearInitiativeFocusReturnTimer();
+    if (changedCombatant && activeId) {
+      const changedId = changedCombatant.id;
+      requestAnimationFrame(() => {
+        const changedRow = list.querySelector(`[data-combatant-id="${CSS.escape(changedId)}"]`) as HTMLElement | null;
+        const activeRow = list.querySelector(`[data-combatant-id="${CSS.escape(activeId)}"]`) as HTMLElement | null;
+        if (!changedRow) return;
+        this.fitInitiativeListToVisibleRows(list, maxRows, changedRow);
+
+        this.smoothInitiativeScrollTo(list, this.initiativeRowScrollTarget(list, changedRow), 900, () => {
+          const previous = previousState.get(changedId);
+          if (previous) {
+            const current = visibleCombatants.find((c) => c.id === changedId);
+            if (current) {
+              const currentStatus = this.initiativeStatusSignature(current);
+              if (current.currentHP < previous.hp) changedRow.addClass('is-damaged');
+              else if (current.currentHP > previous.hp) changedRow.addClass('is-healed');
+              if (current.tempHP !== previous.tempHP) changedRow.addClass('is-temp-changed');
+              if (current.currentAC !== previous.ac) changedRow.addClass('is-ac-changed');
+              if (currentStatus !== previous.statuses) changedRow.addClass('is-status-changed');
+
+              const hpWrap = changedRow.querySelector('.dnd-player-initiative-hp') as HTMLElement | null;
+              if (hpWrap && current.currentHP !== previous.hp) {
+                const delta = current.currentHP - previous.hp;
+                hpWrap.createEl('span', {
+                  cls: `dnd-player-initiative-hp-delta ${delta > 0 ? 'is-heal' : 'is-damage'}`,
+                  text: `${delta > 0 ? '+' : ''}${delta}`,
+                });
+              } else if (hpWrap && current.tempHP !== previous.tempHP) {
+                const delta = current.tempHP - previous.tempHP;
+                hpWrap.createEl('span', {
+                  cls: `dnd-player-initiative-hp-delta ${delta > 0 ? 'is-temp-gain' : 'is-temp-loss'}`,
+                  text: `${delta > 0 ? '+' : ''}${delta} THP`,
+                });
+              }
+            }
+          }
+
+          if (changedId !== activeId) {
+            this.initiativeFocusReturnTimer = setTimeout(() => {
+              this.initiativeFocusReturnTimer = null;
+              if (activeRow?.isConnected) {
+                this.fitInitiativeListToVisibleRows(list, maxRows, activeRow);
+                this.smoothInitiativeScrollTo(list, this.initiativeRowScrollTarget(list, activeRow), 900);
+              }
+            }, 1200);
+          }
+        });
+      });
+    } else {
+      requestAnimationFrame(() => {
+        const activeRow = activeId
+          ? list.querySelector(`[data-combatant-id="${CSS.escape(activeId)}"]`) as HTMLElement | null
+          : null;
+        if (activeRow) {
+          this.fitInitiativeListToVisibleRows(list, maxRows, activeRow);
+          this.smoothInitiativeScrollTo(list, this.initiativeRowScrollTarget(list, activeRow), activeChanged ? 700 : 300);
+        } else {
+          this.fitInitiativeListToVisibleRows(list, maxRows);
+        }
       });
     }
   }
