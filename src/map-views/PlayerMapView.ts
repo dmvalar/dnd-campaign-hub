@@ -520,7 +520,9 @@ export class PlayerMapView extends ItemView {
   }
 
   private getVisibleInitiativeCombatants(state: CombatState): Combatant[] {
-    return state.combatants.filter((c) => c && !c.hidden && (c.enabled ?? true));
+    return state.combatants.filter((c) =>
+      c && !c.hidden && (c.enabled ?? true) && !this.plugin.combatTracker.isDefeatedHostile(c)
+    );
   }
 
   private hpColor(pct: number): string {
