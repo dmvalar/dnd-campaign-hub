@@ -59,6 +59,56 @@ export class PlayerMapView extends ItemView {
   private isTokenGroup(marker: any): boolean {
     return !!marker?.tokenGroup?.members?.length;
   }
+
+  private getTokenGroupMemberCenter(groupMarker: any): { x: number; y: number } {
+    const members: any[] = groupMarker?.tokenGroup?.members || [];
+    const positioned = members.filter((member: any) =>
+      Number.isFinite(member?.position?.x) && Number.isFinite(member?.position?.y)
+    );
+    if (positioned.length === 0) {
+      return {
+        x: groupMarker?.position?.x || 0,
+        y: groupMarker?.position?.y || 0,
+      };
+    }
+    return {
+      x: positioned.reduce((sum: number, member: any) => sum + member.position.x, 0) / positioned.length,
+      y: positioned.reduce((sum: number, member: any) => sum + member.position.y, 0) / positioned.length,
+    };
+  }
+
+  private getTokenGroupMemberWorldPosition(groupMarker: any, _member: any, _center: { x: number; y: number }): { x: number; y: number } {
+    // Collapsed groups are represented by one visible token. Vision and token
+    // lights must originate there, otherwise hidden member offsets can peek
+    // into rooms the displayed group token has not actually entered.
+    return {
+      x: groupMarker?.position?.x || 0,
+      y: groupMarker?.position?.y || 0,
+    };
+  }
+
+  private expandTokenGroupForVision(marker: any): any[] {
+    if (!this.isTokenGroup(marker)) return [marker];
+    const members: any[] = marker.tokenGroup?.members || [];
+    const center = this.getTokenGroupMemberCenter(marker);
+    return members.map((member: any, index: number) => {
+      const source = {
+        ...member,
+        id: `${marker.id}::member::${member.id || member.markerId || index}`,
+        tokenGroupId: marker.id,
+        position: this.getTokenGroupMemberWorldPosition(marker, member, center),
+        layer: marker.layer || member.layer || 'Player',
+        visibleToPlayers: !!marker.visibleToPlayers || !!member.visibleToPlayers,
+      };
+      delete source.tokenGroup;
+      return source;
+    });
+  }
+
+  private markerMatchesVisionSelection(marker: any, selectedVisionTokenId?: string | null): boolean {
+    if (!selectedVisionTokenId) return true;
+    return marker.id === selectedVisionTokenId || marker.tokenGroupId === selectedVisionTokenId;
+  }
   // Tabletop mode state
   private tabletopMode: boolean = true;
   private tabletopPanX: number = 0;
@@ -350,6 +400,19 @@ export class PlayerMapView extends ItemView {
       n(m.darkvision || 0);
       n(m.truesight || 0);
       n(this.isTokenGroup(m) ? (m.tokenGroup.members?.length || 0) : 0);
+      if (this.isTokenGroup(m)) {
+        const members: any[] = m.tokenGroup.members || [];
+        for (let j = 0; j < members.length; j++) {
+          const member = members[j];
+          n(member.position?.x || 0); n(member.position?.y || 0);
+          n(member.tokenGroupOffset?.x || 0); n(member.tokenGroupOffset?.y || 0);
+          n(member.darkvision || 0); n(member.truesight || 0);
+          n(member.light?.bright || 0); n(member.light?.dim || 0);
+          n(member.visibleToPlayers ? 1 : 0);
+          if (member.markerId) s(member.markerId);
+          if (member.layer) s(member.layer);
+        }
+      }
       n(m.light?.bright || 0); n(m.light?.dim || 0);
       n(m.visibleToPlayers ? 1 : 0);
       if (m.elevation) { n(m.elevation.height || 0); n(m.elevation.depth || 0); }
@@ -2132,7 +2195,8 @@ export class PlayerMapView extends ItemView {
     
 
     // Track players who are in tunnels - used for drawing tunnel above fog
-    const tunnelPlayersInMarkers = playerTokens.filter((m: any) => m.tunnelState);
+    const playerVisionTokens = playerTokens.flatMap((m: any) => this.expandTokenGroupForVision(m));
+    const tunnelPlayersInMarkers = playerVisionTokens.filter((m: any) => m.tunnelState);
 
     // Draw tunnel entrances and exits (always visible on surface - these are physical holes)
     if (config.tunnels && config.tunnels.length > 0) {
@@ -2162,13 +2226,18 @@ export class PlayerMapView extends ItemView {
     // Determine which player tokens are vision-relevant for tunnel visibility checks.
     // When a specific vision token is selected, ONLY that token can "see" into tunnels.
     // A surface token should never see underground tokens, and vice versa.
+    const selectedVisionSources = config.selectedVisionTokenId
+      ? playerVisionTokens.filter((m: any) => this.markerMatchesVisionSelection(m, config.selectedVisionTokenId))
+      : [];
     const selectedVisionToken = config.selectedVisionTokenId
-      ? playerTokens.find((m: any) => m.id === config.selectedVisionTokenId)
+      ? (selectedVisionSources[0] || playerTokens.find((m: any) => m.id === config.selectedVisionTokenId))
       : null;
-    const selectedVisionIsInTunnel = !!(selectedVisionToken && selectedVisionToken.tunnelState);
+    const selectedVisionIsInTunnel = selectedVisionSources.length > 0
+      ? selectedVisionSources.some((m: any) => !!m.tunnelState)
+      : !!(selectedVisionToken && selectedVisionToken.tunnelState);
     const visionRelevantTokens: any[] = config.selectedVisionTokenId
-      ? (selectedVisionToken ? [selectedVisionToken] : [])
-      : playerTokens; // Default: all player tokens (incl. visibleToPlayers) contribute to vision
+      ? selectedVisionSources
+      : playerVisionTokens; // Default: all player tokens (incl. visibleToPlayers) contribute to vision
 
     // Draw non-player markers (these will be obscured by fog)
     // Filter out burrowed tokens unless they're marked as visible to players OR visible to a player in the same tunnel
@@ -2423,12 +2492,12 @@ export class PlayerMapView extends ItemView {
       // 60ft darkvision should NOT be visible because the true 3D distance (80ft)
       // exceeds the vision range (60ft).
       const hasFog = config.fogOfWar && config.fogOfWar.enabled;
-      if (hasFog && m.elevation && (m.elevation.height > 0 || m.elevation.depth > 0) && playerTokens.length > 0) {
+      if (hasFog && m.elevation && (m.elevation.height > 0 || m.elevation.depth > 0) && visionRelevantTokens.length > 0) {
         const tokenElev = (m.elevation.height || 0) - (m.elevation.depth || 0);
         const pixelsPerFootLocal = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
         
         let visibleToAnyPlayer = false;
-        for (const playerMarker of playerTokens) {
+        for (const playerMarker of visionRelevantTokens) {
           // Get this player's max vision range in feet
           let playerVisionFeet = 0;
           if (playerMarker.darkvision && playerMarker.darkvision > 0) {
@@ -4347,6 +4416,20 @@ export class PlayerMapView extends ItemView {
       n(m.darkvision || 0);
       n(m.truesight || 0);
       n(this.isTokenGroup(m) ? (m.tokenGroup.members?.length || 0) : 0);
+      if (this.isTokenGroup(m)) {
+        const members: any[] = m.tokenGroup.members || [];
+        for (let j = 0; j < members.length; j++) {
+          const member = members[j];
+          n(member.position?.x || 0); n(member.position?.y || 0);
+          n(member.tokenGroupOffset?.x || 0); n(member.tokenGroupOffset?.y || 0);
+          n(member.darkvision || 0); n(member.truesight || 0);
+          n(member.light?.bright || 0); n(member.light?.dim || 0);
+          if (member.light?.type) s(member.light.type);
+          n(member.visibleToPlayers ? 1 : 0);
+          if (member.layer) s(member.layer);
+          if (member.markerId) s(member.markerId);
+        }
+      }
       n(m.light?.bright || 0); n(m.light?.dim || 0);
       if (m.light?.type) s(m.light.type);
       n(m.visibleToPlayers ? 1 : 0);
@@ -4555,8 +4638,10 @@ export class PlayerMapView extends ItemView {
     // Note: Marker lights don't have an active property - they're always active
     // SKIP lights from tunnel tokens - they don't reveal above-ground fog
     // Lights are physical and illuminate the area regardless of whose vision is selected
-    if (config.markers && config.markers.length > 0) {
-      config.markers.forEach((marker: any) => {
+    const markerVisionSources = (config.markers || []).flatMap((marker: any) => this.expandTokenGroupForVision(marker));
+
+    if (markerVisionSources.length > 0) {
+      markerVisionSources.forEach((marker: any) => {
         if (marker.light && marker.light.bright !== undefined) {
           // Skip lights from tokens in tunnels
           if (marker.tunnelState) {
@@ -4582,8 +4667,8 @@ export class PlayerMapView extends ItemView {
     // Otherwise, use all player-type tokens + visibleToPlayers tokens (default combined vision)
     // SKIP tokens in tunnels (underground) - they don't reveal above-ground fog
     const playerTokens: { x: number; y: number; darkvision: number; truesight: number; elevation: number }[] = [];
-    if (config.markers && config.markers.length > 0) {
-      config.markers.forEach((marker: any) => {
+    if (markerVisionSources.length > 0) {
+      markerVisionSources.forEach((marker: any) => {
         if ((marker.layer || 'Player') === 'DM') return;
 
         // Skip tokens in tunnels (underground)
@@ -4592,16 +4677,16 @@ export class PlayerMapView extends ItemView {
         }
 
         const markerDef = marker.markerId ? this.plugin.markerLibrary.getMarker(marker.markerId) : null;
-        if (!markerDef && !this.isTokenGroup(marker)) return;
+        if (!markerDef) return;
         
         // Determine if this token should contribute to vision
         let includeToken = false;
         if (config.selectedVisionTokenId) {
           // Single-token mode: only include the selected token (any type)
-          includeToken = (marker.id === config.selectedVisionTokenId);
+          includeToken = this.markerMatchesVisionSelection(marker, config.selectedVisionTokenId);
         } else {
           // Default mode: player tokens + visibleToPlayers tokens contribute to vision
-          includeToken = (this.isTokenGroup(marker) && !!marker.visibleToPlayers) || markerDef?.type === 'player' || !!marker.visibleToPlayers;
+          includeToken = markerDef?.type === 'player' || !!marker.visibleToPlayers;
         }
         
         if (includeToken) {
@@ -4896,8 +4981,8 @@ export class PlayerMapView extends ItemView {
     // Respects selectedVisionTokenId: single-token mode uses only the selected token (any type)
     // Default mode uses all player-type tokens + visibleToPlayers tokens
     const darkvisionMarkers: any[] = [];
-    if (config.markers && config.markers.length > 0) {
-      config.markers.forEach((marker: any) => {
+    if (markerVisionSources.length > 0) {
+      markerVisionSources.forEach((marker: any) => {
         if ((marker.layer || 'Player') === 'DM') return;
         if (!marker.darkvision || marker.darkvision <= 0) return;
         
@@ -4907,16 +4992,16 @@ export class PlayerMapView extends ItemView {
         }
         
         const markerDef = marker.markerId ? this.plugin.markerLibrary.getMarker(marker.markerId) : null;
-        if (!markerDef && !this.isTokenGroup(marker)) return;
+        if (!markerDef) return;
         
         // Determine if this token should contribute to darkvision
         let includeToken = false;
         if (config.selectedVisionTokenId) {
           // Single-token mode: only include the selected token (any type)
-          includeToken = (marker.id === config.selectedVisionTokenId);
+          includeToken = this.markerMatchesVisionSelection(marker, config.selectedVisionTokenId);
         } else {
           // Default mode: player tokens + visibleToPlayers tokens contribute
-          includeToken = (this.isTokenGroup(marker) && !!marker.visibleToPlayers) || markerDef?.type === 'player' || !!marker.visibleToPlayers;
+          includeToken = markerDef?.type === 'player' || !!marker.visibleToPlayers;
         }
         
         if (includeToken) {
