@@ -41,6 +41,16 @@ export class CombatTracker {
     return this.state.combatants[this.state.turnIndex] ?? null;
   }
 
+  isDefeatedHostile(c: Combatant | null | undefined): boolean {
+    if (!c) return false;
+    if (c.player || c.friendly) return false;
+    return !!c.dead || c.currentHP <= 0;
+  }
+
+  isTurnEligible(c: Combatant | null | undefined): boolean {
+    return !!c && (c.enabled ?? true) && !this.isDefeatedHostile(c);
+  }
+
   /* ────────────────── Start / End Combat ────────────────── */
 
   /**
@@ -241,19 +251,31 @@ export class CombatTracker {
     // Tick down status durations on the combatant whose turn is ending
     this.tickStatuses(this.state.turnIndex);
 
-    // Find next enabled combatant
+    // Find next turn-eligible combatant. Defeated hostiles stay in the
+    // encounter data, but do not consume turns.
     const len = this.state.combatants.length;
     let next = this.state.turnIndex;
+    let nextRound = this.state.round;
+    let foundEligible = false;
     for (let i = 0; i < len; i++) {
       next++;
       if (next >= len) {
         next = 0;
-        this.state.round++;
+        nextRound++;
       }
       const c = this.state.combatants[next];
-      if (c && (c.enabled ?? true)) break;
+      if (this.isTurnEligible(c)) {
+        foundEligible = true;
+        break;
+      }
+    }
+    if (!foundEligible) {
+      this.emit();
+      new Notice("No active combatants left to advance to.");
+      return;
     }
     this.state.turnIndex = next;
+    this.state.round = nextRound;
 
     const current = this.state.combatants[this.state.turnIndex];
     this.emit();
@@ -266,10 +288,25 @@ export class CombatTracker {
   prevTurn(): void {
     if (!this.state || !this.state.started) return;
 
-    this.state.turnIndex--;
-    if (this.state.turnIndex < 0) {
-      this.state.turnIndex = this.state.combatants.length - 1;
-      this.state.round = Math.max(1, this.state.round - 1);
+    const len = this.state.combatants.length;
+    let prev = this.state.turnIndex;
+    let prevRound = this.state.round;
+    let foundEligible = false;
+    for (let i = 0; i < len; i++) {
+      prev--;
+      if (prev < 0) {
+        prev = len - 1;
+        prevRound = Math.max(1, prevRound - 1);
+      }
+      const c = this.state.combatants[prev];
+      if (this.isTurnEligible(c)) {
+        foundEligible = true;
+        break;
+      }
+    }
+    if (foundEligible) {
+      this.state.turnIndex = prev;
+      this.state.round = prevRound;
     }
 
     this.emit();

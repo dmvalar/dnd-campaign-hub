@@ -68,7 +68,7 @@ export class CombatPlayerView extends ItemView {
 
     // Count visible combatants to compute dynamic sizing
     const visibleCount = state.combatants.filter(
-      (c) => c && !c.hidden && (c.enabled ?? true),
+      (c) => c && !c.hidden && (c.enabled ?? true) && !this.plugin.combatTracker.isDefeatedHostile(c),
     ).length;
     // Budget: header ~3.2em, each row ~2.8em, row gaps ~0.3em, padding ~2.5em
     const overhead = 3.2 + 2.5;
@@ -91,7 +91,7 @@ export class CombatPlayerView extends ItemView {
 
     for (let i = 0; i < state.combatants.length; i++) {
       const c = state.combatants[i];
-      if (!c || c.hidden || !(c.enabled ?? true)) continue;
+      if (!c || c.hidden || !(c.enabled ?? true) || this.plugin.combatTracker.isDefeatedHostile(c)) continue;
 
       const isActive = state.started && i === state.turnIndex;
       const isDead = c.dead ?? (c.currentHP <= 0);

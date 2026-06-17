@@ -889,8 +889,12 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
   padding: 4px 0;
   margin-bottom: 6px;
+  background: var(--background-primary);
   border-bottom: 1px solid var(--background-modifier-border);
 }
 .dnd-ct-toolbar-btn {
@@ -1008,6 +1012,25 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.dnd-ct-defeated-section {
+  margin-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 6px;
+}
+
+.dnd-ct-defeated-summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.82em;
+  font-weight: 650;
+  padding: 4px 8px;
+  user-select: none;
+}
+
+.dnd-ct-defeated-list {
+  margin-top: 4px;
 }
 
 /* ── Combatant row ── */

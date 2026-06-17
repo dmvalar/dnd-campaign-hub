@@ -202,7 +202,7 @@ export class CombatTrackerView extends ItemView {
     }
 
     // Combatant summary
-    const alive = state.combatants.filter(c => c.currentHP > 0 && (c.enabled ?? true));
+    const alive = state.combatants.filter(c => (c.enabled ?? true) && !this.plugin.combatTracker.isDefeatedHostile(c));
     const total = state.combatants.length;
     const summary = header.createEl("div", { cls: "dnd-ct-encounter-summary" });
     summary.textContent = `${alive.length}/${total} active`;
@@ -224,10 +224,15 @@ export class CombatTrackerView extends ItemView {
   private renderCombatantList(container: HTMLElement, tracker: CombatTracker, state: CombatState) {
     const list = container.createDiv({ cls: "dnd-ct-list" });
     let draggedCombatantId: string | null = null;
+    const defeatedHostiles: Array<{ combatant: Combatant; index: number }> = [];
 
     for (let i = 0; i < state.combatants.length; i++) {
       const c = state.combatants[i];
       if (!c) continue;
+      if (tracker.isDefeatedHostile(c)) {
+        defeatedHostiles.push({ combatant: c, index: i });
+        continue;
+      }
       const isActive = state.started && i === state.turnIndex;
       this.renderCombatantRow(list, tracker, c, isActive, state, {
         canDragTie: state.started && state.combatants.some(other => other.id !== c.id && other.initiative === c.initiative),
@@ -235,6 +240,20 @@ export class CombatTrackerView extends ItemView {
         setDraggedId: (id) => {
           draggedCombatantId = id;
         },
+      });
+    }
+
+    if (defeatedHostiles.length > 0) {
+      const details = container.createEl("details", { cls: "dnd-ct-defeated-section" });
+      const summary = details.createEl("summary", { cls: "dnd-ct-defeated-summary" });
+      summary.textContent = `Defeated enemies (${defeatedHostiles.length})`;
+      const defeatedList = details.createDiv({ cls: "dnd-ct-list dnd-ct-defeated-list" });
+      defeatedHostiles.forEach(({ combatant, index }) => {
+        this.renderCombatantRow(defeatedList, tracker, combatant, state.started && index === state.turnIndex, state, {
+          canDragTie: false,
+          getDraggedId: () => null,
+          setDraggedId: () => {},
+        });
       });
     }
   }

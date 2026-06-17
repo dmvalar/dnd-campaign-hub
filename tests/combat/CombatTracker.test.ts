@@ -160,6 +160,39 @@ describe("combat/CombatTracker", () => {
     expect(state.round).toBe(2);
   });
 
+  it("skips defeated hostile combatants but keeps downed PCs in turn order", async () => {
+    const { tracker } = createTracker();
+    await seedCombat(
+      tracker,
+      [
+        { name: "Goblin", count: 1, hp: 10, ac: 13, path: "[SRD]" },
+        { name: "Orc", count: 1, hp: 12, ac: 13, path: "[SRD]" },
+      ],
+      [{ name: "Aelar", level: 3, hp: 18, ac: 15 }],
+    );
+
+    const idByName = (name: string) => tracker.getState()!.combatants.find((c) => c.name === name)!.id;
+    const goblinId = idByName("Goblin");
+    const orcId = idByName("Orc");
+    const pcId = idByName("Aelar");
+
+    tracker.setInitiative(goblinId, 20);
+    tracker.setInitiative(orcId, 15);
+    tracker.setInitiative(pcId, 10);
+
+    (tracker as any).state.started = true;
+    (tracker as any).state.round = 1;
+    (tracker as any).state.turnIndex = 0;
+
+    tracker.setHP(orcId, 0);
+    tracker.setHP(pcId, 0);
+
+    tracker.nextTurn();
+    const state = tracker.getState()!;
+    expect(state.combatants[state.turnIndex]?.name).toBe("Aelar");
+    expect(state.round).toBe(1);
+  });
+
   it("keeps trap initiative counts fixed when rolling initiative", async () => {
     const { tracker } = createTracker();
     await seedCombat(tracker, [
