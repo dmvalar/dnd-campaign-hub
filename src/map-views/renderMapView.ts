@@ -5732,11 +5732,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				}
 
 				if (config.roomAnnotations && config.roomAnnotations.length > 0) {
-					if (config.activeLayer === 'DM') {
-						config.roomAnnotations.forEach((annotation: any) => {
-							drawRoomAnnotation(ctx, annotation);
-						});
-					}
+					config.roomAnnotations.forEach((annotation: any) => {
+						drawRoomAnnotation(ctx, annotation);
+					});
 				}
 
 				// Draw Annotation Eraser cursor
@@ -7674,7 +7672,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			};
 
 			const findRoomAnnotationAtPoint = (px: number, py: number): any | null => {
-				if (config.activeLayer !== 'DM') return null;
 				if (!config.roomAnnotations) return null;
 				for (let i = config.roomAnnotations.length - 1; i >= 0; i--) {
 					const annotation = config.roomAnnotations[i];
@@ -7701,7 +7698,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				}));
 			};
 
-			const getRoomAnnotationNotePath = (annotation: any): string => annotation.notePath || notePath || '';
+			const noteHasHeading = (path: string, heading: string): boolean => {
+				if (!path || !heading) return false;
+				return getHeadingOptions(path).some((h) => h.heading === heading);
+			};
+
+			const getRoomAnnotationNotePath = (annotation: any): string => {
+				const storedPath = annotation.notePath || '';
+				if (storedPath && plugin.app.vault.getAbstractFileByPath(storedPath) instanceof TFile) return storedPath;
+				const fallbackPath = notePath || '';
+				const heading = String(annotation.heading || '').trim();
+				if (fallbackPath && (!heading || noteHasHeading(fallbackPath, heading))) return fallbackPath;
+				return storedPath || fallbackPath;
+			};
 
 			const getLinkedSectionExcerpt = async (annotation: any): Promise<string> => {
 				const path = getRoomAnnotationNotePath(annotation);
@@ -9548,10 +9557,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					viewport.style.cursor = 'crosshair';
 					new Notice('Difficult Terrain: Click or drag to mark tiles. Movement costs double.', 3000);
 				} else if (tool === 'room-annotation') {
-					if (config.activeLayer !== 'DM') {
-						layerButtons['DM']?.click();
-						new Notice('Switched to DM layer for room notes', 2000);
-					}
 					roomAnnotationBtn.addClass('active');
 					viewport.style.cursor = 'crosshair';
 					new Notice('DM Room Notes: Click to place or open a room note annotation', 3000);
