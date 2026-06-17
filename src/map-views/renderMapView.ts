@@ -1049,6 +1049,29 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				return clone;
 			};
 
+			const setTokenGroupMemberOffset = (groupMarker: any, member: any) => {
+				member.tokenGroupOffset = {
+					x: (member.position?.x || 0) - (groupMarker.position?.x || 0),
+					y: (member.position?.y || 0) - (groupMarker.position?.y || 0),
+				};
+			};
+
+			const expandTokenGroupForCollapsedVision = (marker: any): any[] => {
+				if (!isTokenGroup(marker)) return [marker];
+				return (marker.tokenGroup.members || []).map((member: any, index: number) => {
+					const source = {
+						...member,
+						id: `${marker.id}::member::${member.id || member.markerId || index}`,
+						tokenGroupId: marker.id,
+						position: { x: marker.position?.x || 0, y: marker.position?.y || 0 },
+						layer: marker.layer || member.layer || 'Player',
+						visibleToPlayers: !!marker.visibleToPlayers || !!member.visibleToPlayers,
+					};
+					delete source.tokenGroup;
+					return source;
+				});
+			};
+
 			const recomputeTokenGroupVision = (groupMarker: any) => {
 				const members: any[] = groupMarker.tokenGroup?.members || [];
 				const visionKeys = ['darkvision', 'blindsight', 'tremorsense', 'truesight'] as const;
@@ -1207,6 +1230,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					borderColor: '#ffffff',
 					pixelSize: Math.max(40, ((config.gridSizeW || config.gridSize || 70) + (config.gridSizeH || config.gridSize || 70)) / 2),
 				};
+				members.forEach((member) => setTokenGroupMemberOffset(groupMarker, member));
 				recomputeTokenGroupVision(groupMarker);
 				uniqueIndices.slice().sort((a, b) => b - a).forEach((i) => config.markers.splice(i, 1));
 				config.markers.push(groupMarker);
@@ -1246,7 +1270,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					.map((i) => config.markers[i])
 					.filter(Boolean);
 				tokensToAdd.forEach((marker: any) => {
-					groupMarker.tokenGroup.members.push(cloneMarkerForGroup(marker));
+					const member = cloneMarkerForGroup(marker);
+					setTokenGroupMemberOffset(groupMarker, member);
+					groupMarker.tokenGroup.members.push(member);
 					if (selectedVisionTokenId === marker.id) selectedVisionTokenId = groupMarker.id;
 				});
 				target.tokenIndices
@@ -8888,14 +8914,16 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				}
 				if (config.markers) {
 					for (const marker of config.markers as any[]) {
-						if (marker.light && marker.light.bright !== undefined && !marker.tunnelState) {
-							previewLights.push({
-								x: marker.position.x, y: marker.position.y,
-								bright: marker.light.bright, dim: marker.light.dim,
-								type: marker.light.type || '', customColor: marker.light.customColor,
-								name: marker.light.name || 'Token Light',
-								elevation: (marker.elevation?.height || 0) - (marker.elevation?.depth || 0),
-							});
+						for (const lightSourceMarker of expandTokenGroupForCollapsedVision(marker)) {
+							if (lightSourceMarker.light && lightSourceMarker.light.bright !== undefined && !lightSourceMarker.tunnelState) {
+								previewLights.push({
+									x: lightSourceMarker.position.x, y: lightSourceMarker.position.y,
+									bright: lightSourceMarker.light.bright, dim: lightSourceMarker.light.dim,
+									type: lightSourceMarker.light.type || '', customColor: lightSourceMarker.light.customColor,
+									name: lightSourceMarker.light.name || 'Token Light',
+									elevation: (lightSourceMarker.elevation?.height || 0) - (lightSourceMarker.elevation?.depth || 0),
+								});
+							}
 						}
 					}
 				}
