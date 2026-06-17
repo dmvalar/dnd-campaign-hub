@@ -5,6 +5,32 @@ import type { CombatTracker } from "./CombatTracker";
 import type { Combatant, CombatState, StatusEffect, SyncPreviewEntry } from "./types";
 import { enumerateScreens, screenKey, type ScreenInfo } from "../utils/ScreenEnumeration";
 import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
+import { startEncounterFromFile } from "../encounter/renderEncounterView";
+
+type CombatLauncherEntry =
+  | { kind: "saved"; name: string; label: string; detail: string; scoreText: string }
+  | { kind: "encounter"; file: TFile; label: string; detail: string; scoreText: string };
+
+function compactSearchText(value: string): string {
+  return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function scoreCombatLauncherEntry(entry: CombatLauncherEntry, query: string): number {
+  if (!query.trim()) return 1;
+  const haystack = compactSearchText(`${entry.label} ${entry.detail}`);
+  const needle = compactSearchText(query.trim());
+  if (haystack.includes(needle)) return 100 + needle.length;
+
+  let score = 0;
+  let pos = 0;
+  for (const ch of needle) {
+    const hit = haystack.indexOf(ch, pos);
+    if (hit < 0) return 0;
+    score += Math.max(1, 12 - (hit - pos));
+    pos = hit + 1;
+  }
+  return score;
+}
 
 /**
  * Sidebar view for the Combat Tracker — styled to match Initiative Tracker.
@@ -82,24 +108,108 @@ export class CombatTrackerView extends ItemView {
     const empty = container.createDiv({ cls: "dnd-ct-empty" });
     empty.createEl("p", { text: "No active combat." });
     empty.createEl("p", {
-      text: "Run an encounter to start, or resume a saved state.",
+      text: "Search encounters to start, or resume a saved combat.",
       cls: "dnd-ct-hint",
     });
 
-    // Show saved combats for quick resume
-    const saved = this.plugin.settings.combatStates;
-    if (saved && Object.keys(saved).length > 0) {
-      const resumeSection = container.createDiv({ cls: "dnd-ct-resume-section" });
-      resumeSection.createEl("h4", { text: "Saved Combats" });
-      for (const name of Object.keys(saved)) {
+    const launcher = container.createDiv({ cls: "dnd-ct-launcher" });
+    const searchInput = launcher.createEl("input", {
+      cls: "dnd-ct-launcher-search",
+      attr: {
+        type: "search",
+        placeholder: "Search saved combats and encounter notes...",
+        spellcheck: "false",
+      },
+    });
+    const resultList = launcher.createDiv({ cls: "dnd-ct-launcher-results" });
+
+    const entries: CombatLauncherEntry[] = [];
+    const saved = this.plugin.settings.combatStates || {};
+    for (const name of Object.keys(saved)) {
         const info = this.plugin.combatTracker.getSavedStateInfo(name);
         if (!info) continue;
-        const row = resumeSection.createDiv({ cls: "dnd-ct-resume-row" });
-        row.createEl("span", { text: `${name} — Round ${info.round}, ${info.combatantCount} combatants` });
-        const btn = row.createEl("button", { text: "▶ Resume", cls: "dnd-ct-btn dnd-ct-btn-primary" });
-        btn.addEventListener("click", () => this.plugin.combatTracker.resumeCombat(name));
-      }
+      entries.push({
+        kind: "saved",
+        name,
+        label: name,
+        detail: `Round ${info.round}, ${info.combatantCount} combatants`,
+        scoreText: `${name} saved combat round ${info.round}`,
+      });
     }
+
+    const encounterFiles = this.app.vault.getMarkdownFiles()
+      .filter((file) => this.app.metadataCache.getFileCache(file)?.frontmatter?.type === "encounter")
+      .sort((a, b) => a.basename.localeCompare(b.basename));
+    for (const file of encounterFiles) {
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      const label = fm?.encounter_name || fm?.name || file.basename;
+      const creatures = Array.isArray(fm?.creatures) ? fm.creatures.length : 0;
+      const partyText = fm?.include_party === false ? "no party" : "party included";
+      entries.push({
+        kind: "encounter",
+        file,
+        label,
+        detail: `${creatures} creature${creatures === 1 ? "" : "s"} • ${partyText} • ${file.parent?.path || "Vault"}`,
+        scoreText: `${label} ${file.path}`,
+      });
+    }
+
+    const renderResults = () => {
+      resultList.empty();
+      const query = searchInput.value;
+      const filtered = entries
+        .map((entry) => ({
+          entry,
+          score: scoreCombatLauncherEntry({ ...entry, detail: `${entry.detail} ${entry.scoreText}` }, query),
+        }))
+        .filter((item) => item.score > 0)
+        .sort((a, b) => b.score - a.score || a.entry.label.localeCompare(b.entry.label))
+        .slice(0, 30)
+        .map((item) => item.entry);
+
+      if (filtered.length === 0) {
+        resultList.createDiv({
+          cls: "dnd-ct-launcher-empty",
+          text: entries.length === 0 ? "No saved combats or encounter notes found." : "No matches.",
+        });
+        return;
+      }
+
+      for (const entry of filtered) {
+        const row = resultList.createDiv({ cls: `dnd-ct-launcher-row dnd-ct-launcher-${entry.kind}` });
+        const main = row.createDiv({ cls: "dnd-ct-launcher-main" });
+        main.createEl("span", {
+          cls: "dnd-ct-launcher-kind",
+          text: entry.kind === "saved" ? "Saved" : "Encounter",
+        });
+        main.createEl("span", { cls: "dnd-ct-launcher-title", text: entry.label });
+        main.createEl("span", { cls: "dnd-ct-launcher-detail", text: entry.detail });
+
+        const actions = row.createDiv({ cls: "dnd-ct-launcher-actions" });
+        if (entry.kind === "saved") {
+          const resumeBtn = actions.createEl("button", { text: "▶ Resume", cls: "dnd-ct-btn dnd-ct-btn-primary" });
+          resumeBtn.addEventListener("click", () => this.plugin.combatTracker.resumeCombat(entry.name));
+        } else {
+          const runBtn = actions.createEl("button", { text: "⚔ Run", cls: "dnd-ct-btn dnd-ct-btn-primary" });
+          runBtn.addEventListener("click", () => {
+            void startEncounterFromFile(this.plugin, entry.file);
+          });
+          const openBtn = actions.createEl("button", { text: "Open", cls: "dnd-ct-btn" });
+          openBtn.addEventListener("click", () => {
+            void this.app.workspace.openLinkText(entry.file.path, "");
+          });
+        }
+      }
+    };
+
+    searchInput.addEventListener("input", renderResults);
+    searchInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      const first = resultList.querySelector("button.dnd-ct-btn-primary") as HTMLButtonElement | null;
+      first?.click();
+    });
+
+    renderResults();
   }
 
   /* ═══════════════════════ Toolbar ═══════════════════════ */
@@ -1703,18 +1813,70 @@ class LoadEncounterModal extends Modal {
       return;
     }
 
+    const search = contentEl.createEl("input", {
+      cls: "dnd-ct-launcher-search",
+      attr: {
+        type: "search",
+        placeholder: "Search encounters...",
+        spellcheck: "false",
+      },
+    });
     const listEl = contentEl.createDiv({ cls: "dnd-ct-encounter-list" });
-    for (const enc of encounters) {
-      const cache = this.app.metadataCache.getFileCache(enc);
-      const name = cache?.frontmatter?.encounter_name || enc.basename;
-      const row = listEl.createDiv({ cls: "dnd-ct-encounter-list-row" });
-      row.createEl("span", { text: name, cls: "dnd-ct-encounter-list-name" });
-      const openBtn = row.createEl("button", { text: "Open", cls: "dnd-ct-btn" });
-      openBtn.addEventListener("click", () => {
-        this.app.workspace.openLinkText(enc.path, "");
-        this.close();
-      });
-    }
+    const render = () => {
+      listEl.empty();
+      const query = search.value;
+      const filtered = encounters
+        .map((file) => {
+          const cache = this.app.metadataCache.getFileCache(file);
+          const name = cache?.frontmatter?.encounter_name || cache?.frontmatter?.name || file.basename;
+          const detail = file.path;
+          return {
+            file,
+            name,
+            detail,
+            score: scoreCombatLauncherEntry({
+              kind: "encounter",
+              file,
+              label: name,
+              detail,
+              scoreText: `${name} ${detail}`,
+            }, query),
+          };
+        })
+        .filter((entry) => entry.score > 0)
+        .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+
+      if (filtered.length === 0) {
+        listEl.createDiv({ cls: "dnd-ct-launcher-empty", text: "No matches." });
+        return;
+      }
+
+      for (const enc of filtered) {
+        const row = listEl.createDiv({ cls: "dnd-ct-encounter-list-row" });
+        const nameWrap = row.createDiv({ cls: "dnd-ct-encounter-list-name" });
+        nameWrap.createEl("span", { text: enc.name });
+        nameWrap.createEl("span", { text: enc.detail, cls: "dnd-ct-launcher-detail" });
+        const runBtn = row.createEl("button", { text: "⚔ Run", cls: "dnd-ct-btn dnd-ct-btn-primary" });
+        runBtn.addEventListener("click", () => {
+          void startEncounterFromFile(this.plugin, enc.file);
+          this.close();
+        });
+        const openBtn = row.createEl("button", { text: "Open", cls: "dnd-ct-btn" });
+        openBtn.addEventListener("click", () => {
+          this.app.workspace.openLinkText(enc.file.path, "");
+          this.close();
+        });
+      }
+    };
+
+    search.addEventListener("input", render);
+    search.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      const first = listEl.querySelector("button.dnd-ct-btn-primary") as HTMLButtonElement | null;
+      first?.click();
+    });
+    render();
+    search.focus();
   }
 
   onClose() {
