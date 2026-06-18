@@ -141,6 +141,17 @@ Opens the **Marker Picker** modal to select a token from your library, then clic
 
 Freehand drawing tool. Select a color from the color picker. Drawings are persisted and visible on the Player View.
 
+### Room annotations
+
+Room annotations are DM-facing labels for numbering or naming rooms directly on a battle map. They are intended for quick reference during play and can link to sections in the owning note.
+
+- Labels can be short numbers or longer text.
+- Annotation notes support Markdown, including content pulled from Obsidian note sections.
+- The popup can be opened from the DM view while working on either the DM layer or the player layer.
+- Position, background size, font size, background color, and font color are editable.
+- Size and font preferences are saved as defaults for future room annotations on the map.
+- When annotation note content is taller than the popup, scrolling over the note scrolls the note instead of zooming the map.
+
 ### Ruler
 **Icon:** 📏
 
@@ -499,6 +510,8 @@ A two-point measurement mode. Click two points on the map to measure the pixel d
 The Player View always operates in **tabletop mode** — it cannot be panned or zoomed by the players. All positioning is controlled exclusively by the GM through the view rectangle.
 
 Real-time synchronization keeps the Player View in lockstep with the GM's annotations: fog reveals, token movements, light changes, and more are reflected instantly.
+
+Player-view light animations can be disabled in plugin settings for slower devices or very large maps. This turns off flickering and buzzing visual animation while preserving the light source itself.
 
 ### Rotation
 

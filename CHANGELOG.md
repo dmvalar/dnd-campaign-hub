@@ -7,9 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-18
+
 ### Added
 
+- **Encounter Run Logs** — Ending combat now writes a Markdown encounter log to a configurable vault folder, defaulting to `z_ITEncounterLog`.
+- **End-of-Combat Awards** — Added a party-game-style awards summary with podium rankings, character portraits, MVP trophy presentation, and stats for enemies defeated, damage dealt, damage taken, and healing done.
+- **Projectable Awards Screen** — The awards summary can be projected to player-facing screens at the DM's discretion, with smoother projection switching between maps, combat, pursuits, and awards.
+- **Awards Replay from Logs** — New encounter logs store hidden replay data and expose an **Open Awards** action so DMs can reopen and re-project the awards screen later.
+- **Damage and Healing Source Overrides** — HP changes now default to the active combatant as the event source, with quick source/target overrides for reactions and off-turn effects.
+- **Combat Encounter Launcher** — The Initiative Tracker now has a searchable saved-combat and encounter launcher for quickly finding or resuming encounters.
+- **Room Annotation Tool** — Battle maps now support DM-authored room labels/notes with Markdown content, configurable color/size/font styling, draggable placement, persistent defaults, and note-section linking.
 - **Player View Light Animation Setting** — Added a map setting to disable flickering/buzzing player-view light animations on slower devices or very large maps.
+- **Item Note Actions** — Item notes now render the same Edit/Delete action buttons as other managed note types.
+
+### Changed
+
+- **Defeated Combatant Flow** — Defeated enemies are collapsed out of the main initiative flow so DMs no longer need to repeatedly skip dead enemies during large combats.
+- **Encounter Difficulty Estimates** — Improved encounter difficulty calculation with stronger creature stat parsing and more realistic combat estimates.
+- **Projection Transitions** — Projection switching now reuses existing projection leaves where possible and crossfades more consistently instead of tearing down visible windows.
+- **Room Annotations in Player Layer** — DM room labels remain usable while the DM is operating in the player layer, avoiding unnecessary layer switching during play.
+
+### Fixed
+
+- **Grouped Token Vision Leaks** — Fixed cases where grouped token vision could see through walls, doors, or other blockers.
+- **Map Initiative Overlay Animations** — Improved projected initiative tracker damage/healing animations so rows pan smoothly to the affected participant and back to the active participant.
+- **Map Overlay Row Layout** — Fixed projected initiative rows whose content could overlap or compress too tightly.
+- **Room Annotation Rendering** — Fixed long labels, markdown note previews, annotation scrolling, font color styling, and z-order issues that could make labels unreadable or tint unrelated map elements.
 
 ## [0.13.0] - 2026-05-27
 

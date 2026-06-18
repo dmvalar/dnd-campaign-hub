@@ -53,10 +53,12 @@ The builder uses a survival-ratio system rather than XP thresholds:
 The builder resolves creature stats in priority order:
 
 1. **Manual overrides** from the modal fields.
-2. **Statblock parsing** from vault notes — reads frontmatter `hp`, `ac`, and `actions` arrays. Parses attack bonuses, damage dice, and multiattack text.
+2. **Statblock parsing** from vault notes — reads frontmatter `hp`, `ac`, traits, actions, bonus actions, reactions, and legendary actions. It estimates DPR from attacks, multiattack, recharge abilities, and action budgets.
 3. **CR-based table** from the DMG (CR 0–30) as a fallback.
 
 Party stats come from the Party Manager when available. Otherwise the builder uses a level-based model: base HP = 8 + 5 per level, base AC = 12 with increases every four levels, base DPR = 8 + 2.5 per level.
+
+The estimate also accounts for common combat-impacting traits such as resistance, immunity, Pack Tactics, Reckless Attack, Surprise Attack/Ambusher-style burst damage, and legendary action economy. These values are still estimates, but they make mixed creature encounters less misleading than CR-only math.
 
 ### Action economy
 

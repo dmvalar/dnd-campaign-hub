@@ -40,10 +40,13 @@ Use this section for battle maps, map rendering, and combat map behaviour.
 | Vision update mode | Choose whether fog of war updates while dragging tokens or only on drop |
 | Player view light animations | Toggle flickering and buzzing light animation in player map views |
 | Map canvas resolution | Adjust overlay sharpness for tokens, fog, and grids |
+| Encounter log folder | Choose where Initiative Tracker encounter logs are written |
 
 Light animations are only rendered in player map views. Disable them on slower devices or very large maps if performance suffers.
 
 Higher map canvas values can look sharper but use more memory. Reopen maps after changing this setting.
+
+Encounter logs default to `z_ITEncounterLog`. Logs created by the Initiative Tracker include action buttons and hidden awards replay data so the end-of-combat awards screen can be reopened later.
 
 ### Reference Data
 
@@ -180,6 +183,7 @@ All commands are available from the Command Palette. Search for "D&D" or "D&D Hu
 | Reroll Encounter Table Entry | Reroll a single entry in the current table |
 | Edit Encounter Table | Edit the encounter table in the current note |
 | Delete Encounter Table | Delete the current encounter table |
+| Open Combat Awards from Log | Reopen the awards screen from the active encounter log note |
 
 ### Battle Maps
 
@@ -279,6 +283,7 @@ After initialization, the plugin creates the following top-level folders:
 | `z_Databases/` | Campaign databases |
 | `z_Tables/` | Random tables |
 | `z_Log/` | Session logs |
+| `z_ITEncounterLog/` | Initiative Tracker encounter logs |
 | `z_Backups/` | Migration backups |
 
 Each campaign folder under `ttrpgs/` contains subfolders for adventures, sessions, NPCs, PCs, factions, items, spells, and locations.

@@ -23,11 +23,11 @@ The plugin provides creation modals for game items, spells, traps, factions, and
    - Add as many thresholds as needed.
 4. Select **Create**.
 
-The note is saved to `<Campaign>/Items/<Item Name>.md` with `type: item` frontmatter.
+The note is saved to `<Campaign>/Items/<Item Name>.md` with `type: item` frontmatter and a `dnd-hub` action block.
 
 ### Edit an item
 
-Run **Edit Item** while viewing an item note. All fields are pre-filled, including evolution thresholds for evolving items. Renaming updates the file name.
+Run **Edit Item** while viewing an item note, or use the note's rendered **Edit Item** action button. All fields are pre-filled, including evolution thresholds for evolving items. Renaming updates the file name. Item notes also include a **Delete Item** action button.
 
 ## Spells
 

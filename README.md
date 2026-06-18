@@ -44,6 +44,7 @@ Manage D&D and TTRPG campaigns inside Obsidian with interactive battle maps, a c
 - Animated map support for video backgrounds (MP4, WebM).
 - Battlemap template system with tagging, source linking, and structural sync for reusable map setups.
 - Environmental asset library (scatter, doors, traps) with transform handles for resize, rotate, and pivot.
+- DM room annotations for private numbered/text labels, linked note-section previews, Markdown notes, and persistent styling defaults.
 - Select-tool bulk actions for chosen tokens, including layer changes and D&D RAW grid-size resizing.
 - Token submenu Edit shortcut for opening the placed token's edit modal directly from the map.
 - Subtle DM-only Magic Darkness hints outside the Background layer, keeping the map readable while still showing the effect exists.
@@ -81,6 +82,9 @@ Manage D&D and TTRPG campaigns inside Obsidian with interactive battle maps, a c
 
 - **GM sidebar view** — initiative order, round counter, HP/AC/status columns, expandable combatant rows.
 - **Player view** — fullscreen projection with HP bar animations, dynamic font sizing, and read-only presentation.
+- End-of-combat encounter logs with reusable awards summaries, MVP trophy presentation, and projectable player-facing podium rankings.
+- Searchable encounter launcher for saved combats and available encounter notes.
+- Defeated enemies are automatically removed from the active turn flow while remaining reviewable.
 - Click a PC name to open their Fantasy Statblocks statblock in a split pane.
 - HP tracking with current, temporary, and max HP; death save successes and failures.
 - Status effects with name, duration in rounds, and GM notes.
@@ -110,6 +114,7 @@ Manage D&D and TTRPG campaigns inside Obsidian with interactive battle maps, a c
 ### Encounter builder
 
 - Survival-ratio difficulty calculation with real-time feedback.
+- Improved creature stat parsing for more realistic difficulty estimates.
 - Add creatures with count, HP, AC, and CR; supports friendly NPCs and hidden creatures.
 - Trap integration: simple and complex traps contribute to encounter difficulty and load with fixed initiative counts.
 - Encounter cards can add all creatures to the currently active Combat Tracker encounter.
@@ -302,6 +307,7 @@ Access all commands through the Command Palette (`Ctrl+P`). Search for "D&D Hub"
 | Roll Initiative | Roll initiative for all combatants |
 | Save Combat State | Persist the current combat state |
 | End Combat | End the active encounter |
+| Open Combat Awards from Log | Reopen awards from a saved encounter log |
 
 ### Maps
 
@@ -373,6 +379,7 @@ z_Backups/                Timestamped backups from migrations
 z_Databases/              Campaign databases
 z_Tables/                 Random tables
 z_Log/                    Session logs
+z_ITEncounterLog/         Initiative Tracker encounter logs
 ```
 
 Additional SRD data folders (ability scores, classes, conditions, equipment, and more) are created when you import SRD content from the settings tab.
