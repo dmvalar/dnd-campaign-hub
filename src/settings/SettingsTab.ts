@@ -222,6 +222,19 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
       );
 
     new Setting(maps)
+      .setName("Encounter log folder")
+      .setDesc("Completed Initiative Tracker encounter logs are written here.")
+      .addText((text) =>
+        text
+          .setPlaceholder("z_ITEncounterLog")
+          .setValue(this.plugin.settings.combatEncounterLogFolder || "z_ITEncounterLog")
+          .onChange(async (value) => {
+            this.plugin.settings.combatEncounterLogFolder = value.trim() || "z_ITEncounterLog";
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(maps)
       .setName("Vision update mode")
       .setDesc(
         "Choose whether fog of war updates while dragging tokens or only after dropping them."

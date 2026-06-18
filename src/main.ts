@@ -94,6 +94,7 @@ import {
   GM_MAP_VIEW_TYPE,
   COMBAT_TRACKER_VIEW_TYPE,
   COMBAT_PLAYER_VIEW_TYPE,
+  COMBAT_AWARDS_VIEW_TYPE,
   IDLE_SCREEN_VIEW_TYPE,
   PURSUIT_TRACKER_VIEW_TYPE,
   PURSUIT_PLAYER_VIEW_TYPE,
@@ -115,10 +116,11 @@ import { PDFFileSuggest, PDFBrowserModal } from './utils/PDFBrowser';
 import { EncounterBuilderModal } from './encounter/EncounterBuilderModal';
 import { EncounterBuilder } from './encounter/EncounterBuilder';
 import { CombatTracker } from './combat/CombatTracker';
-import { CombatTrackerView } from './combat/CombatTrackerView';
+import { CombatTrackerView, EndCombatSummaryModal } from './combat/CombatTrackerView';
 import { PartyManager } from './party/PartyManager';
 import { PartyManagerModal } from './party/PartyManagerModal';
 import { CombatPlayerView } from './combat/CombatPlayerView';
+import { CombatAwardsView } from './combat/CombatAwardsView';
 import { PCCreationModal } from './character/PCCreationModal';
 import { ImportPCModal } from './character/ImportPCModal';
 import { NPCCreationModal } from './character/NPCCreationModal';
@@ -363,6 +365,12 @@ export default class DndCampaignHubPlugin extends Plugin {
       (leaf) => new CombatPlayerView(leaf, this)
     );
 
+    // Register the Combat Awards View (projection popout)
+    this.registerView(
+      COMBAT_AWARDS_VIEW_TYPE,
+      (leaf) => new CombatAwardsView(leaf, this)
+    );
+
     // Register the Idle Screen View (session projection)
     this.registerView(
       IDLE_SCREEN_VIEW_TYPE,
@@ -521,6 +529,11 @@ export default class DndCampaignHubPlugin extends Plugin {
       this.renderNoteActions(el, ctx);
     });
 
+    this.registerMarkdownCodeBlockProcessor('dnd-combat-awards-state', (source, el) => {
+      el.empty();
+      el.addClass('dnd-ct-awards-state-hidden');
+    });
+
     // Register dnd-hub-table code block processor — renders entity tables
     // using metadataCache (replaces former Dataview TABLE queries).
     this.registerMarkdownCodeBlockProcessor('dnd-hub-table', (source, el, ctx) => {
@@ -663,6 +676,24 @@ export default class DndCampaignHubPlugin extends Plugin {
           return;
         }
         new EndSessionModal(this.app, this, file).open();
+      },
+    });
+
+    this.addCommand({
+      id: "open-combat-awards-from-log",
+      name: "Open Combat Awards from Log",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file) {
+          new Notice("Open an encounter log first.");
+          return;
+        }
+        const cache = this.app.metadataCache.getFileCache(file);
+        if (cache?.frontmatter?.type !== "initiative-encounter-log") {
+          new Notice("This is not an encounter log note.");
+          return;
+        }
+        await this.openCombatAwardsFromLog(file);
       },
     });
 
@@ -1945,6 +1976,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 		new MigrationModal(this.app, this).open();
 	}
 
+	async openCombatAwardsFromLog(file: TFile): Promise<void> {
+		const state = await this.combatTracker.readEncounterLogState(file);
+		if (!state) {
+			new Notice("No awards replay data found in this log. New logs will include it automatically.");
+			return;
+		}
+		new EndCombatSummaryModal(this.app, this.combatTracker, state, file).open();
+	}
+
 	/**
 	 * Render entity action buttons inside a `dnd-hub` code block.
 	 * Reads the note's frontmatter type and creates appropriate buttons.
@@ -2086,6 +2126,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 				createBtn("🔄 Resume Combat", "dnd-hub-btn-extra", cmd("load-combat-state"));
 				createBtn("🗑️ Clear Saved State", "dnd-hub-btn-delete", cmd("clear-combat-state"));
 				createBtn("🗑️ Delete Encounter", "dnd-hub-btn-delete", cmd("delete-encounter"));
+				break;
+
+			case "initiative-encounter-log":
+				createBtn("🏆 Open Awards", "dnd-hub-btn-extra", () => this.openCombatAwardsFromLog(file), "Open the saved awards screen for this encounter");
 				break;
 
 			case "encounter-table":

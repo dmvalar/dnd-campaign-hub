@@ -99,7 +99,11 @@ export class SessionProjectionHubModal extends Modal {
             ? 'Map'
             : st.status === 'combat'
               ? 'Combat'
-              : 'Media',
+              : st.status === 'combat-awards'
+                ? 'Combat Awards'
+                : st.status === 'pursuit'
+                  ? 'Pursuit'
+                  : 'Media',
       });
     }
 

@@ -1,6 +1,6 @@
-import { App, Notice, TFile } from "obsidian";
+import { App, Notice, TFile, TFolder } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
-import type { Combatant, CombatState, CombatListener, StatusEffect, DeathSaveState, SyncPreviewEntry } from "./types";
+import type { Combatant, CombatState, CombatListener, StatusEffect, DeathSaveState, SyncPreviewEntry, CombatRunActorRef, CombatRunEventType, CombatRunEvent } from "./types";
 import type { EncounterCreature } from "../encounter/EncounterBuilder";
 
 /**
@@ -12,7 +12,7 @@ export class CombatTracker {
   private state: CombatState | null = null;
   private listeners = new Set<CombatListener>();
 
-  constructor(private app: App, private plugin: DndCampaignHubPlugin) {}
+  constructor(private app: App, public readonly plugin: DndCampaignHubPlugin) {}
 
   /* ────────────────── Listeners ────────────────── */
 
@@ -49,6 +49,274 @@ export class CombatTracker {
 
   isTurnEligible(c: Combatant | null | undefined): boolean {
     return !!c && (c.enabled ?? true) && !this.isDefeatedHostile(c);
+  }
+
+  private actorRef(c: Combatant | null | undefined): CombatRunActorRef | undefined {
+    if (!c) return undefined;
+    return {
+      id: c.id,
+      name: c.name,
+      display: c.display,
+      player: c.player,
+      friendly: c.friendly,
+      notePath: c.notePath,
+      tokenId: c.tokenId,
+    };
+  }
+
+  private getActiveCombatantRef(): CombatRunActorRef | undefined {
+    if (!this.state?.started) return undefined;
+    return this.actorRef(this.state.combatants[this.state.turnIndex]);
+  }
+
+  private ensureRunStats() {
+    if (!this.state) return null;
+    if (!this.state.runStats) {
+      this.state.runStats = {
+        startedAt: new Date().toISOString(),
+        events: [],
+      };
+    }
+    return this.state.runStats;
+  }
+
+  private recordRunEvent(type: CombatRunEventType, data: {
+    source?: CombatRunActorRef;
+    target?: CombatRunActorRef;
+    amount?: number;
+    note?: string;
+  } = {}) {
+    const stats = this.ensureRunStats();
+    if (!this.state || !stats) return;
+    stats.events.push({
+      id: this.generateId(),
+      type,
+      timestamp: new Date().toISOString(),
+      round: this.state.round,
+      turnCombatantId: this.state.started ? this.state.combatants[this.state.turnIndex]?.id : undefined,
+      ...data,
+    });
+  }
+
+  getDefaultEventSourceId(): string | null {
+    return this.getActiveCombatantRef()?.id || null;
+  }
+
+  getCombatantPortraitResourcePath(actor: Pick<Combatant, "name" | "tokenId" | "notePath"> | CombatRunActorRef | null | undefined): string | null {
+    if (!actor) return null;
+    let imageFile: string | undefined;
+
+    if (actor.tokenId) {
+      const marker = this.plugin.markerLibrary.getMarker(actor.tokenId);
+      if (marker?.imageFile) imageFile = marker.imageFile;
+    }
+
+    if (!imageFile && actor.notePath) {
+      const file = this.app.vault.getAbstractFileByPath(actor.notePath);
+      if (file instanceof TFile) {
+        const cache = this.app.metadataCache.getFileCache(file);
+        const noteTokenId = cache?.frontmatter?.token_id;
+        if (noteTokenId) {
+          const marker = this.plugin.markerLibrary.getMarker(noteTokenId);
+          if (marker?.imageFile) imageFile = marker.imageFile;
+        }
+      }
+    }
+
+    if (!imageFile && actor.name) {
+      const match = this.plugin.markerLibrary.findMarkersByName(actor.name).find((m) => m.imageFile);
+      if (match?.imageFile) imageFile = match.imageFile;
+    }
+
+    return imageFile ? this.app.vault.adapter.getResourcePath(imageFile) : null;
+  }
+
+  summarizeCombatRun(state: CombatState | null = this.state) {
+    const events = state?.runStats?.events || [];
+    const add = (map: Map<string, { actor: CombatRunActorRef; value: number }>, actor: CombatRunActorRef | undefined, amount = 1) => {
+      if (!actor || !actor.player) return;
+      const current = map.get(actor.id) || { actor, value: 0 };
+      current.value += amount;
+      map.set(actor.id, current);
+    };
+    const damageDealt = new Map<string, { actor: CombatRunActorRef; value: number }>();
+    const damageTaken = new Map<string, { actor: CombatRunActorRef; value: number }>();
+    const healingDone = new Map<string, { actor: CombatRunActorRef; value: number }>();
+    const enemiesDefeated = new Map<string, { actor: CombatRunActorRef; value: number }>();
+
+    events.forEach((event) => {
+      if (event.type === "damage") {
+        add(damageDealt, event.source, event.amount || 0);
+        add(damageTaken, event.target, event.amount || 0);
+      } else if (event.type === "healing") {
+        add(healingDone, event.source, event.amount || 0);
+      } else if (event.type === "defeated") {
+        add(enemiesDefeated, event.source, 1);
+      }
+    });
+
+    const rank = (map: Map<string, { actor: CombatRunActorRef; value: number }>) =>
+      Array.from(map.values()).filter((entry) => entry.value > 0).sort((a, b) => b.value - a.value);
+    const ranked = {
+      damageDealt: rank(damageDealt),
+      damageTaken: rank(damageTaken),
+      healingDone: rank(healingDone),
+      enemiesDefeated: rank(enemiesDefeated),
+    };
+    const mvpScores = new Map<string, { actor: CombatRunActorRef; score: number; reasons: string[] }>();
+    const addMvpPoints = (entries: Array<{ actor: CombatRunActorRef; value: number }>, label: string) => {
+      entries.slice(0, 3).forEach((entry, index) => {
+        const points = [5, 3, 1][index] ?? 0;
+        if (points <= 0) return;
+        const current = mvpScores.get(entry.actor.id) || { actor: entry.actor, score: 0, reasons: [] };
+        current.score += points;
+        current.reasons.push(`#${index + 1} ${label}`);
+        mvpScores.set(entry.actor.id, current);
+      });
+    };
+    addMvpPoints(ranked.enemiesDefeated, "enemy defeats");
+    addMvpPoints(ranked.damageDealt, "damage dealt");
+    addMvpPoints(ranked.damageTaken, "damage taken");
+    addMvpPoints(ranked.healingDone, "healing");
+    const mvp = Array.from(mvpScores.values()).sort((a, b) => b.score - a.score)[0] || null;
+
+    return {
+      ...ranked,
+      mvp,
+      eventCount: events.length,
+    };
+  }
+
+  private sanitizeFileName(name: string): string {
+    return name.replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ").trim() || "Encounter";
+  }
+
+  private async ensureFolder(path: string): Promise<TFolder | null> {
+    const normalized = path.split("/").map((part) => part.trim()).filter(Boolean).join("/");
+    if (!normalized) return null;
+    const existing = this.app.vault.getAbstractFileByPath(normalized);
+    if (existing instanceof TFolder) return existing;
+
+    const parts = normalized.split("/");
+    let current = "";
+    for (const part of parts) {
+      current = current ? `${current}/${part}` : part;
+      const folder = this.app.vault.getAbstractFileByPath(current);
+      if (!folder) {
+        await this.app.vault.createFolder(current);
+      }
+    }
+    const created = this.app.vault.getAbstractFileByPath(normalized);
+    return created instanceof TFolder ? created : null;
+  }
+
+  private formatLeaderboard(entries: Array<{ actor: CombatRunActorRef; value: number }>, unit: string): string {
+    if (entries.length === 0) return "_No entries._";
+    return [
+      "| Rank | Character | Score |",
+      "|---:|---|---:|",
+      ...entries.map((entry, index) => `| ${index + 1} | ${entry.actor.display} | ${entry.value} ${unit} |`),
+    ].join("\n");
+  }
+
+  private formatTimelineEvent(event: CombatRunEvent): string {
+    const source = event.source?.display || "Environment";
+    const target = event.target?.display || "";
+    if (event.type === "damage") return `- Round ${event.round}: ${source} dealt ${event.amount || 0} damage to ${target}.`;
+    if (event.type === "healing") return `- Round ${event.round}: ${source} healed ${target} for ${event.amount || 0}.`;
+    if (event.type === "defeated") return `- Round ${event.round}: ${source} defeated ${target}.`;
+    if (event.type === "turn-start") return `- Round ${event.round}: ${target}'s turn started.`;
+    if (event.type === "combat-start") return `- Combat started: ${event.note || ""}`;
+    if (event.type === "combat-end") return `- Combat ended: ${event.note || ""}`;
+    return `- Round ${event.round}: ${event.type}`;
+  }
+
+  async writeEncounterLog(state: CombatState | null = this.state): Promise<TFile | null> {
+    if (!state) return null;
+    const folderPath = this.plugin.settings.combatEncounterLogFolder || "z_ITEncounterLog";
+    const folder = await this.ensureFolder(folderPath);
+    if (!folder) {
+      new Notice("Could not create encounter log folder.");
+      return null;
+    }
+
+    const summary = this.summarizeCombatRun(state);
+    const startedAt = state.runStats?.startedAt || state.savedAt;
+    const endedAt = state.runStats?.endedAt || new Date().toISOString();
+    const fileName = `${new Date().toISOString().replace(/[:.]/g, "-")} ${this.sanitizeFileName(state.encounterName)}.md`;
+    const path = `${folder.path}/${fileName}`;
+    const lines = [
+      "---",
+      "type: initiative-encounter-log",
+      `encounter: ${JSON.stringify(state.encounterName)}`,
+      `started: ${JSON.stringify(startedAt)}`,
+      `ended: ${JSON.stringify(endedAt)}`,
+      `rounds: ${state.round}`,
+      "---",
+      "",
+      `# ${state.encounterName} - Encounter Log`,
+      "",
+      "```dnd-hub",
+      "```",
+      "",
+      `- Started: ${startedAt}`,
+      `- Ended: ${endedAt}`,
+      `- Rounds: ${state.round}`,
+      `- Participants: ${state.combatants.length}`,
+      "",
+      "## Awards",
+      "",
+      "### MVP",
+      summary.mvp ? `${summary.mvp.actor.display} (${summary.mvp.reasons.join(", ")})` : "_No MVP awarded._",
+      "",
+      "### Most Enemies Defeated",
+      this.formatLeaderboard(summary.enemiesDefeated, "defeated"),
+      "",
+      "### Most Damage Dealt",
+      this.formatLeaderboard(summary.damageDealt, "damage"),
+      "",
+      "### Most Damage Taken",
+      this.formatLeaderboard(summary.damageTaken, "damage"),
+      "",
+      "### Best Healer",
+      this.formatLeaderboard(summary.healingDone, "healing"),
+      "",
+      "## Final State",
+      "",
+      "| Participant | HP | AC | Status |",
+      "|---|---:|---:|---|",
+      ...state.combatants.map((c) => `| ${c.display} | ${c.currentHP}/${c.maxHP}${c.tempHP > 0 ? ` (+${c.tempHP})` : ""} | ${c.currentAC} | ${c.statuses.map((s) => s.name).join(", ") || "-"} |`),
+      "",
+      "## Timeline",
+      "",
+      ...(state.runStats?.events || []).map((event) => this.formatTimelineEvent(event)),
+      "",
+      "<!-- dnd-combat-awards-state",
+      JSON.stringify(state, null, 2),
+      "-->",
+      "",
+    ];
+
+    return await this.app.vault.create(path, lines.join("\n"));
+  }
+
+  async readEncounterLogState(file: TFile): Promise<CombatState | null> {
+    const content = await this.app.vault.read(file);
+    const match =
+      content.match(/<!--\s*dnd-combat-awards-state\s*([\s\S]*?)-->/) ||
+      content.match(/```dnd-combat-awards-state\s*([\s\S]*?)```/);
+    if (!match?.[1]) return null;
+
+    try {
+      const parsed = JSON.parse(match[1].trim()) as CombatState;
+      if (!parsed || typeof parsed.encounterName !== "string" || !Array.isArray(parsed.combatants)) {
+        return null;
+      }
+      return parsed;
+    } catch (error) {
+      console.error("[CombatTracker] Failed to parse encounter awards state:", error);
+      return null;
+    }
   }
 
   /* ────────────────── Start / End Combat ────────────────── */
@@ -101,7 +369,12 @@ export class CombatTracker {
       turnIndex: 0,
       started: false,
       savedAt: new Date().toISOString(),
+      runStats: {
+        startedAt: new Date().toISOString(),
+        events: [],
+      },
     };
+    this.recordRunEvent("combat-start", { note: encounterName });
 
     this.emit();
     new Notice(`⚔️ Combat ready: ${combatants.length} combatants. Roll initiative!`);
@@ -278,6 +551,9 @@ export class CombatTracker {
     this.state.round = nextRound;
 
     const current = this.state.combatants[this.state.turnIndex];
+    if (current) {
+      this.recordRunEvent("turn-start", { target: this.actorRef(current) });
+    }
     this.emit();
     if (current) {
       new Notice(`⏩ Round ${this.state.round} — ${current.display}'s turn`);
@@ -314,6 +590,11 @@ export class CombatTracker {
 
   /** End combat entirely. */
   endCombat(): void {
+    if (this.state) {
+      const stats = this.ensureRunStats();
+      if (stats) stats.endedAt = new Date().toISOString();
+      this.recordRunEvent("combat-end", { note: this.state.encounterName });
+    }
     this.state = null;
     this.emit();
     new Notice("🏁 Combat ended");
@@ -326,10 +607,12 @@ export class CombatTracker {
    *  - Overflow damage >= maxHP at 0 HP → instant death
    *  - Damage at 0 HP → 1 failed death save (2 if critical hit)
    *  - 3 failed death saves → dead */
-  applyDamage(combatantId: string, amount: number, isCritical = false): void {
+  applyDamage(combatantId: string, amount: number, isCritical = false, sourceCombatantId?: string | null): void {
     const c = this.findCombatant(combatantId);
     if (!c || c.dead) return;
+    const source = sourceCombatantId ? this.findCombatant(sourceCombatantId) : (this.state?.combatants[this.state.turnIndex] || null);
     let remaining = Math.max(0, amount);
+    const hpBeforeDamage = c.currentHP;
 
     const wasAtZero = c.currentHP <= 0;
 
@@ -379,20 +662,39 @@ export class CombatTracker {
       }
     }
 
+    this.recordRunEvent("damage", {
+      source: this.actorRef(source),
+      target: this.actorRef(c),
+      amount,
+      note: isCritical ? "critical" : undefined,
+    });
+    if (!c.player && !c.friendly && hpBeforeDamage > 0 && c.currentHP <= 0) {
+      this.recordRunEvent("defeated", {
+        source: this.actorRef(source),
+        target: this.actorRef(c),
+      });
+    }
     this.emit();
   }
 
   /** Heal a combatant (cannot exceed maxHP).
    *  Healing a creature at 0 HP clears death saves and removes Unconscious. */
-  applyHealing(combatantId: string, amount: number): void {
+  applyHealing(combatantId: string, amount: number, sourceCombatantId?: string | null): void {
     const c = this.findCombatant(combatantId);
     if (!c || c.dead) return;
+    const source = sourceCombatantId ? this.findCombatant(sourceCombatantId) : (this.state?.combatants[this.state.turnIndex] || null);
     const wasAtZero = c.currentHP <= 0;
+    const before = c.currentHP;
     c.currentHP = Math.min(c.maxHP, c.currentHP + Math.max(0, amount));
     if (wasAtZero && c.currentHP > 0) {
       c.deathSaves = undefined;
     }
     this.syncUnconsciousStatus(c);
+    this.recordRunEvent("healing", {
+      source: this.actorRef(source),
+      target: this.actorRef(c),
+      amount: Math.max(0, c.currentHP - before),
+    });
     this.emit();
   }
 

@@ -6,6 +6,7 @@ export const PLAYER_MAP_VIEW_TYPE = "dnd-player-map-view";
 export const GM_MAP_VIEW_TYPE = "dnd-gm-map-view";
 export const COMBAT_TRACKER_VIEW_TYPE = "dnd-combat-tracker";
 export const COMBAT_PLAYER_VIEW_TYPE = "dnd-combat-player-view";
+export const COMBAT_AWARDS_VIEW_TYPE = "dnd-combat-awards-view";
 export const IDLE_SCREEN_VIEW_TYPE = "dnd-idle-screen-view";
 export const MEDIA_PROJECTION_VIEW_TYPE = "dnd-media-projection-view";
 export const PURSUIT_TRACKER_VIEW_TYPE = "dnd-pursuit-tracker";

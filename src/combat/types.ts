@@ -20,6 +20,42 @@ export interface DeathSaveState {
   failures: number;
 }
 
+export type CombatRunEventType =
+  | "combat-start"
+  | "turn-start"
+  | "damage"
+  | "healing"
+  | "defeated"
+  | "combat-end";
+
+export interface CombatRunActorRef {
+  id: string;
+  name: string;
+  display: string;
+  player: boolean;
+  friendly: boolean;
+  notePath?: string;
+  tokenId?: string;
+}
+
+export interface CombatRunEvent {
+  id: string;
+  type: CombatRunEventType;
+  timestamp: string;
+  round: number;
+  turnCombatantId?: string;
+  source?: CombatRunActorRef;
+  target?: CombatRunActorRef;
+  amount?: number;
+  note?: string;
+}
+
+export interface CombatRunStats {
+  startedAt: string;
+  endedAt?: string;
+  events: CombatRunEvent[];
+}
+
 /** A single combatant in a running combat. */
 export interface Combatant {
   /** Unique identifier for this instance. */
@@ -87,6 +123,8 @@ export interface CombatState {
   started: boolean;
   /** ISO timestamp when the state was last saved. */
   savedAt: string;
+  /** Encounter run timeline and stats used for logs and end-of-combat awards. */
+  runStats?: CombatRunStats;
 }
 
 /** Preview entry for the HP sync confirmation modal. */

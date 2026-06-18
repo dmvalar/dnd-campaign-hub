@@ -13,8 +13,9 @@
 import { Notice, WorkspaceLeaf } from 'obsidian';
 import type DndCampaignHubPlugin from '../main';
 import type { PlayerMapView } from '../map-views/PlayerMapView';
-import { PLAYER_MAP_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE, PURSUIT_PLAYER_VIEW_TYPE, HANDOUT_PROJECTION_VIEW_TYPE } from '../constants';
+import { PLAYER_MAP_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE, COMBAT_AWARDS_VIEW_TYPE, PURSUIT_PLAYER_VIEW_TYPE, HANDOUT_PROJECTION_VIEW_TYPE } from '../constants';
 import type { ProjectionTarget, TabletopCalibration } from '../types';
+import type { CombatState } from '../combat/types';
 import { enumerateScreens, screenKey, type ScreenInfo } from '../utils/ScreenEnumeration';
 import { queryPhysicalMonitorSizes, matchScreenToPhysical } from '../utils/MonitorPhysicalSize';
 import type { HandoutContentType, HandoutProjectionState } from './types';
@@ -25,7 +26,7 @@ import type { HandoutContentType, HandoutProjectionState } from './types';
 export type ProjectionMode = 'battle' | 'free';
 
 /** What is being projected: a battle map, combat tracker, or pursuit player view. */
-export type ProjectionContentType = 'map' | 'combat' | 'pursuit';
+export type ProjectionContentType = 'map' | 'combat' | 'combat-awards' | 'pursuit';
 
 export interface ProjectionState {
   /** The player view leaf currently being projected. */
@@ -131,6 +132,9 @@ export class ProjectionManager {
       await leaf.setViewState({ type: viewType, active: true, state: viewState });
       return;
     }
+    if (getComputedStyle(container).position === 'static') {
+      container.style.position = 'relative';
+    }
 
     const doc = container.ownerDocument ?? document;
 
@@ -190,6 +194,8 @@ export class ProjectionManager {
     const spm = this.plugin.sessionProjectionManager;
     const isManaged = !!(spm?.isActive() && spm.isManagedScreen(sKey));
 
+    let reusableLeaf: WorkspaceLeaf | null = null;
+
     // ── Reuse existing map projection on the SAME screen ───────────
     const existing = this.activeProjections.get(sKey);
     if (existing && this.isProjectionAliveOnScreen(sKey)) {
@@ -218,22 +224,20 @@ export class ProjectionManager {
           return;
         }
       }
-      // Non-map projection (combat/pursuit) → remove without idle transition
+      // Non-map projection → reuse its popout leaf and crossfade into the map view.
+      reusableLeaf = existing.leaf;
       this.activeProjections.delete(sKey);
-      if (!isManaged) {
-        try { existing.leaf.detach(); } catch { /* already gone */ }
-      }
     }
 
     // ── Open a fresh popout window (or reuse managed session leaf) ──
     const managedLeaf = isManaged ? spm!.getManagedLeaf(sKey) : null;
 
-    const popoutLeaf = managedLeaf ?? this.plugin.app.workspace.openPopoutLeaf({
+    const popoutLeaf = managedLeaf ?? reusableLeaf ?? this.plugin.app.workspace.openPopoutLeaf({
       size: { width: screen.width, height: screen.height },
     });
 
-    // Crossfade on managed screens; direct set for new popouts (they start black anyway)
-    if (isManaged) {
+    // Crossfade when replacing visible content; direct set for fresh popouts.
+    if (isManaged || reusableLeaf) {
       await this.crossfadeOnLeaf(popoutLeaf, PLAYER_MAP_VIEW_TYPE, {
         mapId, mapConfig, imageResourcePath,
       });
@@ -292,19 +296,13 @@ export class ProjectionManager {
 
     // Remove existing projection on this screen without intermediate idle
     const existing = this.activeProjections.get(sKey);
-    if (existing) {
-      this.activeProjections.delete(sKey);
-      if (!isManaged) {
-        try { existing.leaf.detach(); } catch { /* already gone */ }
-      }
-    }
-
-    const popoutLeaf = managedLeaf ?? this.plugin.app.workspace.openPopoutLeaf({
+    const reusableLeaf = existing && this.isProjectionAliveOnScreen(sKey) ? existing.leaf : null;
+    const popoutLeaf = managedLeaf ?? reusableLeaf ?? this.plugin.app.workspace.openPopoutLeaf({
       size: { width: screen.width, height: screen.height },
     });
+    if (existing) this.activeProjections.delete(sKey);
 
-    // Crossfade on managed screens (there's already visible content)
-    if (isManaged) {
+    if (isManaged || reusableLeaf) {
       await this.crossfadeOnLeaf(popoutLeaf, COMBAT_PLAYER_VIEW_TYPE);
     } else {
       await popoutLeaf.setViewState({ type: COMBAT_PLAYER_VIEW_TYPE, active: true });
@@ -328,6 +326,50 @@ export class ProjectionManager {
 
     this._notifyChange();
     new Notice(`⚔️ Combat view projected to ${screen.label}`);
+  }
+
+  /**
+   * Project the end-of-combat awards screen to a specific screen.
+   * The finished combat state is passed into the view so it survives after combat ends.
+   */
+  async projectCombatAwardsView(screen: ScreenInfo, combatState: CombatState): Promise<void> {
+    const sKey = screenKey(screen);
+    const spm = this.plugin.sessionProjectionManager;
+    const isManaged = !!(spm?.isActive() && spm.isManagedScreen(sKey));
+    const managedLeaf = isManaged ? spm!.getManagedLeaf(sKey) : null;
+    const viewState = { combatState };
+
+    const existing = this.activeProjections.get(sKey);
+    const reusableLeaf = existing && this.isProjectionAliveOnScreen(sKey) ? existing.leaf : null;
+    const popoutLeaf = managedLeaf ?? reusableLeaf ?? this.plugin.app.workspace.openPopoutLeaf({
+      size: { width: screen.width, height: screen.height },
+    });
+    if (existing) this.activeProjections.delete(sKey);
+
+    if (isManaged || reusableLeaf) {
+      await this.crossfadeOnLeaf(popoutLeaf, COMBAT_AWARDS_VIEW_TYPE, viewState);
+    } else {
+      await popoutLeaf.setViewState({ type: COMBAT_AWARDS_VIEW_TYPE, active: true, state: viewState });
+    }
+
+    this.activeProjections.set(sKey, {
+      leaf: popoutLeaf,
+      screen,
+      mapId: '',
+      mode: 'free',
+      contentType: 'combat-awards',
+    });
+
+    if (spm?.isActive()) spm.setScreenStatus(sKey, 'combat-awards');
+
+    if (!managedLeaf) {
+      setTimeout(async () => {
+        await this.positionAndFullscreen(popoutLeaf, screen);
+      }, 300);
+    }
+
+    this._notifyChange();
+    new Notice(`Combat awards projected to ${screen.label}`);
   }
 
   /**
@@ -399,6 +441,7 @@ export class ProjectionManager {
           let viewType: string;
           if (primaryProj.contentType === 'map') viewType = PLAYER_MAP_VIEW_TYPE;
           else if (primaryProj.contentType === 'combat') viewType = COMBAT_PLAYER_VIEW_TYPE;
+          else if (primaryProj.contentType === 'combat-awards') viewType = COMBAT_AWARDS_VIEW_TYPE;
           else viewType = PURSUIT_PLAYER_VIEW_TYPE;
           await this.crossfadeOnLeaf(leaf, viewType, {});
         }
@@ -462,18 +505,13 @@ export class ProjectionManager {
 
     // Remove existing projection without intermediate idle
     const existing = this.activeProjections.get(sKey);
-    if (existing) {
-      this.activeProjections.delete(sKey);
-      if (!isManaged) {
-        try { existing.leaf.detach(); } catch { /* already gone */ }
-      }
-    }
-
-    const popoutLeaf = managedLeaf ?? this.plugin.app.workspace.openPopoutLeaf({
+    const reusableLeaf = existing && this.isProjectionAliveOnScreen(sKey) ? existing.leaf : null;
+    const popoutLeaf = managedLeaf ?? reusableLeaf ?? this.plugin.app.workspace.openPopoutLeaf({
       size: { width: screen.width, height: screen.height },
     });
+    if (existing) this.activeProjections.delete(sKey);
 
-    if (isManaged) {
+    if (isManaged || reusableLeaf) {
       await this.crossfadeOnLeaf(popoutLeaf, PURSUIT_PLAYER_VIEW_TYPE);
     } else {
       await popoutLeaf.setViewState({ type: PURSUIT_PLAYER_VIEW_TYPE, active: true });

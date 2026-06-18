@@ -43,6 +43,8 @@ export interface DndCampaignHubSettings {
   visionUpdateMode: 'on-drop' | 'while-dragging';
   /** Saved mid-combat states keyed by encounter name. */
   combatStates: Record<string, CombatState>;
+  /** Vault folder where completed initiative tracker encounter logs are written. */
+  combatEncounterLogFolder: string;
   /** Auto-pan projected player view to the active combatant's token on turn change. */
   combatAutoPan: boolean;
   /** Session projection system — managed monitors and idle screen config. */
@@ -66,6 +68,7 @@ export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   musicPlaybackState: { ...DEFAULT_PLAYBACK_STATE },
   visionUpdateMode: 'on-drop',
   combatStates: {},
+  combatEncounterLogFolder: "z_ITEncounterLog",
   combatAutoPan: false,
   sessionProjection: { ...DEFAULT_SESSION_PROJECTION_SETTINGS },
   mapCanvasScale: 2,

@@ -328,39 +328,12 @@ export class CombatPlayerView extends ItemView {
 
   /** Render a circular portrait from the combatant's token marker image. */
   private renderPortrait(parent: HTMLElement, c: { name: string; tokenId?: string; notePath?: string; friendly?: boolean; player?: boolean }) {
-    let imageFile: string | undefined;
-
-    // Try tokenId first
-    if (c.tokenId) {
-      const marker = this.plugin.markerLibrary.getMarker(c.tokenId);
-      if (marker?.imageFile) imageFile = marker.imageFile;
-    }
-
-    // Fallback: read token_id from vault note frontmatter
-    if (!imageFile && c.notePath) {
-      const file = this.app.vault.getAbstractFileByPath(c.notePath);
-      if (file) {
-        const cache = this.app.metadataCache.getFileCache(file as any);
-        const noteTokenId = cache?.frontmatter?.token_id;
-        if (noteTokenId) {
-          const marker = this.plugin.markerLibrary.getMarker(noteTokenId);
-          if (marker?.imageFile) imageFile = marker.imageFile;
-        }
-      }
-    }
-
-    // Fallback: match by name in the marker library
-    if (!imageFile && c.name) {
-      const matches = this.plugin.markerLibrary.findMarkersByName(c.name);
-      const withImage = matches.find((m) => m.imageFile);
-      if (withImage) imageFile = withImage.imageFile;
-    }
-
-    if (!imageFile) return;
+    const imageResourcePath = this.plugin.combatTracker.getCombatantPortraitResourcePath(c);
+    if (!imageResourcePath) return;
 
     const wrap = parent.createDiv({ cls: "dnd-ct-pv-portrait" });
     const img = wrap.createEl("img", { cls: "dnd-ct-pv-portrait-img" });
-    img.src = this.app.vault.adapter.getResourcePath(imageFile);
+    img.src = imageResourcePath;
     img.alt = "";
 
     // Friendly heart overlay (top-left of portrait)

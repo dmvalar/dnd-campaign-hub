@@ -2,7 +2,7 @@ import { ItemView, Menu, Modal, Notice, Setting, TFile, TFolder, WorkspaceLeaf }
 import type DndCampaignHubPlugin from "../main";
 import { COMBAT_TRACKER_VIEW_TYPE, COMBAT_PLAYER_VIEW_TYPE } from "../constants";
 import type { CombatTracker } from "./CombatTracker";
-import type { Combatant, CombatState, StatusEffect, SyncPreviewEntry } from "./types";
+import type { Combatant, CombatRunActorRef, CombatState, StatusEffect, SyncPreviewEntry } from "./types";
 import { enumerateScreens, screenKey, type ScreenInfo } from "../utils/ScreenEnumeration";
 import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
 import { startEncounterFromFile } from "../encounter/renderEncounterView";
@@ -970,8 +970,13 @@ class SetInitiativeModal extends Modal {
 
 /** Combined Health & Status modal — covers damage, heal, temp HP, max HP, AC, and status effects. */
 class HPAndStatusModal extends Modal {
+  private sourceCombatantId: string | null = null;
+  private targetCombatantId: string;
+
   constructor(app: any, private combatant: Combatant, private tracker: CombatTracker) {
     super(app);
+    this.targetCombatantId = combatant.id;
+    this.sourceCombatantId = tracker.getDefaultEventSourceId();
   }
 
   onOpen() {
@@ -986,6 +991,36 @@ class HPAndStatusModal extends Modal {
     if (this.combatant.tempHP > 0) info.createEl("span", { text: ` (+${this.combatant.tempHP} temp)` });
     info.createEl("span", { text: ` | AC: ${this.combatant.currentAC}` });
 
+    const combatants = this.tracker.getState()?.combatants || [];
+    const sourceOptions = combatants.filter((c) => c.enabled ?? true);
+    const targetOptions = combatants.filter((c) => c.enabled ?? true);
+    const sourceTargetDetails = contentEl.createEl("details", { cls: "dnd-ct-source-target-details" });
+    const sourceTargetSummary = sourceTargetDetails.createEl("summary", { text: "Source / target overrides" });
+    sourceTargetSummary.title = "Defaults to current turn as source and clicked row as target";
+
+    new Setting(sourceTargetDetails)
+      .setName("Source")
+      .setDesc("Who caused this HP change?")
+      .addDropdown((dropdown) => {
+        dropdown.addOption("", "Environment / unknown");
+        sourceOptions.forEach((c) => dropdown.addOption(c.id, c.display));
+        dropdown.setValue(this.sourceCombatantId || "");
+        dropdown.onChange((value) => {
+          this.sourceCombatantId = value || null;
+        });
+      });
+
+    new Setting(sourceTargetDetails)
+      .setName("Target")
+      .setDesc("Who receives the damage or healing?")
+      .addDropdown((dropdown) => {
+        targetOptions.forEach((c) => dropdown.addOption(c.id, c.display));
+        dropdown.setValue(this.targetCombatantId);
+        dropdown.onChange((value) => {
+          this.targetCombatantId = value || this.combatant.id;
+        });
+      });
+
     // ── Damage ──
     new Setting(contentEl).setName("Damage").addText((text) => {
       text.setPlaceholder("Amount");
@@ -995,13 +1030,13 @@ class HPAndStatusModal extends Modal {
       text.inputEl.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
           const val = parseInt((e.target as HTMLInputElement).value, 10);
-          if (!isNaN(val) && val > 0) { this.tracker.applyDamage(this.combatant.id, val); this.close(); }
+          if (!isNaN(val) && val > 0) { this.tracker.applyDamage(this.targetCombatantId, val, false, this.sourceCombatantId); this.close(); }
         }
       });
     }).addButton((btn) => btn.setButtonText("Apply").onClick(() => {
       const input = contentEl.querySelector("[data-field='damage']") as HTMLInputElement;
       const val = parseInt(input?.value ?? "0", 10);
-      if (!isNaN(val) && val > 0) { this.tracker.applyDamage(this.combatant.id, val); this.close(); }
+      if (!isNaN(val) && val > 0) { this.tracker.applyDamage(this.targetCombatantId, val, false, this.sourceCombatantId); this.close(); }
     }));
 
     // ── Heal ──
@@ -1013,13 +1048,13 @@ class HPAndStatusModal extends Modal {
       text.inputEl.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
           const val = parseInt((e.target as HTMLInputElement).value, 10);
-          if (!isNaN(val) && val > 0) { this.tracker.applyHealing(this.combatant.id, val); this.close(); }
+          if (!isNaN(val) && val > 0) { this.tracker.applyHealing(this.targetCombatantId, val, this.sourceCombatantId); this.close(); }
         }
       });
     }).addButton((btn) => btn.setButtonText("Apply").onClick(() => {
       const input = contentEl.querySelector("[data-field='heal']") as HTMLInputElement;
       const val = parseInt(input?.value ?? "0", 10);
-      if (!isNaN(val) && val > 0) { this.tracker.applyHealing(this.combatant.id, val); this.close(); }
+      if (!isNaN(val) && val > 0) { this.tracker.applyHealing(this.targetCombatantId, val, this.sourceCombatantId); this.close(); }
     }));
 
     // ── Set HP directly ──
@@ -1890,6 +1925,22 @@ class ConfirmEndCombatModal extends Modal {
     super(app);
   }
 
+  private async finishCombat(writeSave: boolean) {
+    const snapshot = this.tracker.getState();
+    let logFile: TFile | null = null;
+    if (snapshot) {
+      logFile = await this.tracker.writeEncounterLog(snapshot);
+    }
+    if (writeSave) {
+      await this.tracker.saveCombat();
+    }
+    this.tracker.endCombat();
+    this.close();
+    if (snapshot) {
+      new EndCombatSummaryModal(this.app, this.tracker, snapshot, logFile).open();
+    }
+  }
+
   onOpen() {
     const { contentEl } = this;
     contentEl.empty();
@@ -1905,27 +1956,21 @@ class ConfirmEndCombatModal extends Modal {
           const hasChanges = entries.some(e => e.changed);
           if (hasChanges) {
             new ConfirmSyncModal(this.app, this.tracker, entries, "toNotes", async () => {
-              await this.tracker.saveCombat();
-              this.tracker.endCombat();
+              await this.finishCombat(true);
             }).open();
           } else {
-            await this.tracker.saveCombat();
-            this.tracker.endCombat();
+            await this.finishCombat(true);
           }
-          this.close();
         }),
       )
       .addButton((btn) =>
         btn.setButtonText("Save & End").onClick(async () => {
-          await this.tracker.saveCombat();
-          this.tracker.endCombat();
-          this.close();
+          await this.finishCombat(true);
         }),
       )
       .addButton((btn) =>
         btn.setButtonText("End Without Saving").setWarning().onClick(() => {
-          this.tracker.endCombat();
-          this.close();
+          void this.finishCombat(false);
         }),
       )
       .addButton((btn) => btn.setButtonText("Cancel").onClick(() => this.close()));
@@ -1933,6 +1978,181 @@ class ConfirmEndCombatModal extends Modal {
 
   onClose() {
     this.contentEl.empty();
+  }
+}
+
+export class EndCombatSummaryModal extends Modal {
+  constructor(
+    app: any,
+    private tracker: CombatTracker,
+    private state: CombatState,
+    private logFile: TFile | null,
+  ) {
+    super(app);
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("dnd-ct-end-summary-modal");
+    const hero = contentEl.createDiv({ cls: "dnd-ct-end-summary-hero" });
+    hero.createEl("div", { cls: "dnd-ct-end-summary-kicker", text: "Encounter Complete" });
+    hero.createEl("h2", { text: this.state.encounterName });
+    hero.createEl("p", {
+      cls: "dnd-ct-end-summary-subtitle",
+      text: `Round ${this.state.round} results`,
+    });
+
+    const summary = this.tracker.summarizeCombatRun(this.state);
+    const awards = [
+      { title: "Most Enemies Defeated", entries: summary.enemiesDefeated, unit: "defeated" },
+      { title: "Most Damage Dealt", entries: summary.damageDealt, unit: "damage" },
+      { title: "Most Damage Taken", entries: summary.damageTaken, unit: "damage" },
+      { title: "Best Healer", entries: summary.healingDone, unit: "healing" },
+    ];
+
+    if (summary.mvp) {
+      const mvp = contentEl.createDiv({ cls: "dnd-ct-award-mvp" });
+      mvp.createDiv({ cls: "dnd-ct-award-mvp-trophy", text: "🏆" });
+      this.renderPortrait(mvp, summary.mvp.actor, "dnd-ct-award-mvp-portrait");
+      const text = mvp.createDiv({ cls: "dnd-ct-award-mvp-text" });
+      text.createDiv({ cls: "dnd-ct-award-mvp-label", text: "MVP of the Encounter" });
+      text.createDiv({ cls: "dnd-ct-award-mvp-name", text: summary.mvp.actor.display });
+      text.createDiv({ cls: "dnd-ct-award-mvp-reasons", text: summary.mvp.reasons.join(" · ") });
+    }
+
+    const grid = contentEl.createDiv({ cls: "dnd-ct-awards-grid" });
+    awards.forEach((award) => this.renderAwardCard(grid, award));
+
+    new Setting(contentEl)
+      .addButton((btn) =>
+        btn
+          .setButtonText("Project Awards")
+          .setCta()
+          .onClick((evt) => {
+            void this.projectAwards(evt);
+          })
+      )
+      .addButton((btn) =>
+        btn
+          .setButtonText(this.logFile ? "Open Log" : "Log unavailable")
+          .setDisabled(!this.logFile)
+          .onClick(() => {
+            if (this.logFile) {
+              void this.app.workspace.openLinkText(this.logFile.path, "");
+              this.close();
+            }
+          })
+      )
+      .addButton((btn) => btn.setButtonText("Close").onClick(() => this.close()));
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+
+  private renderAwardCard(parent: HTMLElement, award: {
+    title: string;
+    entries: Array<{ actor: CombatRunActorRef; value: number }>;
+    unit: string;
+  }) {
+    const card = parent.createDiv({ cls: "dnd-ct-award-card" });
+    card.createEl("h3", { text: award.title });
+
+    if (award.entries.length === 0) {
+      card.createEl("p", { cls: "dnd-ct-award-empty", text: "No score this time." });
+      return;
+    }
+
+    const podium = card.createDiv({ cls: "dnd-ct-award-mini-podium" });
+    const placements = [
+      { place: 2, entry: award.entries[1], cls: "second" },
+      { place: 1, entry: award.entries[0], cls: "first" },
+      { place: 3, entry: award.entries[2], cls: "third" },
+    ];
+
+    placements.forEach((slot) => {
+      const step = podium.createDiv({ cls: `dnd-ct-award-mini-step dnd-ct-award-mini-step-${slot.cls}` });
+      if (!slot.entry) {
+        step.createEl("span", { cls: "dnd-ct-award-mini-empty", text: String(slot.place) });
+        return;
+      }
+      this.renderPortrait(step, slot.entry.actor);
+      step.createEl("span", { cls: "dnd-ct-award-mini-rank", text: `#${slot.place}` });
+      step.createEl("span", { cls: "dnd-ct-award-winner", text: slot.entry.actor.display });
+      step.createEl("span", { cls: "dnd-ct-award-score", text: `${slot.entry.value} ${award.unit}` });
+    });
+  }
+
+  private renderPortrait(parent: HTMLElement, actor: CombatRunActorRef, extraClass = "") {
+    const portrait = parent.createDiv({ cls: `dnd-ct-award-portrait ${extraClass}`.trim() });
+    const imageResourcePath = this.tracker.getCombatantPortraitResourcePath(actor);
+    if (imageResourcePath) {
+      const img = portrait.createEl("img");
+      img.src = imageResourcePath;
+      img.alt = "";
+      return;
+    }
+
+    const initials = actor.display
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || "")
+      .join("") || "?";
+    portrait.createEl("span", { text: initials });
+  }
+
+  private async projectAwards(evt?: MouseEvent) {
+    const pm = this.tracker.plugin.projectionManager;
+    if (!pm) {
+      new Notice("Projection manager not available");
+      return;
+    }
+
+    const screens = await enumerateScreens();
+    if (screens.length === 0) {
+      new Notice("No screens detected");
+      return;
+    }
+
+    const occupied = pm.getOccupiedScreenKeys();
+    const projectTo = async (screen: ScreenInfo) => {
+      await pm.projectCombatAwardsView(screen, this.state);
+    };
+
+    if (screens.length <= 1) {
+      const screen = screens[0]!;
+      const sKey = screenKey(screen);
+      if (occupied.has(sKey)) {
+        const menu = new Menu();
+        menu.addItem((item) =>
+          item.setTitle(`Switch ${screen.label} to Combat Awards`).onClick(() => {
+            void projectTo(screen);
+          }),
+        );
+        if (evt) menu.showAtMouseEvent(evt);
+        else menu.showAtPosition({ x: 100, y: 100 });
+      } else {
+        await projectTo(screen);
+      }
+      return;
+    }
+
+    const menu = new Menu();
+    for (const screen of screens) {
+      const sKey = screenKey(screen);
+      const label = `${screen.isPrimary ? "Primary" : "Screen"} ${screen.label} (${screen.width}x${screen.height})`;
+      menu.addItem((item) =>
+        item
+          .setTitle(occupied.has(sKey) ? `Switch ${screen.label} to Combat Awards` : label)
+          .onClick(() => {
+            void projectTo(screen);
+          }),
+      );
+    }
+    if (evt) menu.showAtMouseEvent(evt);
+    else menu.showAtPosition({ x: 100, y: 100 });
   }
 }
 

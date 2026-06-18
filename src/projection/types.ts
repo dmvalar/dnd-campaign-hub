@@ -59,7 +59,7 @@ export interface HandoutProjectionState {
 // ── Session state (runtime only, not persisted) ────────────────────────
 
 /** What kind of content is currently shown on a managed screen. */
-export type ManagedScreenStatus = 'idle' | 'map' | 'combat' | 'pursuit' | 'media' | 'handout';
+export type ManagedScreenStatus = 'idle' | 'map' | 'combat' | 'combat-awards' | 'pursuit' | 'media' | 'handout';
 
 /** Runtime state for a single managed screen during an active session. */
 export interface ManagedScreenState {
