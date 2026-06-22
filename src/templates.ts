@@ -8,7 +8,7 @@ world:
 campaign: 
 status: active
 role: player
-system:
+system: dnd-5e
 type: world
 template_version: 1.3.0
 fc-calendar: 
@@ -738,8 +738,9 @@ How the spell scales with level.
 
 export const CAMPAIGN_TEMPLATE = `---
 type: campaign
-template_version: 1.2.1
+template_version: 1.2.2
 status: active
+system: dnd-5e
 dm: 
 players: []
 party_id: ""

@@ -9,7 +9,7 @@ D&D Campaign Hub supports multiple campaigns in the same vault. Each campaign ha
    - **Campaign Name** — the display name and folder name.
    - **Your Role** — Game Master / DM or Player.
    - **DM Name** — visible only when the role is set to Player.
-   - **Game System** — D&D 5e, Pathfinder 2e, Call of Cthulhu, Savage Worlds, FATE Core, OSR, or Other/Custom.
+   - **Game System** — D&D 5e, How to be a Hero, Pathfinder 2e, Call of Cthulhu, Savage Worlds, FATE Core, OSR, or Other/Custom.
    - **Fantasy Calendar** — link an existing Calendarium calendar, create a new one (quick, full, or import), or select None.
    - **Campaign Start Date** — optionally pick a starting in-game date from the linked calendar.
 3. Select **Create Campaign**.
@@ -25,6 +25,18 @@ ttrpgs/
     Factions/
     Sessions/
 ```
+
+## Change a campaign's system
+
+Run **Change Campaign System** from the Command Palette, or use the **Campaign System** button on a campaign/world note action bar.
+
+The selected system is stored in campaign frontmatter and in `World.md`. Future system-specific tools use this value to decide which features are available. For example, How to be a Hero-specific tools should only appear when the active campaign uses the **How to be a Hero** system.
+
+## How to be a Hero evidence
+
+How to be a Hero campaigns get an `Evidences/` folder. DMs can create evidence notes from **Create Content**, the campaign/world note action bar, or the **Create New Evidence** command.
+
+Evidence notes support edit and delete action buttons and are intended for clues, testimony, documents, objects, locations, and other investigation material.
 
 ## Switch between campaigns
 

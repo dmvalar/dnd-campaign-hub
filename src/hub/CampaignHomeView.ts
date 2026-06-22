@@ -115,6 +115,7 @@ export class CampaignHomeView extends ItemView {
     title.createEl("span", { text: "Campaign Home", cls: "campaign-home-kicker" });
     title.createEl("h2", { text: data.campaignName });
     title.createEl("p", { text: data.campaignPath, cls: "campaign-home-path" });
+    title.createEl("p", { text: this.plugin.getCampaignSystemLabel(data.campaignPath), cls: "campaign-home-path" });
 
     if (campaigns.length > 1) {
       const select = header.createEl("select", { cls: "campaign-home-campaign-select" });

@@ -120,6 +120,7 @@ All commands are available from the Command Palette. Search for "D&D" or "D&D Hu
 | Command | Description |
 | --- | --- |
 | Create New Campaign | Open the campaign creation modal |
+| Change Campaign System | Change the RPG system stored for the active campaign |
 | Create New Session | Open the session creation modal |
 | End Session Here | Record the ending scene for the current session |
 | Open Session Prep Dashboard | Open the preparation panel |
@@ -159,6 +160,9 @@ All commands are available from the Command Palette. Search for "D&D" or "D&D Hu
 | Command | Description |
 | --- | --- |
 | Create New Item | Open the item creation modal |
+| Create New Evidence | Create a How to be a Hero evidence note |
+| Edit Evidence | Edit the current evidence note |
+| Delete Evidence | Delete the current evidence note |
 | Edit Item | Edit the item in the current note |
 | Delete Item | Delete the current item note |
 | Create New Spell | Open the spell import/creation modal |

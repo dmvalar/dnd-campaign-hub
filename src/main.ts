@@ -131,6 +131,9 @@ import { SessionCreationModal } from './session/SessionCreationModal';
 import { EndSessionModal } from './session/EndSessionModal';
 import { DMScreenView } from './dm-screen/DMScreenView';
 import { CampaignCreationModal } from './campaign/CampaignCreationModal';
+import { CampaignSystemModal } from './campaign/CampaignSystemModal';
+import { getCampaignSystemLabel, isHowToBeAHeroSystem, normalizeCampaignSystem } from './campaign/CampaignSystems';
+import { EvidenceCreationModal } from './campaign/EvidenceCreationModal';
 import { renderEntityTable } from './rendering/TableRenderer';
 import { renderView } from './rendering/ViewRenderer';
 
@@ -659,6 +662,12 @@ export default class DndCampaignHubPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "change-campaign-system",
+      name: "Change Campaign System",
+      callback: () => this.changeCampaignSystem(),
+    });
+
+    this.addCommand({
       id: "create-session",
       name: "Create New Session",
       callback: () => this.createSession(),
@@ -1151,6 +1160,48 @@ export default class DndCampaignHubPlugin extends Plugin {
           }
         } else {
           new Notice("Please open an item note first");
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "create-evidence",
+      name: "Create New Evidence",
+      callback: () => this.createEvidence(),
+    });
+
+    this.addCommand({
+      id: "edit-evidence",
+      name: "Edit Evidence",
+      callback: () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          this.editEvidence(file.path);
+        } else {
+          new Notice("Please open an evidence note first");
+        }
+      },
+    });
+
+    this.addCommand({
+      id: "delete-evidence",
+      name: "Delete Evidence",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (file) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter?.type === "evidence") {
+            const evidenceName = cache.frontmatter.name || file.basename;
+            const confirmed = await this.confirmDelete(file.name);
+            if (confirmed) {
+              await this.app.vault.delete(file);
+              new Notice(`Evidence "${evidenceName}" deleted`);
+            }
+          } else {
+            new Notice("This is not an evidence note");
+          }
+        } else {
+          new Notice("Please open an evidence note first");
         }
       },
     });
@@ -2036,7 +2087,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 				createBtn("🏠 Campaign Home", "dnd-hub-btn-extra", () => this.openCampaignHome(campaignPathForNote()), "Open this campaign in Campaign Home");
 				createBtn("📜 New Session", "dnd-hub-btn-create", () => this.createSession(campaignPathForNote()), "Create a new session for this campaign");
 				createBtn("✨ Create Content", "dnd-hub-btn-create", () => this.openCreateContent(campaignPathForNote()), "Create campaign content");
+				if (this.isHowToBeAHeroCampaign(campaignPathForNote())) {
+					createBtn("🧾 New Evidence", "dnd-hub-btn-create", () => this.createEvidence(campaignPathForNote()), "Create evidence for this How to be a Hero campaign");
+				}
 				createBtn("⚔️ Open Party", "dnd-hub-btn-extra", () => this.openPartyManager(campaignPathForNote()), "Open the party for this campaign");
+				createBtn("⚙️ Campaign System", "dnd-hub-btn-extra", () => this.changeCampaignSystem(campaignPathForNote()), "Change the RPG system for this campaign");
 				break;
 
 			case "world":
@@ -2046,6 +2101,10 @@ export default class DndCampaignHubPlugin extends Plugin {
 				createBtn("📜 Create New Session", "dnd-hub-btn-create", cmd("create-session"));
 				createBtn("🏛️ Create New Faction", "dnd-hub-btn-create", cmd("create-faction"));
 				createBtn("🗺️ Create New Adventure", "dnd-hub-btn-create", cmd("create-adventure"));
+				if (this.isHowToBeAHeroCampaign(campaignPathForNote())) {
+					createBtn("🧾 New Evidence", "dnd-hub-btn-create", () => this.createEvidence(campaignPathForNote()), "Create evidence for this How to be a Hero campaign");
+				}
+				createBtn("⚙️ Campaign System", "dnd-hub-btn-extra", () => this.changeCampaignSystem(campaignPathForNote()), "Change the RPG system for this campaign");
 				break;
 
 			case "player":
@@ -2107,6 +2166,11 @@ export default class DndCampaignHubPlugin extends Plugin {
 			case "item":
 				createBtn("✏️ Edit Item", "dnd-hub-btn-edit", cmd("edit-item"));
 				createBtn("🗑️ Delete Item", "dnd-hub-btn-delete", cmd("delete-item"));
+				break;
+
+			case "evidence":
+				createBtn("✏️ Edit Evidence", "dnd-hub-btn-edit", cmd("edit-evidence"));
+				createBtn("🗑️ Delete Evidence", "dnd-hub-btn-delete", cmd("delete-evidence"));
 				break;
 
 			case "spell":
@@ -2375,6 +2439,15 @@ export default class DndCampaignHubPlugin extends Plugin {
 		new CampaignCreationModal(this.app, this).open();
 	}
 
+	changeCampaignSystem(campaignPathOverride?: string) {
+		const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
+		if (!campaignPath) {
+			new Notice("Create or select a campaign first.");
+			return;
+		}
+		new CampaignSystemModal(this.app, this, campaignPath).open();
+	}
+
 	async createNpc(campaignPathOverride?: string) {
 		// Open NPC creation modal instead of simple name prompt
 		new NPCCreationModal(this.app, this, undefined, campaignPathOverride).open();
@@ -2482,6 +2555,30 @@ export default class DndCampaignHubPlugin extends Plugin {
 	async editItem(itemPath: string) {
 		// Open Item creation modal in edit mode
 		new ItemCreationModal(this.app, this, itemPath).open();
+	}
+
+	async createEvidence(campaignPathOverride?: string) {
+		const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
+		if (!this.isHowToBeAHeroCampaign(campaignPath)) {
+			new Notice("Evidences are only available in How to be a Hero campaigns.");
+			return;
+		}
+		await this.ensureFolderExists(`${campaignPath}/Evidences`);
+		new EvidenceCreationModal(this.app, this, undefined, campaignPath).open();
+	}
+
+	async editEvidence(evidencePath: string) {
+		const file = this.app.vault.getAbstractFileByPath(evidencePath);
+		if (!(file instanceof TFile)) {
+			new Notice("Evidence note not found");
+			return;
+		}
+		const cache = this.app.metadataCache.getFileCache(file);
+		if (cache?.frontmatter?.type !== "evidence") {
+			new Notice("This is not an evidence note");
+			return;
+		}
+		new EvidenceCreationModal(this.app, this, evidencePath).open();
 	}
 
 	async createCreature(campaignPathOverride?: string) {
@@ -2842,6 +2939,34 @@ export default class DndCampaignHubPlugin extends Plugin {
 			|| this.detectCampaignFromActiveFile()
 			|| this.getAllCampaigns()[0]?.path
 			|| "";
+	}
+
+	getCampaignSystem(campaignPathOverride?: string): string {
+		const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
+		if (!campaignPath) return normalizeCampaignSystem("");
+
+		const candidates = [
+			`${campaignPath}/World.md`,
+			`${campaignPath}/${campaignPath.split("/").pop() || ""}.md`,
+		];
+
+		for (const path of candidates) {
+			const file = this.app.vault.getAbstractFileByPath(path);
+			if (file instanceof TFile) {
+				const system = this.app.metadataCache.getFileCache(file)?.frontmatter?.system;
+				if (system) return normalizeCampaignSystem(String(system));
+			}
+		}
+
+		return normalizeCampaignSystem("");
+	}
+
+	getCampaignSystemLabel(campaignPathOverride?: string): string {
+		return getCampaignSystemLabel(this.getCampaignSystem(campaignPathOverride));
+	}
+
+	isHowToBeAHeroCampaign(campaignPathOverride?: string): boolean {
+		return isHowToBeAHeroSystem(this.getCampaignSystem(campaignPathOverride));
 	}
 
 	private normalizeActiveCampaignPath(campaignPath: string): string {

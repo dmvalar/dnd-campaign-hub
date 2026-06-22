@@ -10,7 +10,7 @@ Manage D&D and TTRPG campaigns inside Obsidian with interactive battle maps, a c
 
 - Create and switch between multiple campaigns in the same vault.
 - Role-based access: GMs have full creation rights, players get read-only views.
-- Supports D&D 5e, Pathfinder 2e, Call of Cthulhu, Savage Worlds, FATE, OSR, and custom systems.
+- Supports D&D 5e, How to be a Hero, Pathfinder 2e, Call of Cthulhu, Savage Worlds, FATE, OSR, and custom systems.
 - Fantasy calendar integration through the Calendarium plugin.
 - Bundled templates for all campaign elements with safe migration on updates.
 
@@ -163,6 +163,7 @@ Tabbed reference panel with eight quick-reference sections: conditions, actions,
 ### Items, spells, traps, and factions
 
 - **Items** — standard and evolving homebrew items that grow with character level. Supports categories, rarity, and attunement.
+- **Evidence** — How to be a Hero campaigns can store investigation clues, testimony, documents, and objects in a dedicated `Evidences` folder.
 - **Spells** — import from the D&D 5e SRD API with search, filter, and detail preview.
 - **Traps** — simple and complex types with threat levels, multiple elements, countermeasures, and encounter difficulty contribution.
 - **Factions** — type, alignment, goals, resources, territory, allied and enemy faction tracking.
@@ -260,6 +261,7 @@ Access all commands through the Command Palette (`Ctrl+P`). Search for "D&D Hub"
 | Command | Description |
 | --- | --- |
 | Create New Campaign | Start a new campaign with folder generation |
+| Change Campaign System | Change the RPG system for the active campaign |
 | Create New Session | Add an auto-numbered session note |
 | End Session Here | Record the ending scene for the active session |
 | Open Session Prep Dashboard | Open the pre-session planning sidebar |
@@ -293,6 +295,7 @@ Access all commands through the Command Palette (`Ctrl+P`). Search for "D&D Hub"
 | Command | Description |
 | --- | --- |
 | Create New Item | Create a standard or evolving item |
+| Create New Evidence | Create a How to be a Hero evidence note |
 | Create New Spell | Import a spell from the SRD |
 | Create New Trap | Build a simple or complex trap |
 | Create New Faction | Create a faction with goals and territory |

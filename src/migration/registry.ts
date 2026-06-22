@@ -1159,6 +1159,22 @@ deleteBtn.addEventListener("click", () => {
       },
     },
 
+    // ── Evidence ────────────────────────────────────────────────────────
+
+    {
+      id: "evidence-1.0.0",
+      entityTypes: ["evidence"],
+      targetVersion: "1.0.0",
+      description: "Ensure evidence notes have dynamic action buttons",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+        if (!out.includes("```dnd-hub")) {
+          out = insertAfterTitle(out, DND_HUB_BLOCK);
+        }
+        return setFrontmatterField(out, "template_version", "1.0.0");
+      },
+    },
+
     // ── Spell ────────────────────────────────────────────────────────────
 
     {
@@ -1289,6 +1305,23 @@ deleteBtn.addEventListener("click", () => {
       description: "Record template clarity pass without rewriting existing campaign notes",
       async apply(ctx: MigrationContext) {
         return setFrontmatterField(ctx.content, "template_version", "1.2.1");
+      },
+    },
+
+    {
+      id: "campaign-1.2.2",
+      entityTypes: ["campaign"],
+      targetVersion: "1.2.2",
+      description: "Add campaign system field for system-specific features",
+      async apply(ctx: MigrationContext) {
+        let out = ctx.content;
+        if (!ctx.frontmatter.system) {
+          out = addFrontmatterFieldAfter(out, "status", "system", "dnd-5e");
+          if (out === ctx.content) {
+            out = addFrontmatterField(out, "system", "dnd-5e");
+          }
+        }
+        return setFrontmatterField(out, "template_version", "1.2.2");
       },
     },
 

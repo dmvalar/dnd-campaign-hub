@@ -45,6 +45,18 @@ export class CreateContentModal extends Modal {
     const intro = contentEl.createDiv({ cls: "dnd-create-content-intro" });
     intro.createEl("p", { text: `Current campaign: ${campaignName}` });
 
+    const referenceActions: CreateAction[] = [
+      { label: "Item", description: "Create an item note.", nextStepKind: "item", action: () => this.plugin.createItem(campaignPath) },
+      { label: "Spell", description: "Import or create a spell note.", nextStepKind: "spell", action: () => this.plugin.createSpell(campaignPath) },
+    ];
+    if (this.plugin.isHowToBeAHeroCampaign(campaignPath)) {
+      referenceActions.unshift({
+        label: "Evidence",
+        description: "Create an investigation clue for this How to be a Hero campaign.",
+        action: () => this.plugin.createEvidence(campaignPath),
+      });
+    }
+
     const groups: CreateGroup[] = [
       {
         title: "Session Flow",
@@ -88,10 +100,7 @@ export class CreateContentModal extends Modal {
       {
         title: "Reference",
         description: "Add reusable campaign reference material.",
-        actions: [
-          { label: "Item", description: "Create an item note.", nextStepKind: "item", action: () => this.plugin.createItem(campaignPath) },
-          { label: "Spell", description: "Import or create a spell note.", nextStepKind: "spell", action: () => this.plugin.createSpell(campaignPath) },
-        ],
+        actions: referenceActions,
       },
     ];
 

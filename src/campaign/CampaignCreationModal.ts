@@ -4,12 +4,13 @@ import { WORLD_TEMPLATE } from "../templates";
 import { CalendarDateInputModal } from './CalendarDateInputModal';
 import { TEMPLATE_VERSIONS } from "../migration";
 import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
+import { CAMPAIGN_SYSTEM_DND_5E, CAMPAIGN_SYSTEM_OPTIONS, isHowToBeAHeroSystem } from "./CampaignSystems";
 
 export class CampaignCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
   campaignName = "";
   dmName = "";
-  system = "D&D 5e";
+  system = CAMPAIGN_SYSTEM_DND_5E;
   role = "GM";
   calendar = "";
   calendarName = "";
@@ -80,14 +81,8 @@ export class CampaignCreationModal extends Modal {
       .setName("Game System")
       .setDesc("Which RPG system are you using?")
       .addDropdown((dropdown) => {
+        CAMPAIGN_SYSTEM_OPTIONS.forEach((option) => dropdown.addOption(option.id, option.label));
         dropdown
-          .addOption("D&D 5e", "Dungeons & Dragons 5th Edition")
-          .addOption("Pathfinder 2e", "Pathfinder 2nd Edition")
-          .addOption("Call of Cthulhu", "Call of Cthulhu")
-          .addOption("Savage Worlds", "Savage Worlds")
-          .addOption("FATE", "FATE Core")
-          .addOption("OSR", "Old School Renaissance")
-          .addOption("Other", "Other / Custom")
           .setValue(this.system)
           .onChange((value) => {
             this.system = value;
@@ -345,6 +340,9 @@ export class CampaignCreationModal extends Modal {
         `${campaignPath}/Plot`,
         `${campaignPath}/fc-calendar`,
       ];
+      if (isHowToBeAHeroSystem(this.system)) {
+        campaignFolders.push(`${campaignPath}/Evidences`);
+      }
 
       for (const folder of campaignFolders) {
         await this.plugin.ensureFolderExists(folder);

@@ -109,7 +109,7 @@ If you did not create a campaign through the setup wizard, create one directly.
    - **Campaign Name**: the name of your campaign, for example `Lost Mines of Phandelver`.
    - **Your Role**: choose **Game Master / DM** if you are running the game, or **Player** if you are joining someone else's campaign vault.
    - **DM Name**: shown only when you choose **Player**.
-   - **Game System**: choose the RPG system you are using.
+   - **Game System**: choose the RPG system you are using, including D&D 5e or How to be a Hero.
    - **Fantasy Calendar**: optional. You can leave this as **None** and add a calendar later.
 4. Select **Create Campaign**.
 
