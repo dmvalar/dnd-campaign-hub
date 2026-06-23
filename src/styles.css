@@ -10412,6 +10412,11 @@
   transform: scale(0.92);
 }
 
+.dnd-sfx-play-btn.is-playing {
+  border-color: var(--text-error);
+  background: var(--text-error);
+}
+
 .dnd-sfx-play-icon {
   font-size: 18px;
 }
@@ -10481,6 +10486,12 @@
 .dnd-sfx-inline-btn:active,
 .dnd-sfx-inline-btn.playing {
   transform: translateY(1px) scale(0.96);
+}
+
+.dnd-sfx-inline-btn.is-playing {
+  border-color: var(--text-error);
+  background: var(--background-modifier-error);
+  color: var(--text-error);
 }
 
 .dnd-sfx-inline-icon {

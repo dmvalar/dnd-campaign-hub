@@ -12,6 +12,7 @@
  */
 import { App, Modal, Notice, Setting, MarkdownPostProcessorContext, TFile, TFolder } from 'obsidian';
 import { MusicPlayer } from './MusicPlayer';
+import type { SoundEffectPlayback } from './MusicPlayer';
 import type { MusicSettings, SoundEffect } from './types';
 import { AUDIO_EXTENSIONS, isAudioExtension } from './types';
 
@@ -39,6 +40,7 @@ export const DEFAULT_SFX_CONFIG: SoundEffectConfig = {
 
 const INLINE_SFX_PROTOCOL = 'dnd-sfx:';
 const INLINE_SFX_PROTOCOL_SLASHES = 'dnd-sfx://';
+const inlineSfxPlaybacks = new WeakMap<HTMLElement, SoundEffectPlayback>();
 
 // ─────────────────────────────────────────────────────────────────
 //  SoundEffectModal – form to configure the SFX before inserting
@@ -308,7 +310,19 @@ export function renderSoundEffectBlock(
 
   // ── Play button (large, prominent) ──────────────────────
   const playBtn = container.createEl('button', { cls: 'dnd-sfx-play-btn' });
-  playBtn.createEl('span', { text: config.icon || '🔊', cls: 'dnd-sfx-play-icon' });
+  const playIcon = playBtn.createEl('span', { text: config.icon || '🔊', cls: 'dnd-sfx-play-icon' });
+  let playback: SoundEffectPlayback | null = null;
+
+  const setPlaying = (isPlaying: boolean) => {
+    playBtn.classList.toggle('is-playing', isPlaying);
+    playIcon.setText(isPlaying ? '⏹' : (config.icon || '🔊'));
+    playBtn.setAttribute(
+      'aria-label',
+      `${isPlaying ? 'Stop' : 'Play'} sound effect: ${config.name || 'Sound Effect'}`
+    );
+    playBtn.setAttribute('title', isPlaying ? 'Stop sound effect' : 'Play sound effect');
+  };
+  setPlaying(false);
 
   // ── Info section ────────────────────────────────────────
   const info = container.createEl('div', { cls: 'dnd-sfx-info' });
@@ -343,9 +357,20 @@ export function renderSoundEffectBlock(
 
   // ── Click handler — plays SFX without stopping music ───
   playBtn.addEventListener('click', () => {
+    if (playback?.isPlaying()) {
+      playback.stop();
+      return;
+    }
+
     // Ensure the music player leaf is open
     if (onPlayTriggered) onPlayTriggered();
-    playSoundEffectConfig(config, musicPlayer);
+    playback = playSoundEffectConfig(config, musicPlayer);
+    if (!playback) return;
+    setPlaying(true);
+    playback.onStop(() => {
+      playback = null;
+      setPlaying(false);
+    });
 
     // Visual feedback
     playBtn.classList.add('playing');
@@ -403,8 +428,24 @@ export function handleInlineSoundEffectInteraction(
   event.preventDefault();
   event.stopPropagation();
   if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+  const activePlayback = inlineSfxPlaybacks.get(control);
+  if (activePlayback?.isPlaying()) {
+    activePlayback.stop();
+    return true;
+  }
+
   if (onPlayTriggered) onPlayTriggered();
-  playSoundEffectConfig(config, musicPlayer);
+  const playback = playSoundEffectConfig(config, musicPlayer);
+  if (!playback) return true;
+
+  inlineSfxPlaybacks.set(control, playback);
+  setInlineSoundEffectPlaying(control, config, true);
+  playback.onStop(() => {
+    if (inlineSfxPlaybacks.get(control) === playback) {
+      inlineSfxPlaybacks.delete(control);
+      setInlineSoundEffectPlaying(control, config, false);
+    }
+  });
   control.classList.add('playing');
   setTimeout(() => control.classList.remove('playing'), 400);
   return true;
@@ -425,7 +466,16 @@ function createInlineSoundEffectButton(config: SoundEffectConfig, fallbackLabel?
   return button;
 }
 
-function playSoundEffectConfig(config: SoundEffectConfig, musicPlayer: MusicPlayer) {
+function setInlineSoundEffectPlaying(control: HTMLElement, config: SoundEffectConfig, isPlaying: boolean) {
+  control.classList.toggle('is-playing', isPlaying);
+  control.setAttribute(
+    'aria-label',
+    `${isPlaying ? 'Stop' : 'Play'} sound effect: ${config.name || 'Sound Effect'}`
+  );
+  control.setAttribute('title', isPlaying ? 'Playing. Press again to stop.' : config.filePath);
+}
+
+function playSoundEffectConfig(config: SoundEffectConfig, musicPlayer: MusicPlayer): SoundEffectPlayback | null {
   const sfx: SoundEffect = {
     id: 'inline-sfx',
     name: config.name || 'Sound Effect',
@@ -433,7 +483,7 @@ function playSoundEffectConfig(config: SoundEffectConfig, musicPlayer: MusicPlay
     icon: config.icon || '🔊',
     volume: config.volume ?? undefined,
   };
-  musicPlayer.playSoundEffect(sfx);
+  return musicPlayer.playSoundEffect(sfx);
 }
 
 // ─────────────────────────────────────────────────────────────────

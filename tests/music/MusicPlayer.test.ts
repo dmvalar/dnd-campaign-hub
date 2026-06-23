@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { TFile } from "obsidian";
 import type { SceneMusicConfig } from "../../src/music/types";
 
 vi.mock("../../src/music/AudioLayer", () => ({
@@ -19,6 +20,8 @@ vi.mock("../../src/music/AudioLayer", () => ({
     stopCalled = false;
     loadPlaylistCalled = false;
     playCalled = false;
+    duckVolumeCalled = 0;
+    unduckVolumeCalled = 0;
 
     constructor(_app: any, volume: number, fadeDurationMs: number) {
       this.state.volume = volume;
@@ -66,12 +69,35 @@ vi.mock("../../src/music/AudioLayer", () => ({
     getCurrentTrack() { return null; }
     getTrackList() { return []; }
     playTrackByIndex(_index: number) {}
-    duckVolume(_amount: number, _fadeMs: number) {}
-    unduckVolume(_fadeMs: number) {}
+    duckVolume(_amount: number, _fadeMs: number) { this.duckVolumeCalled++; }
+    unduckVolume(_fadeMs: number) { this.unduckVolumeCalled++; }
   },
 }));
 
 import { MusicPlayer } from "../../src/music/MusicPlayer";
+
+class MockAudio extends EventTarget {
+  paused = true;
+  ended = false;
+  src = "";
+  volume = 1;
+  currentTime = 0;
+  play = vi.fn(() => {
+    this.paused = false;
+    this.ended = false;
+    return Promise.resolve();
+  });
+  pause = vi.fn(() => {
+    if (this.paused) return;
+    this.paused = true;
+    this.dispatchEvent(new Event("pause"));
+  });
+  finish() {
+    this.ended = true;
+    this.paused = true;
+    this.dispatchEvent(new Event("ended"));
+  }
+}
 
 function createSettings() {
   return {
@@ -93,9 +119,11 @@ function createSettings() {
 describe("music/MusicPlayer transition hardening", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.stubGlobal("Audio", MockAudio);
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
@@ -135,5 +163,67 @@ describe("music/MusicPlayer transition hardening", () => {
     expect((player.ambient as any).loadPlaylistCalled).toBe(true);
     expect((player.primary as any).playCalled).toBe(true);
     expect((player.ambient as any).playCalled).toBe(true);
+  });
+});
+
+describe("music/MusicPlayer sound effect playback handles", () => {
+  beforeEach(() => {
+    vi.stubGlobal("Audio", MockAudio);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function createAppWithAudioFile(path: string) {
+    const file = Object.assign(new TFile(), { path });
+    return {
+      vault: {
+        getAbstractFileByPath: vi.fn((candidate: string) => candidate === path ? file : null),
+        getResourcePath: vi.fn(() => `app://vault/${path}`),
+      },
+    } as any;
+  }
+
+  it("returns a handle that stops the active SFX and restores ducking", () => {
+    const player = new MusicPlayer(createAppWithAudioFile("sfx/ring.mp3"), createSettings());
+
+    const playback = player.playSoundEffect({
+      id: "ring",
+      name: "Telephone Ringing",
+      filePath: "sfx/ring.mp3",
+      icon: "☎️",
+    });
+
+    expect(playback).not.toBeNull();
+    expect(playback!.isPlaying()).toBe(true);
+    expect((player.primary as any).duckVolumeCalled).toBe(1);
+    expect((player.ambient as any).duckVolumeCalled).toBe(1);
+
+    playback!.stop();
+
+    expect(playback!.isPlaying()).toBe(false);
+    expect((player.primary as any).unduckVolumeCalled).toBe(1);
+    expect((player.ambient as any).unduckVolumeCalled).toBe(1);
+  });
+
+  it("marks the handle stopped when the SFX ends naturally", () => {
+    const player = new MusicPlayer(createAppWithAudioFile("sfx/chime.mp3"), createSettings());
+    const playback = player.playSoundEffect({
+      id: "chime",
+      name: "Chime",
+      filePath: "sfx/chime.mp3",
+      icon: "🔔",
+    });
+    const onStop = vi.fn();
+    playback!.onStop(onStop);
+
+    const audio = (player as any).sfxAudios[0] as MockAudio;
+    audio.finish();
+
+    expect(playback!.isPlaying()).toBe(false);
+    expect(onStop).toHaveBeenCalledOnce();
+    expect((player.primary as any).unduckVolumeCalled).toBe(1);
+    expect((player.ambient as any).unduckVolumeCalled).toBe(1);
   });
 });
