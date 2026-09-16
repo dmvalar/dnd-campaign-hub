@@ -4219,7 +4219,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		// re-renders when the GM view moves to a new leaf / DOM element.
 		// (rAF-coalesced: many calls per frame → one actual sync at next paint)
 		let _pvSyncScheduled = false;
-		const _syncPlayerViewImmediate = () => {
+		const _syncPlayerViewImmediate = (opts?: { forceFullUpdate?: boolean }) => {
 			_pvSyncScheduled = false;
 			if (plugin._playerMapViews && plugin._playerMapViews.size > 0) {
 				// Build drag ruler data if a marker is being dragged
@@ -4337,7 +4337,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					const viewMapId = (view as any).mapId;
 					if (viewMapId === mapId) {
 						try { 
-							if (payload.draggingMarkerId && typeof (view as any).previewMarkerDrag === 'function') {
+							if (!opts?.forceFullUpdate && payload.draggingMarkerId && typeof (view as any).previewMarkerDrag === 'function') {
 								(view as any).previewMarkerDrag(payload);
 							} else {
 								view.updateMapData(payload);
@@ -4362,8 +4362,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		};
 
 		const initiativeOverlayUnsub = plugin.combatTracker.onChange(() => {
-			if (config.showInitiativeInPlayerView === true && (viewport as any)._syncPlayerView) {
-				(viewport as any)._syncPlayerView();
+			if (config.showInitiativeInPlayerView === true) {
+				_syncPlayerViewImmediate({ forceFullUpdate: true });
 			}
 		});
 		const initiativeOverlayObserver = new MutationObserver(() => {
