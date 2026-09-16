@@ -54,6 +54,7 @@ export class PlayerMapView extends ItemView {
   /** Public read-only access to the mapId currently displayed. */
   getMapId(): string { return this.mapId; }
   private canvas: HTMLCanvasElement | null = null;
+  private dragOverlayCanvas: HTMLCanvasElement | null = null;
   private mapImage: MapMediaElement | null = null;
   private markerImageCache: Map<string, HTMLImageElement> = new Map();
   private envAssetImageCache: Map<string, HTMLImageElement> = new Map();
@@ -121,6 +122,7 @@ export class PlayerMapView extends ItemView {
   private tabletopTargetY: number | null = null; // desired image top-left Y (natural px)
   private tabletopTargetViewportX: number | null = null;
   private tabletopTargetViewportY: number | null = null;
+  private cameraCommandVersion: number = 0;
   private mapContainer: HTMLDivElement | null = null;
   private initiativeOverlayEl: HTMLDivElement | null = null;
   private prevInitiativeState: Map<string, { hp: number; maxHP: number; tempHP: number; ac: number; statuses: string }> = new Map();
@@ -237,6 +239,11 @@ export class PlayerMapView extends ItemView {
    * ResizeObserver, image onload, and tabletop-mode change handlers.
    */
   updateMapData(config: any) {
+    this.clearMapFadeOverlays();
+    if (!config?.draggingMarkerId) {
+      this.clearDragPreview();
+    }
+
     const nextImageFile = typeof config?.imageFile === 'string' ? config.imageFile : '';
     if (nextImageFile) {
       const current = this.mapConfig || {};
@@ -383,6 +390,19 @@ export class PlayerMapView extends ItemView {
     fade.classList.remove('active');
     setTimeout(() => { try { fade.remove(); } catch {} }, 1000);
     (this as any)._initFade = null;
+  }
+
+  private clearMapFadeOverlays() {
+    const container = this.containerEl.children[1] as HTMLElement | undefined;
+    if (!container) return;
+
+    const safety = (this as any)._initFadeSafety;
+    if (safety) { clearTimeout(safety); (this as any)._initFadeSafety = null; }
+    (this as any)._initFade = null;
+
+    container.querySelectorAll('.dnd-player-map-swap-fade').forEach((fade) => {
+      try { fade.remove(); } catch {}
+    });
   }
 
   /**
@@ -932,6 +952,7 @@ export class PlayerMapView extends ItemView {
    * @param centerY - Image Y coordinate to center on
    */
   setTabletopPanFromImageCoords(centerX: number, centerY: number) {
+    this.cameraCommandVersion++;
     
     // Store the desired center point
     this.tabletopTargetX = centerX;
@@ -944,6 +965,7 @@ export class PlayerMapView extends ItemView {
   }
 
   setTabletopPanFromImageCoordsAtViewportPoint(centerX: number, centerY: number, viewportX: number, viewportY: number) {
+    this.cameraCommandVersion++;
     this.tabletopTargetX = centerX;
     this.tabletopTargetY = centerY;
     this.tabletopTargetViewportX = viewportX;
@@ -960,6 +982,8 @@ export class PlayerMapView extends ItemView {
    * so the browser handles the interpolation natively — no manual math.
    */
   smoothPanToImageCoords(centerX: number, centerY: number, durationMs: number = 600) {
+    this.clearMapFadeOverlays();
+
     if (!this.mapContainer || !this.mapImage) {
       this.setTabletopPanFromImageCoords(centerX, centerY);
       return;
@@ -995,6 +1019,8 @@ export class PlayerMapView extends ItemView {
    * in a single smooth animation.
    */
   smoothPanAndZoomTo(centerX: number, centerY: number, scale: number, durationMs: number = 600) {
+    this.clearMapFadeOverlays();
+
     if (!this.mapContainer || !this.mapImage) {
       this.tabletopScale = scale || 1;
       this.setTabletopPanFromImageCoords(centerX, centerY);
@@ -1026,6 +1052,8 @@ export class PlayerMapView extends ItemView {
   }
 
   smoothPanAndZoomToViewportPoint(centerX: number, centerY: number, scale: number, viewportX: number, viewportY: number, durationMs: number = 600) {
+    this.clearMapFadeOverlays();
+
     if (!this.mapContainer || !this.mapImage) {
       this.tabletopScale = scale || 1;
       this.setTabletopPanFromImageCoordsAtViewportPoint(centerX, centerY, viewportX, viewportY);
@@ -1078,6 +1106,7 @@ export class PlayerMapView extends ItemView {
    * @param rotation - Rotation in degrees (0, 90, 180, 270)
    */
   setTabletopRotation(rotation: number) {
+    this.cameraCommandVersion++;
     this.tabletopRotation = ((rotation % 360) + 360) % 360;
 
     // Use centralized transform application so rotation does not wipe out pan
@@ -1089,8 +1118,13 @@ export class PlayerMapView extends ItemView {
    * rectangle exactly into the player viewport.
    */
   setTabletopScale(scale: number) {
+    this.cameraCommandVersion++;
     this.tabletopScale = scale || 1;
     this.applyTabletopTransform();
+  }
+
+  getCameraCommandVersion(): number {
+    return this.cameraCommandVersion;
   }
 
   /**
@@ -1421,8 +1455,8 @@ export class PlayerMapView extends ItemView {
     initFade.className = 'dnd-player-map-swap-fade slow active';
     container.appendChild(initFade);
     (this as any)._initFade = initFade;
-    // Safety: auto-remove after 5 s in case no-one calls fadeInInitial()
-    const safetyTimer = setTimeout(() => this.fadeInInitial(), 5000);
+    // Safety: auto-remove quickly in case the projection manager callback is delayed.
+    const safetyTimer = setTimeout(() => this.fadeInInitial(), 1500);
     (this as any)._initFadeSafety = safetyTimer;
 
     // Button toolbar (top-right corner)
@@ -1543,6 +1577,11 @@ export class PlayerMapView extends ItemView {
       cls: 'dnd-player-map-canvas'
     });
     this.canvas = canvas;
+
+    const dragOverlayCanvas = sled.createEl('canvas', {
+      cls: 'dnd-player-map-canvas dnd-player-map-drag-overlay'
+    });
+    this.dragOverlayCanvas = dragOverlayCanvas;
     this.renderInitiativeOverlay();
 
     // Helper to sync canvas CSS size and position to match displayed image exactly
@@ -1555,6 +1594,17 @@ export class PlayerMapView extends ItemView {
           canvas.width = _bw;
           canvas.height = _bh;
         }
+        if (dragOverlayCanvas.width !== _bw || dragOverlayCanvas.height !== _bh) {
+          dragOverlayCanvas.width = _bw;
+          dragOverlayCanvas.height = _bh;
+        }
+
+        const syncOverlay = () => {
+          dragOverlayCanvas.style.left = canvas.style.left;
+          dragOverlayCanvas.style.top = canvas.style.top;
+          dragOverlayCanvas.style.width = canvas.style.width;
+          dragOverlayCanvas.style.height = canvas.style.height;
+        };
 
         if (this.tabletopMode) {
           // In tabletop mode: image is sized by natural dimensions (no scale applied via CSS size)
@@ -1586,6 +1636,7 @@ export class PlayerMapView extends ItemView {
             canvas.style.top = '0px';
             canvas.style.width = img.naturalWidth + 'px';
             canvas.style.height = img.naturalHeight + 'px';
+            syncOverlay();
           }
 
           // Expose sync helper so GM-side code can ask the player view to refresh layout
@@ -1620,6 +1671,7 @@ export class PlayerMapView extends ItemView {
           canvas.style.top = (imgRect.top - sledRect.top) + 'px';
           canvas.style.width = imgRect.width + 'px';
           canvas.style.height = imgRect.height + 'px';
+          syncOverlay();
         }
 
         this.redrawAnnotations();
@@ -3110,6 +3162,64 @@ export class PlayerMapView extends ItemView {
     // Draw target distance ruler if active
     if (config.targetDistRuler) {
       this.drawTargetDistanceRuler(ctx, config);
+    }
+  }
+
+  clearDragPreview() {
+    if (!this.dragOverlayCanvas) return;
+    const ctx = this.dragOverlayCanvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.dragOverlayCanvas.width, this.dragOverlayCanvas.height);
+  }
+
+  previewMarkerDrag(config: any) {
+    this.clearMapFadeOverlays();
+    if (!this.dragOverlayCanvas || !this.mapConfig || !config?.draggingMarkerId) return;
+
+    const marker = (config.markers || []).find((m: any) => m.id === config.draggingMarkerId);
+    if (!marker) {
+      this.clearDragPreview();
+      return;
+    }
+
+    const markerLayer = marker.layer || 'Player';
+    const markerDef = marker.markerId ? this.plugin.markerLibrary.getMarker(marker.markerId) : null;
+    const visibleToPlayers = this.isTokenGroup(marker)
+      ? !!marker.visibleToPlayers
+      : !!(markerDef && (markerDef.type === 'player' || marker.visibleToPlayers))
+        || markerLayer === 'Player'
+        || markerLayer === 'Elevated'
+        || markerLayer === 'Subterranean';
+    if (!visibleToPlayers && markerLayer === 'DM') {
+      this.clearDragPreview();
+      return;
+    }
+
+    const ctx = this.dragOverlayCanvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.dragOverlayCanvas.width, this.dragOverlayCanvas.height);
+    ctx.setTransform(this._canvasScale, 0, 0, this._canvasScale, 0, 0);
+
+    const previousConfig = this.mapConfig;
+    const previewConfig = {
+      ...previousConfig,
+      dragRuler: config.dragRuler,
+    };
+    this.mapConfig = previewConfig;
+    try {
+      this.drawMarker(ctx, marker);
+      if (previewConfig.dragRuler) {
+        const dragMarkerDef = previewConfig.dragRuler.markerId
+          ? this.plugin.markerLibrary.getMarker(previewConfig.dragRuler.markerId)
+          : null;
+        if ((dragMarkerDef && dragMarkerDef.type === 'player') || previewConfig.dragRuler.visibleToPlayers) {
+          this.drawDragRuler(ctx, previewConfig);
+        }
+      }
+    } finally {
+      this.mapConfig = previousConfig;
     }
   }
 

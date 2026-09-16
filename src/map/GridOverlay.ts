@@ -38,6 +38,7 @@ export function drawGridOverlay(container: HTMLElement, img: MapMediaElement, co
 		canvas.style.pointerEvents = 'none';
 		canvas.style.imageRendering = 'pixelated';
 	}
+	canvas.style.display = config.gridVisible === false ? 'none' : 'block';
 
 	const ctx = canvas.getContext('2d');
 	if (!ctx) return canvas;

@@ -1112,8 +1112,18 @@ export class ProjectionManager {
   private centerMapInViewport(pv: PlayerMapView, onComplete?: () => void): void {
     let completed = false;
     const finish = () => { if (!completed) { completed = true; onComplete?.(); } };
+    const initialCameraVersion = typeof (pv as any).getCameraCommandVersion === 'function'
+      ? (pv as any).getCameraCommandVersion()
+      : null;
 
     const tryCenter = (): boolean => {
+      if (initialCameraVersion !== null
+          && typeof (pv as any).getCameraCommandVersion === 'function'
+          && (pv as any).getCameraCommandVersion() !== initialCameraVersion) {
+        finish();
+        return true;
+      }
+
       const img: HTMLImageElement | null = (pv as any).mapImage;
       const container: HTMLElement | null = (pv as any).mapContainer;
       if (!img || !container) return false;

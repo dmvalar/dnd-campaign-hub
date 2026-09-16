@@ -636,6 +636,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			// the selected vision token (or fits all player tokens).
 			let _autoPanEnabled = false;
 			let _autoPanDebounce: ReturnType<typeof setTimeout> | null = null;
+			let _autoPanGeneration = 0;
 			// Wall drag state
 			let draggingWallIndex = -1; // Index of wall being dragged (-1 = none)
 			let wallDragOffsetStartX = 0;
@@ -1022,6 +1023,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if (isTokenGroup(marker)) return !!marker.visibleToPlayers;
 				const def = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
 				return !!def && (def.type === 'player' || !!marker.visibleToPlayers);
+			};
+
+			const findMarkerOrGroupBySelectionId = (selectionId: string | null | undefined): any | null => {
+				if (!selectionId) return null;
+				for (const marker of config.markers || []) {
+					if (marker?.id === selectionId || marker?.markerId === selectionId) return marker;
+					if (!isTokenGroup(marker)) continue;
+					const members: any[] = marker.tokenGroup?.members || [];
+					if (members.some((member: any) => member?.id === selectionId || member?.markerId === selectionId)) {
+						return marker;
+					}
+				}
+				return null;
 			};
 
 			const markerMovementBlockedByWalls = (marker: any): boolean => {
@@ -3718,7 +3732,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			fogOfWar: config.fogOfWar, walls: config.walls,
 			lightSources: config.lightSources, tunnels: config.tunnels,
 			poiReferences: config.poiReferences, gridType: config.gridType,
-			gridSize: config.gridSize, gridOffsetX: config.gridOffsetX || 0,
+			gridSize: config.gridSize,
+			gridSizeW: config.gridSizeW,
+			gridSizeH: config.gridSizeH,
+			gridVisible: config.gridVisible !== undefined ? config.gridVisible : true,
+			gridOffsetX: config.gridOffsetX || 0,
 			gridOffsetY: config.gridOffsetY || 0, scale: config.scale,
 			name: config.name, isVideo: config.isVideo, type: config.type,
 			showInitiativeInPlayerView: config.showInitiativeInPlayerView === true,
@@ -3927,8 +3945,17 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		// selection (single token or all players). It uses a "tactical
 		// awareness" radius for single tokens (enough map to make decisions)
 		// and a bounding-box fit for multiple tokens.
+		const _cancelPendingAutoPan = () => {
+			_autoPanGeneration++;
+			if (_autoPanDebounce !== null) {
+				clearTimeout(_autoPanDebounce);
+				_autoPanDebounce = null;
+			}
+		};
+
 		const _applyAutoPan = (immediate = false) => {
 			if (!_autoPanEnabled) return;
+			const generation = ++_autoPanGeneration;
 
 			// Clear any pending debounce
 			if (_autoPanDebounce !== null) {
@@ -3937,6 +3964,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			}
 
 			const run = () => {
+				if (generation !== _autoPanGeneration) return;
 				const pm = plugin.projectionManager;
 				if (!pm) return;
 				const currentMapId = config.mapId || resourcePath;
@@ -4091,7 +4119,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				if (selectedVisionTokenId) {
 					// ── Single token: fit the wall-clipped vision footprint ──
-					const marker = (config.markers || []).find((m: any) => m.id === selectedVisionTokenId);
+					const marker = findMarkerOrGroupBySelectionId(selectedVisionTokenId);
 					if (isAutoPanEligible(marker)) {
 						const box = getSingleTokenAutoPanBox(marker);
 						targetCx = box.cx;
@@ -4274,13 +4302,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						// Creature/NPC tokens without visibleToPlayers are DM-only previews;
 						// the player view should fall back to "All Players" combined vision.
 						if (!selectedVisionTokenId) return null;
-						const selMarker = (config.markers || []).find((m: any) => m.id === selectedVisionTokenId);
+						const selMarker = findMarkerOrGroupBySelectionId(selectedVisionTokenId);
 						if (!selMarker) return null;
 						if ((selMarker.layer || 'Player') === 'DM') return null;
-						if (isTokenGroup(selMarker) && selMarker.visibleToPlayers) return selectedVisionTokenId;
+						if (isTokenGroup(selMarker) && selMarker.visibleToPlayers) return selMarker.id;
 						const selDef = selMarker.markerId ? plugin.markerLibrary.getMarker(selMarker.markerId) : null;
-						if (selDef && selDef.type === 'player') return selectedVisionTokenId;
-						if (selMarker.visibleToPlayers) return selectedVisionTokenId;
+						if (selDef && selDef.type === 'player') return selMarker.id;
+						if (selMarker.visibleToPlayers) return selMarker.id;
 						return null; // creature/NPC without Show to Players → All Players for player view
 					})(),
 					hexTerrains: config.hexTerrains,
@@ -4309,7 +4337,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					const viewMapId = (view as any).mapId;
 					if (viewMapId === mapId) {
 						try { 
-							view.updateMapData(payload); 
+							if (payload.draggingMarkerId && typeof (view as any).previewMarkerDrag === 'function') {
+								(view as any).previewMarkerDrag(payload);
+							} else {
+								view.updateMapData(payload);
+							}
 						} catch (e) { 
 							console.error('Failed to update player view', e); 
 						}
@@ -4419,6 +4451,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						poiReferences: config.poiReferences,
 						gridType: config.gridType,
 						gridSize: config.gridSize,
+						gridSizeW: config.gridSizeW,
+						gridSizeH: config.gridSizeH,
+						gridVisible: config.gridVisible !== undefined ? config.gridVisible : true,
 						gridOffsetX: config.gridOffsetX || 0,
 						gridOffsetY: config.gridOffsetY || 0,
 						scale: config.scale,
@@ -10010,6 +10045,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						const r = getPlacedMarkerRadius(m);
 						const dist = Math.sqrt(Math.pow(m.position.x - mapPos.x, 2) + Math.pow(m.position.y - mapPos.y, 2));
 						if (dist <= r) {
+							_cancelPendingAutoPan();
 							saveToHistory();
 							draggingMarkerIndex = i;
 							dragOffsetX = m.position.x - mapPos.x;
@@ -11946,7 +11982,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					if ((viewport as any)._syncPlayerView) {
 						(viewport as any)._syncPlayerView();
 					}
-					// Auto-pan: re-center after token moved (debounced)
 					_applyAutoPan();
 				} else if (activeTool === 'select' && draggingLightIndex >= 0) {
 					// Drop light: save position
@@ -12212,6 +12247,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					viewport.style.cursor = 'default';
 					redrawAnnotations();
 					plugin.saveMapAnnotations(config, el);
+					if ((viewport as any)._syncPlayerView) {
+						(viewport as any)._syncPlayerView();
+					}
 					_applyAutoPan();
 				} else if (activeTool === 'select' && draggingLightIndex >= 0) {
 					draggingLightIndex = -1;
@@ -14657,15 +14695,18 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					return;
 				}
 
-				// Get existing markers on the map to check for duplicates
+				// Get existing markers on the map to check for duplicates and prepared tokens
 				const existingMarkers = config.markers || [];
-				const existingMarkerNames = new Set<string>();
+				const existingMarkerKeys = new Set<string>();
+				const claimedExistingMarkerIds = new Set<string>();
+				const normaliseName = (value: string) => value.toLowerCase().trim();
+				const normaliseColor = (value?: string) => (value || '').toLowerCase().trim();
+				const markerKey = (name: string, borderColor?: string) => `${normaliseName(name)}|${normaliseColor(borderColor)}`;
 				existingMarkers.forEach((m: any) => {
 					const markerDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
 					if (markerDef) {
 						// Track both name and borderColor for exact duplicate detection
-						const key = `${markerDef.name.toLowerCase()}|${(m.borderColor || '').toLowerCase()}`;
-						existingMarkerNames.add(key);
+						existingMarkerKeys.add(markerKey(markerDef.name, m.borderColor));
 					}
 				});
 
@@ -14695,6 +14736,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const maxRow = Math.max(2, totalRows - 1);
 
 				let addedCount = 0;
+				let updatedCount = 0;
 				let skippedCount = 0;
 				let errorCount = 0;
 				saveToHistory();
@@ -14725,14 +14767,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						}
 						if (!borderColor && isMultiple) {
 							borderColor = AUTO_BORDER_COLORS[i % AUTO_BORDER_COLORS.length];
-						}
-
-						// Check for duplicate: same base name + same border color already on map
-						const dupeKey = `${baseName.toLowerCase()}|${(borderColor || '').toLowerCase()}`;
-						if (existingMarkerNames.has(dupeKey)) {
-							console.log(`[DnD-Map]   SKIP duplicate "${displayName}" (key=${dupeKey})`);
-							skippedCount++;
-							continue;
 						}
 
 						// Find or create a marker definition in the library
@@ -14814,6 +14848,37 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							console.log(`[DnD-Map]   Created new marker def "${baseName}" (size=${creatureSize})`);
 						}
 
+						// Check for duplicate: same base name + same border color already on map.
+						const dupeKey = markerKey(baseName, borderColor);
+						if (existingMarkerKeys.has(dupeKey)) {
+							console.log(`[DnD-Map]   SKIP duplicate "${displayName}" (key=${dupeKey})`);
+							skippedCount++;
+							continue;
+						}
+
+						// If this encounter slot needs a concrete color and the matching token is
+						// already staged on the map without an instance color, color that token
+						// instead of adding a duplicate. This preserves prep-time placement.
+						if (borderColor) {
+							const preparedMarker = existingMarkers.find((m: any) => {
+								if (!m?.id || claimedExistingMarkerIds.has(m.id)) return false;
+								if (m.borderColor) return false;
+								if (m.markerId === markerDef!.id) return true;
+
+								const existingDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
+								return existingDef?.name && normaliseName(existingDef.name) === normaliseName(baseName);
+							});
+
+							if (preparedMarker) {
+								preparedMarker.borderColor = borderColor;
+								claimedExistingMarkerIds.add(preparedMarker.id);
+								existingMarkerKeys.add(dupeKey);
+								updatedCount++;
+								console.log(`[DnD-Map]   COLOR "${displayName}" on prepared token ${preparedMarker.id} (${borderColor})`);
+								continue;
+							}
+						}
+
 						// Calculate grid-snapped position
 						const sizeSquares = CREATURE_SIZE_SQUARES[markerDef.creatureSize || 'medium'] || 1;
 						const halfTokenW = (sizeSquares * _ciGsW) / 2;
@@ -14854,7 +14919,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						}
 
 						config.markers.push(markerRef);
-						existingMarkerNames.add(dupeKey); // Prevent duplicates within this batch
+						existingMarkerKeys.add(dupeKey); // Prevent duplicates within this batch
 						addedCount++;
 						console.log(`[DnD-Map]   ADD "${displayName}" → layer=${tokenLayer}, size=${markerDef.creatureSize}, pos=(${posX.toFixed(0)},${posY.toFixed(0)})`);
 
@@ -14876,7 +14941,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 				}
 
-				if (addedCount > 0) {
+				if (addedCount > 0 || updatedCount > 0) {
 					redrawAnnotations();
 					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 					plugin.saveMapAnnotations(config, el);
@@ -14886,13 +14951,16 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				const parts: string[] = [];
 				if (addedCount > 0) parts.push(`✅ Added ${addedCount} token${addedCount > 1 ? 's' : ''} from encounter`);
+				if (updatedCount > 0) parts.push(`colored ${updatedCount} prepared token${updatedCount > 1 ? 's' : ''}`);
 				if (skippedCount > 0) parts.push(`${skippedCount} skipped`);
 				if (errorCount > 0) parts.push(`${errorCount} failed`);
 				const msg = addedCount > 0
 					? parts[0]! + (parts.length > 1 ? ` (${parts.slice(1).join(', ')})` : '')
-					: `ℹ️ All encounter tokens already on the map` + (parts.length > 0 ? ` (${parts.join(', ')})` : '');
+					: updatedCount > 0
+						? `✅ Colored ${updatedCount} prepared encounter token${updatedCount > 1 ? 's' : ''}` + (parts.length > 1 ? ` (${parts.filter((p) => !p.startsWith('colored ')).join(', ')})` : '')
+						: `ℹ️ All encounter tokens already on the map` + (parts.length > 0 ? ` (${parts.join(', ')})` : '');
 				new Notice(msg);
-				console.log(`[DnD-Map] Import complete: added=${addedCount}, skipped=${skippedCount}, errors=${errorCount}`);
+				console.log(`[DnD-Map] Import complete: added=${addedCount}, colored=${updatedCount}, skipped=${skippedCount}, errors=${errorCount}`);
 			});
 
 			// Clear drawings button
