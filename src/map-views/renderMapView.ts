@@ -14696,7 +14696,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				}
 
 				// Get existing markers on the map to check for duplicates and prepared tokens
-				const existingMarkers = config.markers || [];
+				if (!Array.isArray(config.markers)) {
+					config.markers = [];
+				}
+				const existingMarkers = config.markers;
 				const existingMarkerKeys = new Set<string>();
 				const claimedExistingMarkerIds = new Set<string>();
 				const normaliseName = (value: string) => value.toLowerCase().trim();
@@ -14729,11 +14732,101 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const mapH = config.dimensions?.height || 800;
 				const totalCols = Math.floor(mapW / _ciGsW);
 				const totalRows = Math.floor(mapH / _ciGsH);
-				// Start from row 1, column 1 (leaving a 1-cell margin)
-				let placementCol = 1;
-				let placementRow = 1;
 				const maxCol = Math.max(2, totalCols - 1);
 				const maxRow = Math.max(2, totalRows - 1);
+				const clampInt = (value: number, min: number, max: number) => Math.max(min, Math.min(max, Math.round(value)));
+				const gridSpanForSize = (sizeSquares: number) => Math.max(1, Math.ceil(sizeSquares));
+				const getGridFootprint = (position: { x: number; y: number }, sizeSquares: number) => {
+					const span = gridSpanForSize(sizeSquares);
+					const halfTokenW = (sizeSquares * _ciGsW) / 2;
+					const halfTokenH = (sizeSquares * _ciGsH) / 2;
+					return {
+						col: Math.floor((position.x - ox - halfTokenW) / _ciGsW + 0.0001),
+						row: Math.floor((position.y - oy - halfTokenH) / _ciGsH + 0.0001),
+						span,
+					};
+				};
+				const occupiedCells = new Set<string>();
+				const claimGridFootprint = (position: { x: number; y: number }, sizeSquares: number) => {
+					const footprint = getGridFootprint(position, sizeSquares);
+					for (let c = footprint.col; c < footprint.col + footprint.span; c++) {
+						for (let r = footprint.row; r < footprint.row + footprint.span; r++) {
+							occupiedCells.add(`${c},${r}`);
+						}
+					}
+				};
+				const getPlacedMarkerSizeSquares = (marker: any): number => {
+					if (isTokenGroup(marker)) return 1;
+					const def = marker?.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
+					if (def && ['player', 'npc', 'creature'].includes(def.type)) {
+						return CREATURE_SIZE_SQUARES[getMarkerCreatureSize(marker, def)] || 1;
+					}
+					return 1;
+				};
+				existingMarkers.forEach((m: any) => {
+					if (m?.position) claimGridFootprint(m.position, getPlacedMarkerSizeSquares(m));
+				});
+				const importCenter = (() => {
+					try {
+						const rect = viewport.getBoundingClientRect();
+						if (rect.width > 0 && rect.height > 0) {
+							return screenToMap(rect.left + rect.width / 2, rect.top + rect.height / 2);
+						}
+					} catch {
+						// Fall back to the map start below.
+					}
+					return { x: ox + _ciGsW * 1.5, y: oy + _ciGsH * 1.5 };
+				})();
+				const anchorColRaw = Math.floor((importCenter.x - ox) / _ciGsW);
+				const anchorRowRaw = Math.floor((importCenter.y - oy) / _ciGsH);
+				const findImportPosition = (sizeSquares: number): { x: number; y: number } => {
+					const span = gridSpanForSize(sizeSquares);
+					const mapCols = Math.max(1, Math.floor((mapW - ox) / _ciGsW));
+					const mapRows = Math.max(1, Math.floor((mapH - oy) / _ciGsH));
+					const maxStartCol = Math.max(0, mapCols - span);
+					const maxStartRow = Math.max(0, mapRows - span);
+					const minStartCol = maxStartCol >= 2 ? 1 : 0;
+					const minStartRow = maxStartRow >= 2 ? 1 : 0;
+					const anchorCol = clampInt(anchorColRaw - Math.floor(span / 2), minStartCol, maxStartCol);
+					const anchorRow = clampInt(anchorRowRaw - Math.floor(span / 2), minStartRow, maxStartRow);
+					const isFree = (col: number, row: number) => {
+						if (col < minStartCol || row < minStartRow || col > maxStartCol || row > maxStartRow) return false;
+						for (let c = col; c < col + span; c++) {
+							for (let r = row; r < row + span; r++) {
+								if (occupiedCells.has(`${c},${r}`)) return false;
+							}
+						}
+						return true;
+					};
+					const choose = (col: number, row: number) => {
+						const halfTokenW = (sizeSquares * _ciGsW) / 2;
+						const halfTokenH = (sizeSquares * _ciGsH) / 2;
+						const position = {
+							x: ox + col * _ciGsW + halfTokenW,
+							y: oy + row * _ciGsH + halfTokenH,
+						};
+						claimGridFootprint(position, sizeSquares);
+						return position;
+					};
+					const maxRadius = Math.max(maxCol, maxRow, 1);
+					if (isFree(anchorCol, anchorRow)) return choose(anchorCol, anchorRow);
+					for (let radius = 1; radius <= maxRadius; radius++) {
+						for (let row = anchorRow - radius; row <= anchorRow + radius; row++) {
+							for (let col = anchorCol - radius; col <= anchorCol + radius; col++) {
+								if (Math.abs(col - anchorCol) !== radius && Math.abs(row - anchorRow) !== radius) continue;
+								if (isFree(col, row)) return choose(col, row);
+							}
+						}
+					}
+					for (let rowOffset = 0; rowOffset <= maxStartRow - minStartRow; rowOffset++) {
+						const row = minStartRow + ((anchorRow - minStartRow + rowOffset) % (maxStartRow - minStartRow + 1));
+						for (let colOffset = 0; colOffset <= maxStartCol - minStartCol; colOffset++) {
+							const col = minStartCol + ((anchorCol - minStartCol + colOffset) % (maxStartCol - minStartCol + 1));
+							if (isFree(col, row)) return choose(col, row);
+						}
+					}
+					return choose(anchorCol, anchorRow);
+				};
 
 				let addedCount = 0;
 				let updatedCount = 0;
@@ -14881,12 +14974,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 						// Calculate grid-snapped position
 						const sizeSquares = CREATURE_SIZE_SQUARES[markerDef.creatureSize || 'medium'] || 1;
-						const halfTokenW = (sizeSquares * _ciGsW) / 2;
-						const halfTokenH = (sizeSquares * _ciGsH) / 2;
-						// Use integer column steps (ceil to 1) to keep placement grid-aligned
-						const colAdvance = Math.max(1, Math.ceil(sizeSquares)) + 1;
-						const posX = ox + placementCol * _ciGsW + halfTokenW;
-						const posY = oy + placementRow * _ciGsH + halfTokenH;
+						const importPosition = findImportPosition(sizeSquares);
+						const posX = importPosition.x;
+						const posY = importPosition.y;
 
 						// Create marker reference
 						// Enemy creatures go to DM layer (hidden from players), players/friendlies to Player layer
@@ -14923,17 +15013,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						addedCount++;
 						console.log(`[DnD-Map]   ADD "${displayName}" → layer=${tokenLayer}, size=${markerDef.creatureSize}, pos=(${posX.toFixed(0)},${posY.toFixed(0)})`);
 
-						// Advance grid placement position (integer steps to stay grid-aligned)
-						const rowSize = Math.max(1, Math.ceil(sizeSquares));
-						placementCol += colAdvance;
-						if (placementCol + rowSize > maxCol) {
-							placementCol = 1;
-							placementRow += rowSize + 1;
-							// If we've run out of vertical space, wrap back to top
-							if (placementRow + rowSize > maxRow) {
-								placementRow = 1;
-							}
-						}
 					  } catch (creatureError) {
 						console.error(`[DnD-Map]   ERROR importing "${baseName}" instance ${i}:`, creatureError);
 						errorCount++;
