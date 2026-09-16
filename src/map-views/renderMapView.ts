@@ -3986,20 +3986,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					return !!marker?.position && (marker.layer || 'Player') !== 'DM' && markerContributesPlayerVision(marker);
 				};
 
-				const raySegmentDistance = (
-					rayX: number, rayY: number, rayDx: number, rayDy: number,
-					segX1: number, segY1: number, segX2: number, segY2: number,
-				): number | null => {
-					const sdx = segX2 - segX1;
-					const sdy = segY2 - segY1;
-					const denom = rayDx * sdy - rayDy * sdx;
-					if (Math.abs(denom) < 1e-10) return null;
-					const t = ((segX1 - rayX) * sdy - (segY1 - rayY) * sdx) / denom;
-					const u = ((segX1 - rayX) * rayDy - (segY1 - rayY) * rayDx) / denom;
-					if (t > 0 && u >= 0 && u <= 1) return t;
-					return null;
-				};
-
 				const getBlockingWallSegments = () => {
 					return (config.walls || [])
 						.filter((wall: any) => wall?.start && wall?.end && !wall.open && wall.type !== 'window')
@@ -4030,37 +4016,86 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					return Math.max(5 * avgGridSize, radiusFeet * pixelsPerFoot);
 				};
 
+				const segmentsIntersect = (
+					ax: number, ay: number, bx: number, by: number,
+					cx: number, cy: number, dx: number, dy: number,
+				): boolean => {
+					const rX = bx - ax;
+					const rY = by - ay;
+					const sX = dx - cx;
+					const sY = dy - cy;
+					const denom = rX * sY - rY * sX;
+					if (Math.abs(denom) < 1e-10) return false;
+					const u = ((cx - ax) * rY - (cy - ay) * rX) / denom;
+					const t = ((cx - ax) * sY - (cy - ay) * sX) / denom;
+					return t > 0.02 && t < 0.98 && u >= 0 && u <= 1;
+				};
+
+				const hasLineOfSight = (
+					from: { x: number; y: number },
+					to: { x: number; y: number },
+					blockingWalls: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }>,
+				): boolean => {
+					for (const wall of blockingWalls) {
+						if (segmentsIntersect(from.x, from.y, to.x, to.y, wall.start.x, wall.start.y, wall.end.x, wall.end.y)) {
+							return false;
+						}
+					}
+					return true;
+				};
+
+				const isPlayerViewRenderableMarker = (marker: any): boolean => {
+					if (!marker?.position) return false;
+					const layer = marker.layer || 'Player';
+					if (layer === 'DM' || layer === 'Background') return false;
+					return ['Player', 'Elevated', 'Subterranean'].includes(layer);
+				};
+
+				const getMarkerBoxRadius = (marker: any): number => {
+					try {
+						return Math.max(avgGridSize * 0.5, getPlacedMarkerRadius(marker));
+					} catch {
+						return avgGridSize * 0.6;
+					}
+				};
+
 				const getSingleTokenAutoPanBox = (marker: any) => {
 					const origin = marker.position;
-					const maxRadius = getMarkerVisionRadiusPx(marker);
+					const visionRadius = getMarkerVisionRadiusPx(marker);
 					const blockingWalls = getBlockingWallSegments();
-					const points: { x: number; y: number }[] = [origin];
-					const samples = 72;
-					for (let i = 0; i < samples; i++) {
-						const angle = (i / samples) * Math.PI * 2;
-						const dx = Math.cos(angle);
-						const dy = Math.sin(angle);
-						let dist = maxRadius;
-						for (const wall of blockingWalls) {
-							const hit = raySegmentDistance(origin.x, origin.y, dx, dy, wall.start.x, wall.start.y, wall.end.x, wall.end.y);
-							if (hit !== null && hit < dist) dist = hit;
-						}
-						points.push({ x: origin.x + dx * dist, y: origin.y + dy * dist });
+
+					// Stable tactical frame: use the token's vision radius as the
+					// baseline instead of shrinking to nearby walls. Fog/LOS rendering
+					// still hides unseen map parts, but the camera no longer zooms
+					// wildly when the active token stands in a small room or corridor.
+					const halfSpan = Math.max(6 * avgGridSize, visionRadius);
+					let minX = origin.x - halfSpan;
+					let maxX = origin.x + halfSpan;
+					let minY = origin.y - halfSpan;
+					let maxY = origin.y + halfSpan;
+
+					for (const candidate of config.markers || []) {
+						if (!candidate?.position || candidate.id === marker.id) continue;
+						if (!isPlayerViewRenderableMarker(candidate)) continue;
+						const dx = candidate.position.x - origin.x;
+						const dy = candidate.position.y - origin.y;
+						const distance = Math.sqrt(dx * dx + dy * dy);
+						const candidateRadius = getMarkerBoxRadius(candidate);
+						if (distance > visionRadius + candidateRadius) continue;
+						if (!hasLineOfSight(origin, candidate.position, blockingWalls)) continue;
+
+						minX = Math.min(minX, candidate.position.x - candidateRadius);
+						maxX = Math.max(maxX, candidate.position.x + candidateRadius);
+						minY = Math.min(minY, candidate.position.y - candidateRadius);
+						maxY = Math.max(maxY, candidate.position.y + candidateRadius);
 					}
-					let minX = Infinity, maxX = -Infinity;
-					let minY = Infinity, maxY = -Infinity;
-					for (const point of points) {
-						minX = Math.min(minX, point.x);
-						maxX = Math.max(maxX, point.x);
-						minY = Math.min(minY, point.y);
-						maxY = Math.max(maxY, point.y);
-					}
-					const padding = Math.max(1.5 * avgGridSize, Math.min(3 * avgGridSize, maxRadius * 0.18));
+
+					const padding = Math.max(1.5 * avgGridSize, Math.min(3 * avgGridSize, visionRadius * 0.12));
 					minX -= padding;
 					maxX += padding;
 					minY -= padding;
 					maxY += padding;
-					const minSpan = 7 * avgGridSize;
+					const minSpan = 12 * avgGridSize;
 					const boxW = Math.max(minSpan, maxX - minX);
 					const boxH = Math.max(minSpan, maxY - minY);
 					return {
@@ -4191,8 +4226,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 				}
 
-				// Clamp scale to reasonable bounds
-				targetScale = Math.max(0.05, Math.min(5, targetScale));
+				// Clamp scale to stable tactical bounds. The upper bound keeps the
+				// rendered grid from becoming comically large on small rooms while
+				// still allowing closer views on low-resolution maps.
+				const maxAutoScale = Math.max(0.35, Math.min(1.8, 110 / avgGridSize));
+				targetScale = Math.max(0.05, Math.min(maxAutoScale, targetScale));
 
 				// Animate
 				const safeCenterX = safeViewport.x + safeViewport.w / 2;
