@@ -3768,16 +3768,17 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 			const mapId = config.mapId || resourcePath;
 			const payload = buildMapPayload();
+			const centerPlayersWhenReady = () => _applyAutoPan(true);
 
 			// Single screen: project directly (skip menu)
 			// Single available screen & no multi-screen API: project directly
 			if (available.length === 1 && switchable.length === 0 && !isMultiScreenSupported()) {
-				await pm.project(mapId, payload, resourcePath, available[0]!, mode);
+				await pm.project(mapId, payload, resourcePath, available[0]!, mode, centerPlayersWhenReady);
 				return;
 			}
 			// Only a switchable screen and nothing else available
 			if (available.length === 0 && switchable.length === 1 && !isMultiScreenSupported()) {
-				await pm.project(mapId, payload, resourcePath, switchable[0]!, mode);
+				await pm.project(mapId, payload, resourcePath, switchable[0]!, mode, centerPlayersWhenReady);
 				return;
 			}
 
@@ -3788,7 +3789,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				menu.addItem((item) => {
 					item.setTitle(label);
 					item.onClick(async () => {
-						await pm.project(mapId, payload, resourcePath, screen, mode);
+						await pm.project(mapId, payload, resourcePath, screen, mode, centerPlayersWhenReady);
 					});
 				});
 			}
@@ -3797,7 +3798,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				menu.addItem((item) => {
 					item.setTitle(`🔄 Switch ${screen.label} (Combat → Map)`);
 					item.onClick(async () => {
-						await pm.project(mapId, payload, resourcePath, screen, mode);
+						await pm.project(mapId, payload, resourcePath, screen, mode, centerPlayersWhenReady);
 					});
 				});
 			}

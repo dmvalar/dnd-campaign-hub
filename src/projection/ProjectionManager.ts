@@ -192,6 +192,7 @@ export class ProjectionManager {
     imageResourcePath: string,
     screen: ScreenInfo,
     mode: ProjectionMode = 'battle',
+    onReady?: () => void,
   ): Promise<void> {
     const sKey = screenKey(screen);
 
@@ -216,11 +217,15 @@ export class ProjectionManager {
             pv.swapMap(mapId, mapConfig, imageResourcePath, (fadeIn) => {
               const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
               this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
+                onReady?.();
                 fadeIn();
               });
             });
           } else {
-            pv.swapMap(mapId, mapConfig, imageResourcePath);
+            pv.swapMap(mapId, mapConfig, imageResourcePath, (fadeIn) => {
+              onReady?.();
+              fadeIn();
+            });
           }
 
           this._notifyChange();
@@ -272,11 +277,13 @@ export class ProjectionManager {
           await this.ensureCalibration(screen);
           const hasCalibration = this.applyCalibration(pv, screen, mapConfig);
           this.autoOrientAndFit(pv, screen, !hasCalibration, () => {
+            onReady?.();
             if (typeof (pv as any).fadeInInitial === 'function') {
               (pv as any).fadeInInitial();
             }
           });
         } else {
+          onReady?.();
           if (typeof (pv as any).fadeInInitial === 'function') {
             (pv as any).fadeInInitial();
           }
