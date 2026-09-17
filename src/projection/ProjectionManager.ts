@@ -52,6 +52,9 @@ export class ProjectionManager {
   /** Tracks handout popout leaves for unmanaged screens. */
   private handoutLeaves: Map<string, WorkspaceLeaf> = new Map();
 
+  /** View state to restore when a handout temporarily replaces an unmanaged projection. */
+  private handoutReturnStates: Map<string, { type: string; state?: Record<string, unknown> }> = new Map();
+
   /** Listeners notified whenever projection state changes. */
   private _changeCallbacks: Set<() => void> = new Set();
 
@@ -112,6 +115,7 @@ export class ProjectionManager {
       try { leaf.detach(); } catch { /* already gone */ }
     }
     this.handoutLeaves.clear();
+    this.handoutReturnStates.clear();
     this._changeCallbacks.clear();
   }
 
@@ -375,7 +379,7 @@ export class ProjectionManager {
   /**
    * Project a handout (image, note, or PDF) onto a screen.
    * On managed screens, overlays on top of primary content.
-   * On unmanaged screens, opens a new popout.
+   * On unmanaged screens, reuses an existing projection leaf when possible.
    */
   async projectHandout(
     filePath: string,
@@ -397,26 +401,48 @@ export class ProjectionManager {
       spm!.setHandoutStatus(sKey, handoutState);
       await this.crossfadeOnLeaf(leaf, HANDOUT_PROJECTION_VIEW_TYPE, handoutState as unknown as Record<string, unknown>);
     } else {
-      // Clean up any existing unmanaged handout on this screen
+      const existingProjection = this.activeProjections.get(sKey);
       const existingLeaf = this.handoutLeaves.get(sKey);
-      if (existingLeaf) {
-        try { existingLeaf.detach(); } catch { /* already gone */ }
-        this.handoutLeaves.delete(sKey);
+      const reusableLeaf = existingLeaf
+        ?? (existingProjection && this.isProjectionAliveOnScreen(sKey) ? existingProjection.leaf : null);
+
+      if (reusableLeaf) {
+        // Preserve the original projection state only once. Subsequent handout
+        // switches keep returning to the same map/combat/pursuit projection.
+        if (!this.handoutReturnStates.has(sKey)) {
+          const currentViewState = reusableLeaf.getViewState();
+          this.handoutReturnStates.set(sKey, {
+            type: currentViewState.type,
+            state: currentViewState.state as Record<string, unknown> | undefined,
+          });
+        }
+        this.handoutLeaves.set(sKey, reusableLeaf);
+        await this.crossfadeOnLeaf(
+          reusableLeaf,
+          HANDOUT_PROJECTION_VIEW_TYPE,
+          handoutState as unknown as Record<string, unknown>,
+        );
+      } else {
+        // No projection exists on this screen, so create a standalone handout.
+        if (existingLeaf) {
+          try { existingLeaf.detach(); } catch { /* already gone */ }
+          this.handoutLeaves.delete(sKey);
+        }
+
+        const popoutLeaf = this.plugin.app.workspace.openPopoutLeaf({
+          size: { width: screen.width, height: screen.height },
+        });
+        await popoutLeaf.setViewState({
+          type: HANDOUT_PROJECTION_VIEW_TYPE,
+          active: true,
+          state: handoutState as unknown as Record<string, unknown>,
+        });
+        this.handoutLeaves.set(sKey, popoutLeaf);
+
+        setTimeout(async () => {
+          await this.positionAndFullscreen(popoutLeaf, screen);
+        }, 300);
       }
-
-      const popoutLeaf = this.plugin.app.workspace.openPopoutLeaf({
-        size: { width: screen.width, height: screen.height },
-      });
-      await popoutLeaf.setViewState({
-        type: HANDOUT_PROJECTION_VIEW_TYPE,
-        active: true,
-        state: handoutState as unknown as Record<string, unknown>,
-      });
-      this.handoutLeaves.set(sKey, popoutLeaf);
-
-      setTimeout(async () => {
-        await this.positionAndFullscreen(popoutLeaf, screen);
-      }, 300);
     }
 
     this._notifyChange();
@@ -451,7 +477,13 @@ export class ProjectionManager {
     } else {
       const leaf = this.handoutLeaves.get(sKey);
       if (leaf) {
-        try { leaf.detach(); } catch { /* already gone */ }
+        const returnState = this.handoutReturnStates.get(sKey);
+        if (returnState) {
+          await this.crossfadeOnLeaf(leaf, returnState.type, returnState.state);
+          this.handoutReturnStates.delete(sKey);
+        } else {
+          try { leaf.detach(); } catch { /* already gone */ }
+        }
         this.handoutLeaves.delete(sKey);
       }
     }
