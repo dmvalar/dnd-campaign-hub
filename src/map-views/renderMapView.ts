@@ -395,6 +395,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		let dragOffsetX = 0;
 		let dragOffsetY = 0;
 		let markerDragOrigin: { x: number; y: number } | null = null; // Original position when dragging a marker
+		let _autoPanPrimedForCurrentDrag = false;
 
 		// ── Drag-performance: rAF coalescing & static layer caching ─────────
 		let _dragRedrawRafId = 0;           // non-zero while a drag-redraw rAF is pending
@@ -5105,6 +5106,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					if (draggingMarkerIndex >= 0) {
 						_dragRedrawFast();
 						if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+						if (!_autoPanPrimedForCurrentDrag) {
+							_autoPanPrimedForCurrentDrag = true;
+							_applyAutoPan(true);
+						}
 					} else {
 						redrawAnnotations();
 						if ((draggingLightIndex >= 0 || draggingWallIndex >= 0 || envAssetDragOffset || envAssetTransformHandle) &&
@@ -10104,6 +10109,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							_cancelPendingAutoPan();
 							saveToHistory();
 							draggingMarkerIndex = i;
+							_autoPanPrimedForCurrentDrag = false;
 							dragOffsetX = m.position.x - mapPos.x;
 							dragOffsetY = m.position.y - mapPos.y;
 							markerDragOrigin = { x: m.position.x, y: m.position.y };
@@ -12030,6 +12036,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 					draggingMarkerIndex = -1;
 					markerDragOrigin = null;
+					_autoPanPrimedForCurrentDrag = false;
 					_staticLayerDirty = true; // invalidate drag cache for next drag
 					viewport.style.cursor = 'default';
 					redrawAnnotations();
@@ -12038,7 +12045,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					if ((viewport as any)._syncPlayerView) {
 						(viewport as any)._syncPlayerView();
 					}
-					_applyAutoPan();
+					_applyAutoPan(true);
 				} else if (activeTool === 'select' && draggingLightIndex >= 0) {
 					// Drop light: save position
 					draggingLightIndex = -1;
@@ -12299,6 +12306,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				} else if (activeTool === 'select' && draggingMarkerIndex >= 0) {
 					draggingMarkerIndex = -1;
 					markerDragOrigin = null;
+					_autoPanPrimedForCurrentDrag = false;
 					_staticLayerDirty = true; // invalidate drag cache
 					viewport.style.cursor = 'default';
 					redrawAnnotations();
@@ -12306,7 +12314,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					if ((viewport as any)._syncPlayerView) {
 						(viewport as any)._syncPlayerView();
 					}
-					_applyAutoPan();
+					_applyAutoPan(true);
 				} else if (activeTool === 'select' && draggingLightIndex >= 0) {
 					draggingLightIndex = -1;
 					lightDragOrigin = null;
