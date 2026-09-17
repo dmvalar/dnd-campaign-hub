@@ -161,6 +161,7 @@ import { PlayerMapView } from './map-views/PlayerMapView';
 import { ProjectionManager } from './projection/ProjectionManager';
 import { SessionProjectionManager, IdleScreenView, SessionProjectionHubModal, HandoutProjectionView } from './projection';
 import type { HandoutContentType } from './projection/types';
+import { screenKey } from './utils/ScreenEnumeration';
 import { buildHandoutInlineMarkdown, handleInlineHandoutInteraction, parseHandoutInlineMarkdown, renderInlineHandoutWidgets } from './projection/InlineHandoutBlock';
 import { PursuitTracker } from './pursuit/PursuitTracker';
 import { PursuitTrackerView } from './pursuit/PursuitTrackerView';
@@ -227,9 +228,14 @@ function addHandoutProjectionItems(
   const pm = plugin.projectionManager;
   const managedStates = spm?.isActive() ? spm.getAllScreenStates() : [];
   const projectionTargets = managedStates.length > 0
-    ? managedStates.map((state) => ({ screen: state.screen, label: state.config.screenLabel }))
+    ? managedStates.map((state) => ({
+        screen: state.screen,
+        screenKey: state.config.screenKey,
+        label: state.config.screenLabel,
+      }))
     : pm.getLiveProjections().map((projection) => ({
         screen: projection.screen,
+        screenKey: screenKey(projection.screen),
         label: projection.screen.label,
       }));
 
@@ -246,19 +252,18 @@ function addHandoutProjectionItems(
 
   // Stop-handout items for screens that currently have a handout active
   let addedSeparator = false;
-  for (const state of managedStates) {
-    if (state.activeHandout) {
+  for (const target of projectionTargets) {
+    if (pm.hasActiveHandout(target.screenKey)) {
       if (!addedSeparator) {
         menu.addSeparator();
         addedSeparator = true;
       }
-      const sKey = state.config.screenKey;
       menu.addItem((item) =>
         item
-          .setTitle(`Stop handout on ${state.config.screenLabel}`)
+          .setTitle(`Stop handout on ${target.label}`)
           .setIcon('x')
           .onClick(async () => {
-            await pm.stopHandout(sKey);
+            await pm.stopHandout(target.screenKey);
           })
       );
     }

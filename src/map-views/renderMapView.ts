@@ -3847,6 +3847,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 			const mapPayload = buildMapPayload();
 
+			// A handout temporarily replaces the primary projection view. Offer a
+			// direct route back to this map while keeping the projection window alive.
+			for (const proj of projections) {
+				const sKey = screenKey(proj.screen);
+				if (!pm.hasActiveHandout(sKey) || proj.mapId !== currentMapId) continue;
+				const btn = pvProjActions.createEl('button', { cls: 'dnd-map-pv-dropdown-item' });
+				btn.innerHTML = `🔄 Switch ${proj.screen.label} (Handout → Map)`;
+				btn.addEventListener('click', () => {
+					pvDropdown.addClass('hidden');
+					void pm.stopHandout(sKey);
+				});
+			}
+
 			// "Transition / Switch" buttons for projections NOT showing this map
 			for (const proj of projections) {
 				const sKey = screenKey(proj.screen);
