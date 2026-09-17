@@ -39,6 +39,8 @@ export interface ProjectionState {
   mode: ProjectionMode;
   /** What kind of content is projected. */
   contentType: ProjectionContentType;
+  /** Reapply map-specific framing after a temporary view transition. */
+  onReady?: () => void;
 }
 
 // ── Class ──────────────────────────────────────────────────────────────
@@ -211,6 +213,7 @@ export class ProjectionManager {
           existing.mapId = mapId;
           existing.mode = mode;
           existing.contentType = 'map';
+          existing.onReady = onReady;
 
           if (mode === 'battle') {
             await this.ensureCalibration(screen);
@@ -258,7 +261,7 @@ export class ProjectionManager {
       });
     }
 
-    this.activeProjections.set(sKey, { leaf: popoutLeaf, screen, mapId, mode, contentType: 'map' });
+    this.activeProjections.set(sKey, { leaf: popoutLeaf, screen, mapId, mode, contentType: 'map', onReady });
 
     if (spm?.isActive()) spm.setScreenStatus(sKey, 'map');
 
@@ -477,6 +480,7 @@ export class ProjectionManager {
           else if (primaryProj.contentType === 'combat-awards') viewType = COMBAT_AWARDS_VIEW_TYPE;
           else viewType = PURSUIT_PLAYER_VIEW_TYPE;
           await this.crossfadeOnLeaf(leaf, viewType, {});
+          primaryProj.onReady?.();
         }
       } else {
         await spm!.transitionToIdle(sKey);
@@ -484,10 +488,12 @@ export class ProjectionManager {
     } else {
       const leaf = this.handoutLeaves.get(sKey);
       if (leaf) {
+        const primaryProj = this.activeProjections.get(sKey);
         const returnState = this.handoutReturnStates.get(sKey);
         if (returnState) {
           await this.crossfadeOnLeaf(leaf, returnState.type, returnState.state);
           this.handoutReturnStates.delete(sKey);
+          primaryProj?.onReady?.();
         } else {
           try { leaf.detach(); } catch { /* already gone */ }
         }
