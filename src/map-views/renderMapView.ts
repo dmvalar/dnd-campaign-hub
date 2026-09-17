@@ -4012,7 +4012,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						Number((markerDef as any)?.light?.bright || 0),
 						Number((markerDef as any)?.light?.dim || 0),
 					);
-					const radiusFeet = Math.max(visionFeet, lightFeet, 30);
+					const defaultDaylightSightFeet = 200;
+					const defaultDarkSightFeet = 30;
+					const hasActiveFogOrDarkness = config.fogOfWar?.enabled === true;
+					const defaultSightFeet = hasActiveFogOrDarkness ? defaultDarkSightFeet : defaultDaylightSightFeet;
+					const radiusFeet = Math.max(defaultSightFeet, visionFeet, lightFeet);
 					return Math.max(5 * avgGridSize, radiusFeet * pixelsPerFoot);
 				};
 
