@@ -225,23 +225,28 @@ function addHandoutProjectionItems(
 ): void {
   const spm = plugin.sessionProjectionManager;
   const pm = plugin.projectionManager;
-  if (!spm?.isActive()) return;
+  const managedStates = spm?.isActive() ? spm.getAllScreenStates() : [];
+  const projectionTargets = managedStates.length > 0
+    ? managedStates.map((state) => ({ screen: state.screen, label: state.config.screenLabel }))
+    : pm.getLiveProjections().map((projection) => ({
+        screen: projection.screen,
+        label: projection.screen.label,
+      }));
 
-  for (const state of spm.getAllScreenStates()) {
-    const label = state.config.screenLabel;
+  for (const target of projectionTargets) {
     menu.addItem((item) =>
       item
-        .setTitle(`Project to ${label}`)
+        .setTitle(`Project to ${target.label}`)
         .setIcon('monitor')
         .onClick(async () => {
-          await pm.projectHandout(filePath, contentType, state.screen);
+          await pm.projectHandout(filePath, contentType, target.screen);
         })
     );
   }
 
   // Stop-handout items for screens that currently have a handout active
   let addedSeparator = false;
-  for (const state of spm.getAllScreenStates()) {
+  for (const state of managedStates) {
     if (state.activeHandout) {
       if (!addedSeparator) {
         menu.addSeparator();
@@ -258,6 +263,31 @@ function addHandoutProjectionItems(
       );
     }
   }
+}
+
+function resolveProjectedImageFile(plugin: DndCampaignHubPlugin, image: HTMLImageElement): TFile | null {
+  const rawSrc = image.getAttribute('src') ?? '';
+  let decodedSrc = rawSrc;
+  try {
+    decodedSrc = decodeURIComponent(rawSrc);
+  } catch {
+    // Keep the original URL when it contains malformed escape sequences.
+  }
+  const comparableSrc = decodedSrc.split(/[?#]/, 1)[0]?.replace(/\\/g, '/') ?? decodedSrc;
+
+  return plugin.app.vault.getFiles().find((file) => {
+    if (detectHandoutContentType(file.path) !== 'image') return false;
+    const resourcePath = plugin.app.vault.adapter.getResourcePath(file.path);
+    const comparableResourcePath = resourcePath.split(/[?#]/, 1)[0]?.replace(/\\/g, '/') ?? resourcePath;
+    return comparableSrc === comparableResourcePath
+      || comparableSrc.endsWith(`/${file.path}`)
+      || comparableSrc.includes(file.path);
+  }) ?? null;
+}
+
+function hasHandoutProjectionTarget(plugin: DndCampaignHubPlugin): boolean {
+  return !!plugin.sessionProjectionManager?.isActive()
+    || plugin.projectionManager.getLiveProjections().length > 0;
 }
 
 
@@ -3447,7 +3477,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				if (!(file instanceof TFile)) return;
 				const contentType = detectHandoutContentType(file.path);
 				if (!contentType) return;
-				if (!this.sessionProjectionManager?.isActive()) return;
+				if (!hasHandoutProjectionTarget(this)) return;
 
 				menu.addSeparator();
 				addHandoutProjectionItems(this, menu, file.path, contentType);
@@ -3459,7 +3489,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 			this.app.workspace.on('editor-menu', (menu, _editor, view) => {
 				const file = (view as any).file as TFile | null;
 				if (!file) return;
-				if (!this.sessionProjectionManager?.isActive()) return;
+				if (!hasHandoutProjectionTarget(this)) return;
 
 				menu.addSeparator();
 				addHandoutProjectionItems(this, menu, file.path, 'note');
@@ -3470,17 +3500,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 		this.registerDomEvent(document, 'contextmenu', (evt: MouseEvent) => {
 			const target = evt.target as HTMLElement;
 			if (!(target instanceof HTMLImageElement)) return;
-			const previewContainer = target.closest('.markdown-preview-view, .markdown-reading-view');
+			const previewContainer = target.closest(
+				'.markdown-preview-view, .markdown-reading-view, .dnd-map-room-popover',
+			);
 			if (!previewContainer) return;
-			if (!this.sessionProjectionManager?.isActive()) return;
+			if (!hasHandoutProjectionTarget(this)) return;
 
-			const src = target.getAttribute('src') ?? '';
-			const imageFile = this.app.vault.getFiles().find((f) => {
-				const ext = f.extension.toLowerCase();
-				if (!['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return false;
-				const resourcePath = this.app.vault.adapter.getResourcePath(f.path);
-				return src.includes(f.path) || src === resourcePath;
-			});
+			const imageFile = resolveProjectedImageFile(this, target);
 			if (!imageFile) return;
 
 			evt.preventDefault();
