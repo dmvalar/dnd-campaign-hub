@@ -2,6 +2,10 @@
 
 > Full audit details: [tasks/codebase-audit.md](codebase-audit.md)
 
+## Development dependency follow-up — 2026-11-17
+
+- [ ] **Refresh development-toolchain dependencies after integration into `dev`.** A clean `npm ci` followed by `npm audit` reports 9 findings: 3 moderate, 4 high, and 2 critical. Affected packages include Vitest/Tinypool, Vite, Obsidian typings, and their transitive dependencies. `npm audit --omit=dev` reports zero findings. Review upgrade compatibility, then rerun the audit, `npm run check`, `npm run test`, and `npm run build`. No dependency upgrades were made during branch cleanup.
+
 ---
 
 ## Phase 1: Security & Stability (do first — user-facing risk)
