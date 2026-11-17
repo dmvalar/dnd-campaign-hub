@@ -17,6 +17,18 @@ import { getTunnelWidth, getTunnelPortalRadius, drawTunnelPortal } from './tunne
 import { WallSpatialIndex } from '../utils/WallSpatialIndex';
 import type { CombatState, Combatant } from "../combat/types";
 
+export interface PlayerMapCameraState {
+  tabletopMode: boolean;
+  panX: number;
+  panY: number;
+  scale: number;
+  rotation: number;
+  targetX: number | null;
+  targetY: number | null;
+  targetViewportX: number | null;
+  targetViewportY: number | null;
+}
+
 /** Returns true for wall types that use pivot-hinge rotation. */
 function isPivotType(t: string): boolean { return t === 'pivotDoor' || t === 'secretPivot'; }
 
@@ -55,6 +67,10 @@ export class PlayerMapView extends ItemView {
   getMapId(): string { return this.mapId; }
   private canvas: HTMLCanvasElement | null = null;
   private dragOverlayCanvas: HTMLCanvasElement | null = null;
+  private previewMarkerId: string | null = null;
+  private previewBaseDigest: number | null = null;
+  private mapReady = false;
+  private mapReadyCallbacks: Array<() => void> = [];
   private mapImage: MapMediaElement | null = null;
   private markerImageCache: Map<string, HTMLImageElement> = new Map();
   private envAssetImageCache: Map<string, HTMLImageElement> = new Map();
@@ -204,6 +220,24 @@ export class PlayerMapView extends ItemView {
   }
 
   async setState(state: any, result: any) {
+    const camera = state?.camera as Partial<PlayerMapCameraState> | undefined;
+    if (camera && typeof camera === 'object') {
+      const finite = (value: unknown, fallback: number) =>
+        typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+      const nullable = (value: unknown) =>
+        typeof value === 'number' && Number.isFinite(value) ? value : null;
+      this.tabletopMode = typeof camera.tabletopMode === 'boolean' ? camera.tabletopMode : true;
+      this.tabletopPanX = finite(camera.panX, 0);
+      this.tabletopPanY = finite(camera.panY, 0);
+      this.tabletopScale = finite(camera.scale, 1) > 0 ? finite(camera.scale, 1) : 1;
+      this.tabletopRotation = finite(camera.rotation, 0);
+      this.tabletopTargetX = nullable(camera.targetX);
+      this.tabletopTargetY = nullable(camera.targetY);
+      this.tabletopTargetViewportX = nullable(camera.targetViewportX);
+      this.tabletopTargetViewportY = nullable(camera.targetViewportY);
+      this.syncCanvasToImage?.();
+      this.applyTabletopTransform();
+    }
     if (state.mapConfig) {
       this.mapConfig = state.mapConfig;
     }
@@ -228,7 +262,14 @@ export class PlayerMapView extends ItemView {
     return {
       mapConfig: this.mapConfig,
       imageResourcePath: this.imageResourcePath,
-      mapId: this.mapId
+      mapId: this.mapId,
+      camera: {
+        tabletopMode: this.tabletopMode,
+        panX: this.tabletopPanX, panY: this.tabletopPanY,
+        scale: this.tabletopScale, rotation: this.tabletopRotation,
+        targetX: this.tabletopTargetX, targetY: this.tabletopTargetY,
+        targetViewportX: this.tabletopTargetViewportX, targetViewportY: this.tabletopTargetViewportY,
+      } satisfies PlayerMapCameraState
     };
   }
 
@@ -240,9 +281,8 @@ export class PlayerMapView extends ItemView {
    */
   updateMapData(config: any) {
     this.clearMapFadeOverlays();
-    if (!config?.draggingMarkerId) {
-      this.clearDragPreview();
-    }
+    const hadPreview = this.previewMarkerId !== null;
+    this.clearDragPreview();
 
     const nextImageFile = typeof config?.imageFile === 'string' ? config.imageFile : '';
     if (nextImageFile) {
@@ -279,7 +319,7 @@ export class PlayerMapView extends ItemView {
     this.mapConfig = config;
     this.renderInitiativeOverlay();
 
-    if (changed) {
+    if (changed || hadPreview) {
       this.redrawAnnotations();
     }
 
@@ -435,6 +475,10 @@ export class PlayerMapView extends ItemView {
 
     // Reset rendering state
     this._lastConfigDigest = 0;
+    this.clearDragPreview();
+    this.dragOverlayCanvas = null;
+    this.mapReady = false;
+    this.mapReadyCallbacks = [];
     this.canvas = null;
     this.mapImage = null;
     this.syncCanvasToImage = null;
@@ -448,6 +492,8 @@ export class PlayerMapView extends ItemView {
     this.tabletopRotation = 0;
     this.tabletopTargetX = null;
     this.tabletopTargetY = null;
+    this.tabletopTargetViewportX = null;
+    this.tabletopTargetViewportY = null;
 
     // Re-render with the new map — renderPlayerView() calls container.empty()
     // which safely removes old DOM elements. _pvRendered is kept true so
@@ -1442,6 +1488,12 @@ export class PlayerMapView extends ItemView {
     }
   }
 
+  /** Run after the map media has loaded and its canvas has been synchronized. */
+  onMapReady(callback: () => void) {
+    if (this.mapReady) callback();
+    else this.mapReadyCallbacks.push(callback);
+  }
+
   private renderPlayerView() {
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
@@ -1597,6 +1649,7 @@ export class PlayerMapView extends ItemView {
         if (dragOverlayCanvas.width !== _bw || dragOverlayCanvas.height !== _bh) {
           dragOverlayCanvas.width = _bw;
           dragOverlayCanvas.height = _bh;
+          if (this.previewMarkerId) this.previewMarkerDrag(this.mapConfig);
         }
 
         const syncOverlay = () => {
@@ -1626,8 +1679,6 @@ export class PlayerMapView extends ItemView {
             sled.style.transformOrigin = '0 0';
             sled.style.left = '0px';
             sled.style.top = '0px';
-            // Note: applyTabletopTransform will set the transform with scale
-            // Don't call it here - it will be called after scale is set
 
             mapContainer.style.overflow = 'hidden';
 
@@ -1638,6 +1689,10 @@ export class PlayerMapView extends ItemView {
             canvas.style.height = img.naturalHeight + 'px';
             syncOverlay();
           }
+
+          // Reapply saved framing after media layout and on viewport resizes.
+          // Target coordinates may need a new pan when the viewport changes.
+          this.applyTabletopTransform();
 
           // Expose sync helper so GM-side code can ask the player view to refresh layout
           try { this.syncCanvasToImage = syncCanvasToImage; } catch (e) { }
@@ -1660,6 +1715,7 @@ export class PlayerMapView extends ItemView {
             sled.style.width = '';
           sled.style.height = '';
           sled.style.position = '';
+          sled.style.transform = '';
           sled.style.left = '';
           sled.style.top = '';
           mapContainer.style.overflow = 'hidden';
@@ -1802,17 +1858,28 @@ export class PlayerMapView extends ItemView {
     // Player-side calibration removed; calibration should be performed from GM view.
 
     // Size canvas when media loads
+    let mediaReadyScheduled = false;
     const onPlayerMediaReady = () => {
+      if (mediaReadyScheduled || this.mapImage !== img) return;
+      mediaReadyScheduled = true;
       canvas.width = (img as any).naturalWidth * this._canvasScale;
       canvas.height = (img as any).naturalHeight * this._canvasScale;
       // Defer one frame so media has been laid out, then sync position
-      requestAnimationFrame(syncCanvasToImage);
+      const ownerWindow = img.ownerDocument?.defaultView || window;
+      ownerWindow.requestAnimationFrame(() => {
+        if (this.mapImage !== img) return;
+        syncCanvasToImage();
+        this.mapReady = true;
+        const callbacks = this.mapReadyCallbacks.splice(0);
+        callbacks.forEach(callback => callback());
+      });
     };
     if (isVideo) {
       img.addEventListener('loadeddata', onPlayerMediaReady, { once: true });
       if ((img as any).readyState >= 2) onPlayerMediaReady();
     } else {
-      img.addEventListener('load', onPlayerMediaReady);
+      img.addEventListener('load', onPlayerMediaReady, { once: true });
+      if (img.complete && img.naturalWidth > 0) onPlayerMediaReady();
     }
 
     // Handle window resize â€” defer one frame to ensure layout is settled
@@ -3012,7 +3079,7 @@ export class PlayerMapView extends ItemView {
     // Draw surface players first â€” but NOT when viewing from underground
     // A token in a tunnel cannot see through the earth to the surface
     if (!config.selectedVisionTokenId || !selectedVisionIsInTunnel) {
-      surfacePlayerTokens.forEach((m: any) => this.drawMarker(ctx, m));
+      surfacePlayerTokens.forEach((m: any) => { if (m.id !== this.previewMarkerId) this.drawMarker(ctx, m); });
     }
     
     // Draw tunnel players on top (after tunnel paths are rendered)
@@ -3143,7 +3210,7 @@ export class PlayerMapView extends ItemView {
     // Drawn after player tokens so the distance label is not obscured by the token.
     // In the Player View, only show the drag ruler for player tokens or
     // tokens explicitly marked as "Show to Players".
-    if (config.dragRuler) {
+    if (config.dragRuler && !this.previewMarkerId) {
       const dragMarkerDef = config.dragRuler.markerId
         ? this.plugin.markerLibrary.getMarker(config.dragRuler.markerId)
         : null;
@@ -3166,6 +3233,8 @@ export class PlayerMapView extends ItemView {
   }
 
   clearDragPreview() {
+    this.previewMarkerId = null;
+    this.previewBaseDigest = null;
     if (!this.dragOverlayCanvas) return;
     const ctx = this.dragOverlayCanvas.getContext('2d');
     if (!ctx) return;
@@ -3174,52 +3243,58 @@ export class PlayerMapView extends ItemView {
   }
 
   previewMarkerDrag(config: any) {
+    const marker = (config?.markers || []).find((m: any) => m.id === config.draggingMarkerId);
+    const def = marker?.markerId ? this.plugin.markerLibrary.getMarker(marker.markerId) : null;
+    // Only a surface player token is unconditionally drawn above fog. Everything
+    // else must go through the ordinary layer, tunnel and fog composition.
+    const current = this.mapConfig;
+    const sameBackground = !!current && config.imageFile === current.imageFile
+      && config.mapId === current.mapId
+      && config.dimensions?.width === current.dimensions?.width
+      && config.dimensions?.height === current.dimensions?.height
+      && config.lastModified === current.lastModified
+      && config.templateSyncedAt === current.templateSyncedAt;
+    const simple = sameBackground && this.plugin.settings.visionUpdateMode !== 'while-dragging'
+      && this.dragOverlayCanvas && this.canvas && marker && def
+      && (marker.layer || 'Player') === 'Player'
+      && (def.type === 'player' || marker.visibleToPlayers)
+      && !this.isTokenGroup(marker) && !marker.tunnelState && !marker.elevation?.isBurrowing
+      && !(marker.auras?.length) && !(config.aoeEffects?.length)
+      && !config.measureRuler && !config.targetDistRuler
+      && !(config.markers || []).some((m: any) => m.tunnelState || m.elevation?.isBurrowing || m.auras?.length || this.isTokenGroup(m))
+      // Keep the same token stacking order as the normal renderer.
+      && (config.markers || []).filter((m: any) => {
+        const d = m.markerId ? this.plugin.markerLibrary.getMarker(m.markerId) : null;
+        return (m.layer || 'Player') !== 'DM' && !this.isTokenGroup(m) && d && (d.type === 'player' || m.visibleToPlayers);
+      }).slice(-1)[0]?.id === marker.id;
+    if (!simple) {
+      this.updateMapData(config);
+      return;
+    }
+
     this.clearMapFadeOverlays();
-    if (!this.dragOverlayCanvas || !this.mapConfig || !config?.draggingMarkerId) return;
+    // Compute a separate base signature without the moving token position or
+    // ruler. The input markers are shared and mutable, so never compare them
+    // against the previous config by reference.
+    const baseConfig = { ...config, dragRuler: null, markers: config.markers.map((m: any) =>
+      m.id === marker.id ? { ...m, position: { x: 0, y: 0 } } : m) };
+    const baseDigest = this._computeConfigDigest(baseConfig);
+    const rebuildBase = this.previewMarkerId !== marker.id || this.previewBaseDigest !== baseDigest;
+    this.mapConfig = config;
+    this.previewMarkerId = marker.id;
+    this.previewBaseDigest = baseDigest;
+    this._lastConfigDigest = this._computeConfigDigest(config);
+    if (rebuildBase) this.redrawAnnotations();
 
-    const marker = (config.markers || []).find((m: any) => m.id === config.draggingMarkerId);
-    if (!marker) {
-      this.clearDragPreview();
-      return;
-    }
-
-    const markerLayer = marker.layer || 'Player';
-    const markerDef = marker.markerId ? this.plugin.markerLibrary.getMarker(marker.markerId) : null;
-    const visibleToPlayers = this.isTokenGroup(marker)
-      ? !!marker.visibleToPlayers
-      : !!(markerDef && (markerDef.type === 'player' || marker.visibleToPlayers))
-        || markerLayer === 'Player'
-        || markerLayer === 'Elevated'
-        || markerLayer === 'Subterranean';
-    if (!visibleToPlayers && markerLayer === 'DM') {
-      this.clearDragPreview();
-      return;
-    }
-
-    const ctx = this.dragOverlayCanvas.getContext('2d');
+    const ctx = this.dragOverlayCanvas!.getContext('2d');
     if (!ctx) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, this.dragOverlayCanvas.width, this.dragOverlayCanvas.height);
+    ctx.clearRect(0, 0, this.dragOverlayCanvas!.width, this.dragOverlayCanvas!.height);
     ctx.setTransform(this._canvasScale, 0, 0, this._canvasScale, 0, 0);
-
-    const previousConfig = this.mapConfig;
-    const previewConfig = {
-      ...previousConfig,
-      dragRuler: config.dragRuler,
-    };
-    this.mapConfig = previewConfig;
-    try {
-      this.drawMarker(ctx, marker);
-      if (previewConfig.dragRuler) {
-        const dragMarkerDef = previewConfig.dragRuler.markerId
-          ? this.plugin.markerLibrary.getMarker(previewConfig.dragRuler.markerId)
-          : null;
-        if ((dragMarkerDef && dragMarkerDef.type === 'player') || previewConfig.dragRuler.visibleToPlayers) {
-          this.drawDragRuler(ctx, previewConfig);
-        }
-      }
-    } finally {
-      this.mapConfig = previousConfig;
+    this.drawMarker(ctx, marker);
+    if (config.dragRuler) {
+      const rulerDef = config.dragRuler.markerId ? this.plugin.markerLibrary.getMarker(config.dragRuler.markerId) : null;
+      if (rulerDef?.type === 'player' || config.dragRuler.visibleToPlayers) this.drawDragRuler(ctx, config);
     }
   }
 
@@ -4534,6 +4609,10 @@ export class PlayerMapView extends ItemView {
       }
     }
     
+    this.clearDragPreview();
+    this.dragOverlayCanvas = null;
+    this.mapReady = false;
+    this.mapReadyCallbacks = [];
     this.canvas = null;
     this.mapImage = null;
     this.markerImageCache.clear();

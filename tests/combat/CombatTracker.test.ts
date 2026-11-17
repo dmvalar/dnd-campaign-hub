@@ -90,6 +90,31 @@ describe("combat/CombatTracker", () => {
     expect(c.currentHP).toBe(8);
   });
 
+  it("continues notifying listeners and completes combat actions when a listener throws", async () => {
+    const { tracker } = createTracker();
+    const [id] = await seedCombat(tracker, [{ name: "Goblin", count: 1, hp: 10, ac: 13, path: "[SRD]" }]);
+    const onError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const throwingListener = vi.fn(() => {
+      throw new Error("broken subscriber");
+    });
+    const receivingListener = vi.fn();
+
+    // onChange only registers listeners; observe the action emission itself.
+    tracker.onChange(throwingListener);
+    tracker.onChange(receivingListener);
+    throwingListener.mockClear();
+    receivingListener.mockClear();
+
+    expect(() => tracker.applyDamage(id!, 3)).not.toThrow();
+
+    expect(throwingListener).toHaveBeenCalledTimes(1);
+    expect(receivingListener).toHaveBeenCalledWith(expect.objectContaining({
+      combatants: [expect.objectContaining({ id, currentHP: 7 })],
+    }));
+    expect(tracker.getState()!.combatants[0]!.currentHP).toBe(7);
+    expect(onError).toHaveBeenCalledWith("[CombatTracker] listener failed:", expect.any(Error));
+  });
+
   it("adds two failed death saves on critical damage at 0 HP", async () => {
     const { tracker } = createTracker();
     const [id] = await seedCombat(tracker, [], [{ name: "Aelar", level: 3, hp: 18, ac: 15 }]);
