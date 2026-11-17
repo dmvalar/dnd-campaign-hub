@@ -358,3 +358,28 @@ it('continues the screen queue after a seamless swap readiness callback throws',
   await manager.stopHandout(key);
   expect(leaves[0]!.value.state?.mapId).toBe('B');
 });
+
+it('leaves a newer camera command intact when delayed centering retries', async () => {
+  const { manager } = fixture();
+  let version = 0;
+  let viewportWidth = 0;
+  const transformed = vi.fn();
+  const completed = vi.fn();
+  const view = {
+    getCameraCommandVersion: () => version,
+    mapImage: { naturalWidth: 1000, naturalHeight: 1000 },
+    mapContainer: { getBoundingClientRect: () => ({ width: viewportWidth, height: 300 }) },
+    tabletopScale: 1, tabletopRotation: 0, tabletopPanX: 0, tabletopPanY: 0,
+    applyTabletopTransform: transformed,
+  };
+  (manager as any).centerMapInViewport(view, completed);
+  view.tabletopPanX = 123;
+  view.tabletopPanY = -45;
+  version++;
+  viewportWidth = 400;
+  await vi.advanceTimersByTimeAsync(100);
+  expect(view.tabletopPanX).toBe(123);
+  expect(view.tabletopPanY).toBe(-45);
+  expect(transformed).not.toHaveBeenCalled();
+  expect(completed).toHaveBeenCalledOnce();
+});

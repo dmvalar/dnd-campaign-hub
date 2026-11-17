@@ -1743,6 +1743,7 @@ export class PlayerMapView extends ItemView {
     mapContainer.addEventListener('mousedown', (e: MouseEvent) => {
       if (!this.tabletopMode) return;
       isPanning = true;
+      this.cameraCommandVersion++;
       // If GM previously requested a specific image top-left, clear it - manual pan takes precedence
       this.tabletopTargetX = null;
       this.tabletopTargetY = null;
@@ -1757,6 +1758,7 @@ export class PlayerMapView extends ItemView {
       if (!isPanning || !this.tabletopMode) return;
       this.tabletopPanX = e.clientX - panStartX;
       this.tabletopPanY = e.clientY - panStartY;
+      this.cameraCommandVersion++;
 
       // Clamp using rotation-aware bbox and apply transform
       this.clampTabletopPan();
@@ -1819,16 +1821,13 @@ export class PlayerMapView extends ItemView {
 
     // Rotation handlers (rotate 15Â° steps)
     rotateLeftBtn.addEventListener('click', () => {
-      this.tabletopRotation = (this.tabletopRotation - 15 + 360) % 360;
-      this.applyTabletopTransform();
+      this.setTabletopRotation(this.tabletopRotation - 15);
     });
     rotateRightBtn.addEventListener('click', () => {
-      this.tabletopRotation = (this.tabletopRotation + 15) % 360;
-      this.applyTabletopTransform();
+      this.setTabletopRotation(this.tabletopRotation + 15);
     });
     rotateResetBtn.addEventListener('click', () => {
-      this.tabletopRotation = 0;
-      this.applyTabletopTransform();
+      this.setTabletopRotation(0);
     });
 
     // --- Tabletop button handlers ---

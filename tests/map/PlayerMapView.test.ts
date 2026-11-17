@@ -164,7 +164,7 @@ describe("player map camera state", () => {
     await restored.setState(state, {});
     expect(restored.getState().camera).toEqual(state.camera);
   });
-  it("applies restored framing to the sled before media-ready callbacks", async () => {
+  it.each(["restored framing", "manual pan", "manual rotation"])("preserves %s on the rendered map", async mode => {
     vi.useFakeTimers();
     const frames: Array<() => void> = [];
     const raf = (callback: () => void) => { frames.push(callback); return frames.length; };
@@ -174,7 +174,7 @@ describe("player map camera state", () => {
       children: Element[] = [];
       className = "";
       classList = { add: vi.fn(), remove: vi.fn() };
-      listeners: Record<string, () => void> = {};
+      listeners: Record<string, (...args: any[]) => void> = {};
       ownerDocument: any;
       complete = false;
       naturalWidth = 1000;
@@ -193,7 +193,7 @@ describe("player map camera state", () => {
         child.className = opts.cls || "";
         return this.appendChild(child);
       }
-      addEventListener(name: string, callback: () => void) { this.listeners[name] = callback; }
+      addEventListener(name: string, callback: (...args: any[]) => void) { this.listeners[name] = callback; }
       removeEventListener() {}
       querySelector(selector: string): Element | null {
         for (const child of this.children) {
@@ -229,6 +229,27 @@ describe("player map camera state", () => {
       while (frames.length) frames.shift()!();
       expect(transformAtReady).toBe("translate(-40px, -50px) rotate(0deg) scale(2)");
       expect(container.querySelector(".dnd-player-map-sled")!.style.transform).toBe(transformAtReady);
+      const version = view.getCameraCommandVersion();
+      if (mode === "manual pan") {
+        const wrapper = container.querySelector(".dnd-player-map-wrapper")!;
+        wrapper.listeners.mousedown({ clientX: 20, clientY: 30, preventDefault() {} });
+        expect(view.getCameraCommandVersion()).toBeGreaterThan(version);
+        wrapper.listeners.mousemove({ clientX: 80, clientY: 50 });
+        expect(view.getState().camera).toMatchObject({ panX: 20, panY: -30, targetX: null, targetY: null });
+        expect(container.querySelector(".dnd-player-map-sled")!.style.transform).toBe("translate(20px, -30px) rotate(0deg) scale(2)");
+      } else if (mode === "manual rotation") {
+        const toolbar = container.querySelector(".dnd-player-toolbar")!;
+        const buttons = toolbar.children.filter(child => child.tag === "button");
+        const [left, reset, right] = buttons.slice(-3);
+        right!.listeners.click();
+        expect(view.getState().camera.rotation).toBe(15);
+        expect(view.getCameraCommandVersion()).toBeGreaterThan(version);
+        left!.listeners.click();
+        expect(view.getState().camera.rotation).toBe(0);
+        right!.listeners.click();
+        reset!.listeners.click();
+        expect(view.getState().camera.rotation).toBe(0);
+      }
     } finally {
       vi.clearAllTimers();
       vi.useRealTimers();
