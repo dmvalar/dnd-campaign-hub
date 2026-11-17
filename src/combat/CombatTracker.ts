@@ -25,7 +25,13 @@ export class CombatTracker {
 
   private emit() {
     const snap = this.getState();
-    for (const fn of this.listeners) fn(snap);
+    for (const fn of this.listeners) {
+      try {
+        fn(snap);
+      } catch (error) {
+        console.error("[CombatTracker] listener failed:", error);
+      }
+    }
   }
 
   private cloneState(state: CombatState): CombatState {

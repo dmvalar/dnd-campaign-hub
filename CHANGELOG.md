@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0-beta.1] - 2026-11-17
+
+Beta / unstable release for testing before a stable release. Manual Obsidian display and large-map performance checks remain pending.
+
+### Added
+
+- Project images from battlemap room-note previews to managed screens or an active direct map projection.
+- Support multiple adventures per session, session note editing, and opening session scenes in new tabs.
+- Add combat undo, campaign evidence notes, and controls to stop inline sound effects.
+- Add 53 regression tests covering player-map rendering, camera persistence, projection transitions, and combat-listener failures.
+
+### Changed
+
+- Keep lightweight drag previews for simple surface player tokens; use the normal visibility renderer for complex tokens and live fog updates.
+- Place imported encounter tokens near the current GM viewport while avoiding occupied cells and reusing prepared tokens where possible.
+- Stabilize auto-pan and auto-zoom with tactical framing, daylight sight range, and immediate recentering after token drops.
+
+### Fixed
+
+- Prevent drag previews from exposing hidden DM-layer tokens, Background-layer creatures, or creatures obscured by fog and walls.
+- Remove duplicate token images during dragging and honor both on-drop and live fog modes.
+- Restore the correct primary content after handouts on managed and unmanaged screens; clear stale return state on replacement, stop, and closed-window cleanup.
+- Preserve camera pan, zoom, rotation, and calibration targets when returning from a handout, applying them after media layout.
+- Serialize projection transitions through delayed map swaps, recover after framing callback failures, and prevent stale calibration callbacks from overriding newer views.
+- Synchronize initiative overlays immediately and isolate failing combat listeners.
+- Improve template-map synchronization, background refresh, edited grid persistence, and vision invalidation when walls move.
+
 ## [0.14.0] - 2026-06-18
 
 ### Added

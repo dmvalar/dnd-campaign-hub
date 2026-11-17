@@ -395,6 +395,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		let dragOffsetX = 0;
 		let dragOffsetY = 0;
 		let markerDragOrigin: { x: number; y: number } | null = null; // Original position when dragging a marker
+		let _autoPanPrimedForCurrentDrag = false;
 
 		// ── Drag-performance: rAF coalescing & static layer caching ─────────
 		let _dragRedrawRafId = 0;           // non-zero while a drag-redraw rAF is pending
@@ -636,6 +637,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			// the selected vision token (or fits all player tokens).
 			let _autoPanEnabled = false;
 			let _autoPanDebounce: ReturnType<typeof setTimeout> | null = null;
+			let _autoPanGeneration = 0;
 			// Wall drag state
 			let draggingWallIndex = -1; // Index of wall being dragged (-1 = none)
 			let wallDragOffsetStartX = 0;
@@ -1022,6 +1024,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				if (isTokenGroup(marker)) return !!marker.visibleToPlayers;
 				const def = marker.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
 				return !!def && (def.type === 'player' || !!marker.visibleToPlayers);
+			};
+
+			const findMarkerOrGroupBySelectionId = (selectionId: string | null | undefined): any | null => {
+				if (!selectionId) return null;
+				for (const marker of config.markers || []) {
+					if (marker?.id === selectionId || marker?.markerId === selectionId) return marker;
+					if (!isTokenGroup(marker)) continue;
+					const members: any[] = marker.tokenGroup?.members || [];
+					if (members.some((member: any) => member?.id === selectionId || member?.markerId === selectionId)) {
+						return marker;
+					}
+				}
+				return null;
 			};
 
 			const markerMovementBlockedByWalls = (marker: any): boolean => {
@@ -3718,7 +3733,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			fogOfWar: config.fogOfWar, walls: config.walls,
 			lightSources: config.lightSources, tunnels: config.tunnels,
 			poiReferences: config.poiReferences, gridType: config.gridType,
-			gridSize: config.gridSize, gridOffsetX: config.gridOffsetX || 0,
+			gridSize: config.gridSize,
+			gridSizeW: config.gridSizeW,
+			gridSizeH: config.gridSizeH,
+			gridVisible: config.gridVisible !== undefined ? config.gridVisible : true,
+			gridOffsetX: config.gridOffsetX || 0,
 			gridOffsetY: config.gridOffsetY || 0, scale: config.scale,
 			name: config.name, isVideo: config.isVideo, type: config.type,
 			showInitiativeInPlayerView: config.showInitiativeInPlayerView === true,
@@ -3750,16 +3769,17 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 			const mapId = config.mapId || resourcePath;
 			const payload = buildMapPayload();
+			const centerPlayersWhenReady = () => _applyAutoPan(true);
 
 			// Single screen: project directly (skip menu)
 			// Single available screen & no multi-screen API: project directly
 			if (available.length === 1 && switchable.length === 0 && !isMultiScreenSupported()) {
-				await pm.project(mapId, payload, resourcePath, available[0]!, mode);
+				await pm.project(mapId, payload, resourcePath, available[0]!, mode, centerPlayersWhenReady);
 				return;
 			}
 			// Only a switchable screen and nothing else available
 			if (available.length === 0 && switchable.length === 1 && !isMultiScreenSupported()) {
-				await pm.project(mapId, payload, resourcePath, switchable[0]!, mode);
+				await pm.project(mapId, payload, resourcePath, switchable[0]!, mode, centerPlayersWhenReady);
 				return;
 			}
 
@@ -3770,7 +3790,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				menu.addItem((item) => {
 					item.setTitle(label);
 					item.onClick(async () => {
-						await pm.project(mapId, payload, resourcePath, screen, mode);
+						await pm.project(mapId, payload, resourcePath, screen, mode, centerPlayersWhenReady);
 					});
 				});
 			}
@@ -3779,7 +3799,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				menu.addItem((item) => {
 					item.setTitle(`🔄 Switch ${screen.label} (Combat → Map)`);
 					item.onClick(async () => {
-						await pm.project(mapId, payload, resourcePath, screen, mode);
+						await pm.project(mapId, payload, resourcePath, screen, mode, centerPlayersWhenReady);
 					});
 				});
 			}
@@ -3828,6 +3848,19 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			const thisMapProj = pm.getProjectionForMap(currentMapId);
 
 			const mapPayload = buildMapPayload();
+
+			// A handout temporarily replaces the primary projection view. Offer a
+			// direct route back to this map while keeping the projection window alive.
+			for (const proj of projections) {
+				const sKey = screenKey(proj.screen);
+				if (!pm.hasActiveHandout(sKey) || proj.mapId !== currentMapId) continue;
+				const btn = pvProjActions.createEl('button', { cls: 'dnd-map-pv-dropdown-item' });
+				btn.innerHTML = `🔄 Switch ${proj.screen.label} (Handout → Map)`;
+				btn.addEventListener('click', () => {
+					pvDropdown.addClass('hidden');
+					void pm.stopHandout(sKey);
+				});
+			}
 
 			// "Transition / Switch" buttons for projections NOT showing this map
 			for (const proj of projections) {
@@ -3927,8 +3960,17 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		// selection (single token or all players). It uses a "tactical
 		// awareness" radius for single tokens (enough map to make decisions)
 		// and a bounding-box fit for multiple tokens.
+		const _cancelPendingAutoPan = () => {
+			_autoPanGeneration++;
+			if (_autoPanDebounce !== null) {
+				clearTimeout(_autoPanDebounce);
+				_autoPanDebounce = null;
+			}
+		};
+
 		const _applyAutoPan = (immediate = false) => {
 			if (!_autoPanEnabled) return;
+			const generation = ++_autoPanGeneration;
 
 			// Clear any pending debounce
 			if (_autoPanDebounce !== null) {
@@ -3937,6 +3979,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 			}
 
 			const run = () => {
+				if (generation !== _autoPanGeneration) return;
 				const pm = plugin.projectionManager;
 				if (!pm) return;
 				const currentMapId = config.mapId || resourcePath;
@@ -3956,20 +3999,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				const isAutoPanEligible = (marker: any): boolean => {
 					return !!marker?.position && (marker.layer || 'Player') !== 'DM' && markerContributesPlayerVision(marker);
-				};
-
-				const raySegmentDistance = (
-					rayX: number, rayY: number, rayDx: number, rayDy: number,
-					segX1: number, segY1: number, segX2: number, segY2: number,
-				): number | null => {
-					const sdx = segX2 - segX1;
-					const sdy = segY2 - segY1;
-					const denom = rayDx * sdy - rayDy * sdx;
-					if (Math.abs(denom) < 1e-10) return null;
-					const t = ((segX1 - rayX) * sdy - (segY1 - rayY) * sdx) / denom;
-					const u = ((segX1 - rayX) * rayDy - (segY1 - rayY) * rayDx) / denom;
-					if (t > 0 && u >= 0 && u <= 1) return t;
-					return null;
 				};
 
 				const getBlockingWallSegments = () => {
@@ -3998,41 +4027,94 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						Number((markerDef as any)?.light?.bright || 0),
 						Number((markerDef as any)?.light?.dim || 0),
 					);
-					const radiusFeet = Math.max(visionFeet, lightFeet, 30);
+					const defaultDaylightSightFeet = 200;
+					const defaultDarkSightFeet = 30;
+					const hasActiveFogOrDarkness = config.fogOfWar?.enabled === true;
+					const defaultSightFeet = hasActiveFogOrDarkness ? defaultDarkSightFeet : defaultDaylightSightFeet;
+					const radiusFeet = Math.max(defaultSightFeet, visionFeet, lightFeet);
 					return Math.max(5 * avgGridSize, radiusFeet * pixelsPerFoot);
+				};
+
+				const segmentsIntersect = (
+					ax: number, ay: number, bx: number, by: number,
+					cx: number, cy: number, dx: number, dy: number,
+				): boolean => {
+					const rX = bx - ax;
+					const rY = by - ay;
+					const sX = dx - cx;
+					const sY = dy - cy;
+					const denom = rX * sY - rY * sX;
+					if (Math.abs(denom) < 1e-10) return false;
+					const u = ((cx - ax) * rY - (cy - ay) * rX) / denom;
+					const t = ((cx - ax) * sY - (cy - ay) * sX) / denom;
+					return t > 0.02 && t < 0.98 && u >= 0 && u <= 1;
+				};
+
+				const hasLineOfSight = (
+					from: { x: number; y: number },
+					to: { x: number; y: number },
+					blockingWalls: Array<{ start: { x: number; y: number }; end: { x: number; y: number } }>,
+				): boolean => {
+					for (const wall of blockingWalls) {
+						if (segmentsIntersect(from.x, from.y, to.x, to.y, wall.start.x, wall.start.y, wall.end.x, wall.end.y)) {
+							return false;
+						}
+					}
+					return true;
+				};
+
+				const isPlayerViewRenderableMarker = (marker: any): boolean => {
+					if (!marker?.position) return false;
+					const layer = marker.layer || 'Player';
+					if (layer === 'DM' || layer === 'Background') return false;
+					return ['Player', 'Elevated', 'Subterranean'].includes(layer);
+				};
+
+				const getMarkerBoxRadius = (marker: any): number => {
+					try {
+						return Math.max(avgGridSize * 0.5, getPlacedMarkerRadius(marker));
+					} catch {
+						return avgGridSize * 0.6;
+					}
 				};
 
 				const getSingleTokenAutoPanBox = (marker: any) => {
 					const origin = marker.position;
-					const maxRadius = getMarkerVisionRadiusPx(marker);
+					const visionRadius = getMarkerVisionRadiusPx(marker);
 					const blockingWalls = getBlockingWallSegments();
-					const points: { x: number; y: number }[] = [origin];
-					const samples = 72;
-					for (let i = 0; i < samples; i++) {
-						const angle = (i / samples) * Math.PI * 2;
-						const dx = Math.cos(angle);
-						const dy = Math.sin(angle);
-						let dist = maxRadius;
-						for (const wall of blockingWalls) {
-							const hit = raySegmentDistance(origin.x, origin.y, dx, dy, wall.start.x, wall.start.y, wall.end.x, wall.end.y);
-							if (hit !== null && hit < dist) dist = hit;
-						}
-						points.push({ x: origin.x + dx * dist, y: origin.y + dy * dist });
+
+					// Stable tactical frame: use the token's vision radius as the
+					// baseline instead of shrinking to nearby walls. Fog/LOS rendering
+					// still hides unseen map parts, but the camera no longer zooms
+					// wildly when the active token stands in a small room or corridor.
+					const halfSpan = Math.max(6 * avgGridSize, visionRadius);
+					let minX = origin.x - halfSpan;
+					let maxX = origin.x + halfSpan;
+					let minY = origin.y - halfSpan;
+					let maxY = origin.y + halfSpan;
+
+					for (const candidate of config.markers || []) {
+						if (!candidate?.position || candidate.id === marker.id) continue;
+						if (!isPlayerViewRenderableMarker(candidate)) continue;
+						const dx = candidate.position.x - origin.x;
+						const dy = candidate.position.y - origin.y;
+						const distance = Math.sqrt(dx * dx + dy * dy);
+						const candidateRadius = getMarkerBoxRadius(candidate);
+						if (distance > visionRadius + candidateRadius) continue;
+						if (!hasLineOfSight(origin, candidate.position, blockingWalls)) continue;
+
+						minX = Math.min(minX, candidate.position.x - candidateRadius);
+						maxX = Math.max(maxX, candidate.position.x + candidateRadius);
+						minY = Math.min(minY, candidate.position.y - candidateRadius);
+						maxY = Math.max(maxY, candidate.position.y + candidateRadius);
 					}
-					let minX = Infinity, maxX = -Infinity;
-					let minY = Infinity, maxY = -Infinity;
-					for (const point of points) {
-						minX = Math.min(minX, point.x);
-						maxX = Math.max(maxX, point.x);
-						minY = Math.min(minY, point.y);
-						maxY = Math.max(maxY, point.y);
-					}
-					const padding = Math.max(1.5 * avgGridSize, Math.min(3 * avgGridSize, maxRadius * 0.18));
+
+					const padding = Math.max(1.5 * avgGridSize, Math.min(3 * avgGridSize, visionRadius * 0.12));
 					minX -= padding;
 					maxX += padding;
 					minY -= padding;
 					maxY += padding;
-					const minSpan = 7 * avgGridSize;
+					const minSpan = 12 * avgGridSize;
 					const boxW = Math.max(minSpan, maxX - minX);
 					const boxH = Math.max(minSpan, maxY - minY);
 					return {
@@ -4091,7 +4173,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				if (selectedVisionTokenId) {
 					// ── Single token: fit the wall-clipped vision footprint ──
-					const marker = (config.markers || []).find((m: any) => m.id === selectedVisionTokenId);
+					const marker = findMarkerOrGroupBySelectionId(selectedVisionTokenId);
 					if (isAutoPanEligible(marker)) {
 						const box = getSingleTokenAutoPanBox(marker);
 						targetCx = box.cx;
@@ -4163,8 +4245,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 				}
 
-				// Clamp scale to reasonable bounds
-				targetScale = Math.max(0.05, Math.min(5, targetScale));
+				// Clamp scale to stable tactical bounds. The upper bound keeps the
+				// rendered grid from becoming comically large on small rooms while
+				// still allowing closer views on low-resolution maps.
+				const maxAutoScale = Math.max(0.35, Math.min(1.8, 110 / avgGridSize));
+				targetScale = Math.max(0.05, Math.min(maxAutoScale, targetScale));
 
 				// Animate
 				const safeCenterX = safeViewport.x + safeViewport.w / 2;
@@ -4191,7 +4276,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		// re-renders when the GM view moves to a new leaf / DOM element.
 		// (rAF-coalesced: many calls per frame → one actual sync at next paint)
 		let _pvSyncScheduled = false;
-		const _syncPlayerViewImmediate = () => {
+		const _syncPlayerViewImmediate = (opts?: { forceFullUpdate?: boolean }) => {
 			_pvSyncScheduled = false;
 			if (plugin._playerMapViews && plugin._playerMapViews.size > 0) {
 				// Build drag ruler data if a marker is being dragged
@@ -4274,13 +4359,13 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						// Creature/NPC tokens without visibleToPlayers are DM-only previews;
 						// the player view should fall back to "All Players" combined vision.
 						if (!selectedVisionTokenId) return null;
-						const selMarker = (config.markers || []).find((m: any) => m.id === selectedVisionTokenId);
+						const selMarker = findMarkerOrGroupBySelectionId(selectedVisionTokenId);
 						if (!selMarker) return null;
 						if ((selMarker.layer || 'Player') === 'DM') return null;
-						if (isTokenGroup(selMarker) && selMarker.visibleToPlayers) return selectedVisionTokenId;
+						if (isTokenGroup(selMarker) && selMarker.visibleToPlayers) return selMarker.id;
 						const selDef = selMarker.markerId ? plugin.markerLibrary.getMarker(selMarker.markerId) : null;
-						if (selDef && selDef.type === 'player') return selectedVisionTokenId;
-						if (selMarker.visibleToPlayers) return selectedVisionTokenId;
+						if (selDef && selDef.type === 'player') return selMarker.id;
+						if (selMarker.visibleToPlayers) return selMarker.id;
 						return null; // creature/NPC without Show to Players → All Players for player view
 					})(),
 					hexTerrains: config.hexTerrains,
@@ -4309,7 +4394,11 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					const viewMapId = (view as any).mapId;
 					if (viewMapId === mapId) {
 						try { 
-							view.updateMapData(payload); 
+							if (!opts?.forceFullUpdate && payload.draggingMarkerId && typeof (view as any).previewMarkerDrag === 'function') {
+								(view as any).previewMarkerDrag(payload);
+							} else {
+								view.updateMapData(payload);
+							}
 						} catch (e) { 
 							console.error('Failed to update player view', e); 
 						}
@@ -4330,8 +4419,8 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 		};
 
 		const initiativeOverlayUnsub = plugin.combatTracker.onChange(() => {
-			if (config.showInitiativeInPlayerView === true && (viewport as any)._syncPlayerView) {
-				(viewport as any)._syncPlayerView();
+			if (config.showInitiativeInPlayerView === true) {
+				_syncPlayerViewImmediate({ forceFullUpdate: true });
 			}
 		});
 		const initiativeOverlayObserver = new MutationObserver(() => {
@@ -4419,6 +4508,9 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						poiReferences: config.poiReferences,
 						gridType: config.gridType,
 						gridSize: config.gridSize,
+						gridSizeW: config.gridSizeW,
+						gridSizeH: config.gridSizeH,
+						gridVisible: config.gridVisible !== undefined ? config.gridVisible : true,
 						gridOffsetX: config.gridOffsetX || 0,
 						gridOffsetY: config.gridOffsetY || 0,
 						scale: config.scale,
@@ -5014,6 +5106,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					if (draggingMarkerIndex >= 0) {
 						_dragRedrawFast();
 						if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
+						if (!_autoPanPrimedForCurrentDrag) {
+							_autoPanPrimedForCurrentDrag = true;
+							_applyAutoPan(true);
+						}
 					} else {
 						redrawAnnotations();
 						if ((draggingLightIndex >= 0 || draggingWallIndex >= 0 || envAssetDragOffset || envAssetTransformHandle) &&
@@ -10010,8 +10106,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						const r = getPlacedMarkerRadius(m);
 						const dist = Math.sqrt(Math.pow(m.position.x - mapPos.x, 2) + Math.pow(m.position.y - mapPos.y, 2));
 						if (dist <= r) {
+							_cancelPendingAutoPan();
 							saveToHistory();
 							draggingMarkerIndex = i;
+							_autoPanPrimedForCurrentDrag = false;
 							dragOffsetX = m.position.x - mapPos.x;
 							dragOffsetY = m.position.y - mapPos.y;
 							markerDragOrigin = { x: m.position.x, y: m.position.y };
@@ -11938,6 +12036,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 					draggingMarkerIndex = -1;
 					markerDragOrigin = null;
+					_autoPanPrimedForCurrentDrag = false;
 					_staticLayerDirty = true; // invalidate drag cache for next drag
 					viewport.style.cursor = 'default';
 					redrawAnnotations();
@@ -11946,8 +12045,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					if ((viewport as any)._syncPlayerView) {
 						(viewport as any)._syncPlayerView();
 					}
-					// Auto-pan: re-center after token moved (debounced)
-					_applyAutoPan();
+					_applyAutoPan(true);
 				} else if (activeTool === 'select' && draggingLightIndex >= 0) {
 					// Drop light: save position
 					draggingLightIndex = -1;
@@ -12208,11 +12306,15 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				} else if (activeTool === 'select' && draggingMarkerIndex >= 0) {
 					draggingMarkerIndex = -1;
 					markerDragOrigin = null;
+					_autoPanPrimedForCurrentDrag = false;
 					_staticLayerDirty = true; // invalidate drag cache
 					viewport.style.cursor = 'default';
 					redrawAnnotations();
 					plugin.saveMapAnnotations(config, el);
-					_applyAutoPan();
+					if ((viewport as any)._syncPlayerView) {
+						(viewport as any)._syncPlayerView();
+					}
+					_applyAutoPan(true);
 				} else if (activeTool === 'select' && draggingLightIndex >= 0) {
 					draggingLightIndex = -1;
 					lightDragOrigin = null;
@@ -14657,15 +14759,21 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					return;
 				}
 
-				// Get existing markers on the map to check for duplicates
-				const existingMarkers = config.markers || [];
-				const existingMarkerNames = new Set<string>();
+				// Get existing markers on the map to check for duplicates and prepared tokens
+				if (!Array.isArray(config.markers)) {
+					config.markers = [];
+				}
+				const existingMarkers = config.markers;
+				const existingMarkerKeys = new Set<string>();
+				const claimedExistingMarkerIds = new Set<string>();
+				const normaliseName = (value: string) => value.toLowerCase().trim();
+				const normaliseColor = (value?: string) => (value || '').toLowerCase().trim();
+				const markerKey = (name: string, borderColor?: string) => `${normaliseName(name)}|${normaliseColor(borderColor)}`;
 				existingMarkers.forEach((m: any) => {
 					const markerDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
 					if (markerDef) {
 						// Track both name and borderColor for exact duplicate detection
-						const key = `${markerDef.name.toLowerCase()}|${(m.borderColor || '').toLowerCase()}`;
-						existingMarkerNames.add(key);
+						existingMarkerKeys.add(markerKey(markerDef.name, m.borderColor));
 					}
 				});
 
@@ -14688,13 +14796,104 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 				const mapH = config.dimensions?.height || 800;
 				const totalCols = Math.floor(mapW / _ciGsW);
 				const totalRows = Math.floor(mapH / _ciGsH);
-				// Start from row 1, column 1 (leaving a 1-cell margin)
-				let placementCol = 1;
-				let placementRow = 1;
 				const maxCol = Math.max(2, totalCols - 1);
 				const maxRow = Math.max(2, totalRows - 1);
+				const clampInt = (value: number, min: number, max: number) => Math.max(min, Math.min(max, Math.round(value)));
+				const gridSpanForSize = (sizeSquares: number) => Math.max(1, Math.ceil(sizeSquares));
+				const getGridFootprint = (position: { x: number; y: number }, sizeSquares: number) => {
+					const span = gridSpanForSize(sizeSquares);
+					const halfTokenW = (sizeSquares * _ciGsW) / 2;
+					const halfTokenH = (sizeSquares * _ciGsH) / 2;
+					return {
+						col: Math.floor((position.x - ox - halfTokenW) / _ciGsW + 0.0001),
+						row: Math.floor((position.y - oy - halfTokenH) / _ciGsH + 0.0001),
+						span,
+					};
+				};
+				const occupiedCells = new Set<string>();
+				const claimGridFootprint = (position: { x: number; y: number }, sizeSquares: number) => {
+					const footprint = getGridFootprint(position, sizeSquares);
+					for (let c = footprint.col; c < footprint.col + footprint.span; c++) {
+						for (let r = footprint.row; r < footprint.row + footprint.span; r++) {
+							occupiedCells.add(`${c},${r}`);
+						}
+					}
+				};
+				const getPlacedMarkerSizeSquares = (marker: any): number => {
+					if (isTokenGroup(marker)) return 1;
+					const def = marker?.markerId ? plugin.markerLibrary.getMarker(marker.markerId) : null;
+					if (def && ['player', 'npc', 'creature'].includes(def.type)) {
+						return CREATURE_SIZE_SQUARES[getMarkerCreatureSize(marker, def)] || 1;
+					}
+					return 1;
+				};
+				existingMarkers.forEach((m: any) => {
+					if (m?.position) claimGridFootprint(m.position, getPlacedMarkerSizeSquares(m));
+				});
+				const importCenter = (() => {
+					try {
+						const rect = viewport.getBoundingClientRect();
+						if (rect.width > 0 && rect.height > 0) {
+							return screenToMap(rect.left + rect.width / 2, rect.top + rect.height / 2);
+						}
+					} catch {
+						// Fall back to the map start below.
+					}
+					return { x: ox + _ciGsW * 1.5, y: oy + _ciGsH * 1.5 };
+				})();
+				const anchorColRaw = Math.floor((importCenter.x - ox) / _ciGsW);
+				const anchorRowRaw = Math.floor((importCenter.y - oy) / _ciGsH);
+				const findImportPosition = (sizeSquares: number): { x: number; y: number } => {
+					const span = gridSpanForSize(sizeSquares);
+					const mapCols = Math.max(1, Math.floor((mapW - ox) / _ciGsW));
+					const mapRows = Math.max(1, Math.floor((mapH - oy) / _ciGsH));
+					const maxStartCol = Math.max(0, mapCols - span);
+					const maxStartRow = Math.max(0, mapRows - span);
+					const minStartCol = maxStartCol >= 2 ? 1 : 0;
+					const minStartRow = maxStartRow >= 2 ? 1 : 0;
+					const anchorCol = clampInt(anchorColRaw - Math.floor(span / 2), minStartCol, maxStartCol);
+					const anchorRow = clampInt(anchorRowRaw - Math.floor(span / 2), minStartRow, maxStartRow);
+					const isFree = (col: number, row: number) => {
+						if (col < minStartCol || row < minStartRow || col > maxStartCol || row > maxStartRow) return false;
+						for (let c = col; c < col + span; c++) {
+							for (let r = row; r < row + span; r++) {
+								if (occupiedCells.has(`${c},${r}`)) return false;
+							}
+						}
+						return true;
+					};
+					const choose = (col: number, row: number) => {
+						const halfTokenW = (sizeSquares * _ciGsW) / 2;
+						const halfTokenH = (sizeSquares * _ciGsH) / 2;
+						const position = {
+							x: ox + col * _ciGsW + halfTokenW,
+							y: oy + row * _ciGsH + halfTokenH,
+						};
+						claimGridFootprint(position, sizeSquares);
+						return position;
+					};
+					const maxRadius = Math.max(maxCol, maxRow, 1);
+					if (isFree(anchorCol, anchorRow)) return choose(anchorCol, anchorRow);
+					for (let radius = 1; radius <= maxRadius; radius++) {
+						for (let row = anchorRow - radius; row <= anchorRow + radius; row++) {
+							for (let col = anchorCol - radius; col <= anchorCol + radius; col++) {
+								if (Math.abs(col - anchorCol) !== radius && Math.abs(row - anchorRow) !== radius) continue;
+								if (isFree(col, row)) return choose(col, row);
+							}
+						}
+					}
+					for (let rowOffset = 0; rowOffset <= maxStartRow - minStartRow; rowOffset++) {
+						const row = minStartRow + ((anchorRow - minStartRow + rowOffset) % (maxStartRow - minStartRow + 1));
+						for (let colOffset = 0; colOffset <= maxStartCol - minStartCol; colOffset++) {
+							const col = minStartCol + ((anchorCol - minStartCol + colOffset) % (maxStartCol - minStartCol + 1));
+							if (isFree(col, row)) return choose(col, row);
+						}
+					}
+					return choose(anchorCol, anchorRow);
+				};
 
 				let addedCount = 0;
+				let updatedCount = 0;
 				let skippedCount = 0;
 				let errorCount = 0;
 				saveToHistory();
@@ -14725,14 +14924,6 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						}
 						if (!borderColor && isMultiple) {
 							borderColor = AUTO_BORDER_COLORS[i % AUTO_BORDER_COLORS.length];
-						}
-
-						// Check for duplicate: same base name + same border color already on map
-						const dupeKey = `${baseName.toLowerCase()}|${(borderColor || '').toLowerCase()}`;
-						if (existingMarkerNames.has(dupeKey)) {
-							console.log(`[DnD-Map]   SKIP duplicate "${displayName}" (key=${dupeKey})`);
-							skippedCount++;
-							continue;
 						}
 
 						// Find or create a marker definition in the library
@@ -14814,14 +15005,42 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 							console.log(`[DnD-Map]   Created new marker def "${baseName}" (size=${creatureSize})`);
 						}
 
+						// Check for duplicate: same base name + same border color already on map.
+						const dupeKey = markerKey(baseName, borderColor);
+						if (existingMarkerKeys.has(dupeKey)) {
+							console.log(`[DnD-Map]   SKIP duplicate "${displayName}" (key=${dupeKey})`);
+							skippedCount++;
+							continue;
+						}
+
+						// If this encounter slot needs a concrete color and the matching token is
+						// already staged on the map without an instance color, color that token
+						// instead of adding a duplicate. This preserves prep-time placement.
+						if (borderColor) {
+							const preparedMarker = existingMarkers.find((m: any) => {
+								if (!m?.id || claimedExistingMarkerIds.has(m.id)) return false;
+								if (m.borderColor) return false;
+								if (m.markerId === markerDef!.id) return true;
+
+								const existingDef = m.markerId ? plugin.markerLibrary.getMarker(m.markerId) : null;
+								return existingDef?.name && normaliseName(existingDef.name) === normaliseName(baseName);
+							});
+
+							if (preparedMarker) {
+								preparedMarker.borderColor = borderColor;
+								claimedExistingMarkerIds.add(preparedMarker.id);
+								existingMarkerKeys.add(dupeKey);
+								updatedCount++;
+								console.log(`[DnD-Map]   COLOR "${displayName}" on prepared token ${preparedMarker.id} (${borderColor})`);
+								continue;
+							}
+						}
+
 						// Calculate grid-snapped position
 						const sizeSquares = CREATURE_SIZE_SQUARES[markerDef.creatureSize || 'medium'] || 1;
-						const halfTokenW = (sizeSquares * _ciGsW) / 2;
-						const halfTokenH = (sizeSquares * _ciGsH) / 2;
-						// Use integer column steps (ceil to 1) to keep placement grid-aligned
-						const colAdvance = Math.max(1, Math.ceil(sizeSquares)) + 1;
-						const posX = ox + placementCol * _ciGsW + halfTokenW;
-						const posY = oy + placementRow * _ciGsH + halfTokenH;
+						const importPosition = findImportPosition(sizeSquares);
+						const posX = importPosition.x;
+						const posY = importPosition.y;
 
 						// Create marker reference
 						// Enemy creatures go to DM layer (hidden from players), players/friendlies to Player layer
@@ -14854,21 +15073,10 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 						}
 
 						config.markers.push(markerRef);
-						existingMarkerNames.add(dupeKey); // Prevent duplicates within this batch
+						existingMarkerKeys.add(dupeKey); // Prevent duplicates within this batch
 						addedCount++;
 						console.log(`[DnD-Map]   ADD "${displayName}" → layer=${tokenLayer}, size=${markerDef.creatureSize}, pos=(${posX.toFixed(0)},${posY.toFixed(0)})`);
 
-						// Advance grid placement position (integer steps to stay grid-aligned)
-						const rowSize = Math.max(1, Math.ceil(sizeSquares));
-						placementCol += colAdvance;
-						if (placementCol + rowSize > maxCol) {
-							placementCol = 1;
-							placementRow += rowSize + 1;
-							// If we've run out of vertical space, wrap back to top
-							if (placementRow + rowSize > maxRow) {
-								placementRow = 1;
-							}
-						}
 					  } catch (creatureError) {
 						console.error(`[DnD-Map]   ERROR importing "${baseName}" instance ${i}:`, creatureError);
 						errorCount++;
@@ -14876,7 +15084,7 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 					}
 				}
 
-				if (addedCount > 0) {
+				if (addedCount > 0 || updatedCount > 0) {
 					redrawAnnotations();
 					if ((viewport as any)._syncPlayerView) (viewport as any)._syncPlayerView();
 					plugin.saveMapAnnotations(config, el);
@@ -14886,13 +15094,16 @@ export async function renderMapView(plugin: DndCampaignHubPlugin, source: string
 
 				const parts: string[] = [];
 				if (addedCount > 0) parts.push(`✅ Added ${addedCount} token${addedCount > 1 ? 's' : ''} from encounter`);
+				if (updatedCount > 0) parts.push(`colored ${updatedCount} prepared token${updatedCount > 1 ? 's' : ''}`);
 				if (skippedCount > 0) parts.push(`${skippedCount} skipped`);
 				if (errorCount > 0) parts.push(`${errorCount} failed`);
 				const msg = addedCount > 0
 					? parts[0]! + (parts.length > 1 ? ` (${parts.slice(1).join(', ')})` : '')
-					: `ℹ️ All encounter tokens already on the map` + (parts.length > 0 ? ` (${parts.join(', ')})` : '');
+					: updatedCount > 0
+						? `✅ Colored ${updatedCount} prepared encounter token${updatedCount > 1 ? 's' : ''}` + (parts.length > 1 ? ` (${parts.filter((p) => !p.startsWith('colored ')).join(', ')})` : '')
+						: `ℹ️ All encounter tokens already on the map` + (parts.length > 0 ? ` (${parts.join(', ')})` : '');
 				new Notice(msg);
-				console.log(`[DnD-Map] Import complete: added=${addedCount}, skipped=${skippedCount}, errors=${errorCount}`);
+				console.log(`[DnD-Map] Import complete: added=${addedCount}, colored=${updatedCount}, skipped=${skippedCount}, errors=${errorCount}`);
 			});
 
 			// Clear drawings button
