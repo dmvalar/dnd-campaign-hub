@@ -1,12 +1,14 @@
 # AI Agent Development Guide: D&D Campaign Hub
 
-_Last updated: 2026-03-13_
+_Last updated: 2026-11-17_
 
 ## Quick Reference
 
-- **Location**: `C:/Users/kevin/SynologyDrive/Plugins/dnd-campaign-hub`
-- **Main branch**: `main`
-- **Remote**: `https://github.com/kmumenthaler/dnd-campaign-hub.git`
+- **Location**: `C:/Users/kevin/scripts/git/dnd-campaign-hub`
+- **Integration branch**: `dev` — all features and fixes branch from and merge into `dev`
+- **Stable release branch**: `main` — promote tested changes from `dev` for a stable release
+- **Remote**: `https://github.com/dmvalar/dnd-campaign-hub.git`
+- **Branch and release policy**: [CONTRIBUTING.md](CONTRIBUTING.md)
 - **Build**: Run `npm run check`, `npm run test`, then `npm run build`
 - **Deploy Target**: `C:\Users\kevin\SynologyDrive\Obsidian Vault\TTRPG Vault\.obsidian\plugins\dnd-campaign-hub\`
 
@@ -16,8 +18,8 @@ _Last updated: 2026-03-13_
 
 ### 1. Create Feature Branch
 ```powershell
-git checkout main
-git pull
+git checkout dev
+git pull --ff-only origin dev
 git checkout -b feature/your-feature-name
 ```
 
@@ -433,11 +435,17 @@ git commit -m "type: short description
 
 ### Merge Feature Branch
 ```powershell
-git checkout main
-git merge feature/your-feature-name
-git push origin main
+git checkout dev
+git pull --ff-only origin dev
+git merge --no-ff feature/your-feature-name
+npm run check
+npm run test
+npm run build
+git push origin dev
 git branch -d feature/your-feature-name
 ```
+
+Pull requests target `dev`. Publish beta/unstable releases from validated `dev` commits with `--prerelease --latest=false`. Promote tested `dev` changes to `main` only as part of a stable release. Follow [CONTRIBUTING.md](CONTRIBUTING.md) and retain published release tags during branch cleanup.
 
 ---
 

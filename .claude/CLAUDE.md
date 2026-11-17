@@ -22,6 +22,8 @@ After deploy, reload in Obsidian: Ctrl+P → "Reload app without saving".
 
 ## Development Workflow
 
+Use `dev` as the integration branch. Create feature/fix branches from `dev` and merge them back into `dev`; pull requests target `dev`. Publish beta/unstable releases from validated `dev` commits. Promote tested `dev` changes to `main` for stable releases. See [CONTRIBUTING.md](../CONTRIBUTING.md).
+
 For every feature or fix, follow this sequence — do not skip steps:
 
 1. **Plan** — Identify affected files, design the approach.

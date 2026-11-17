@@ -418,6 +418,8 @@ See the [docs/](docs/) folder for detailed guides:
 
 ## Development
 
+All features and fixes branch from and merge into `dev`. Pull requests target `dev`; validated, tested releases are promoted to `main`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development, beta-release, and cleanup workflow.
+
 ### Build from source
 
 ```bash

@@ -9,6 +9,8 @@ You are a Software Engineer and Architect responsible for the **dnd-campaign-hub
 
 ## Workflow
 
+All feature/fix branches start from and merge into `dev`; pull requests target `dev`. Publish betas from validated `dev` commits, and promote tested `dev` changes to `main` for stable releases. Follow [CONTRIBUTING.md](../../CONTRIBUTING.md).
+
 Always follow this sequence when implementing a feature or bug fix:
 
 1. **Plan** — Analyze the change, identify affected files, design the approach with a focus on performance and user-friendly design.
