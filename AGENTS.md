@@ -14,6 +14,20 @@ _Last updated: 2026-11-17_
 
 ---
 
+## Specialist Routing
+
+Read the relevant shared guide before changing a covered subsystem. Use one specialist for a contained task when delegation is authorized, or apply its guide in the primary agent. The primary agent coordinates cross-domain changes and shared-file ownership; it owns integration into `dev`, deployment, and releases unless explicitly delegated within the user's scope.
+
+| Domain | Guide | Codex role |
+| --- | --- | --- |
+| Maps, tokens, fog/lighting, player views, calibration, handouts | [Maps & Projection](docs/agents/maps-projection.md) | `maps_projection` |
+| Sessions, campaigns, adventures/scenes, dashboards, planning/backlinks | [Sessions & Campaigns](docs/agents/sessions-campaigns.md) | `sessions_campaigns` |
+| Encounter building, combat state/undo, initiative, HP, traps/awards | [Encounters & Combat](docs/agents/encounters-combat.md) | `encounters_combat` |
+
+Use [the agent setup guide](docs/agents/README.md) for tool entry points, model-selection guidance, and boundaries. Load only the guides relevant to the assignment. Agent availability alone does not authorize delegation or external actions.
+
+---
+
 ## Feature Development Workflow
 
 ### 1. Create Feature Branch

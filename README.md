@@ -418,6 +418,8 @@ See the [docs/](docs/) folder for detailed guides:
 
 ## Development
 
+Specialist agents for maps/projection, sessions/campaigns, and encounters/combat are documented in [the agent setup guide](docs/agents/README.md).
+
 All features and fixes branch from and merge into `dev`. Pull requests target `dev`; validated, tested releases are promoted to `main`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development, beta-release, and cleanup workflow.
 
 ### Build from source
