@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0-beta.2] - 2026-11-17
+
+Beta / unstable release from the combined `dev` branch. Includes all battlemap changes from beta.1 plus the integrated session and usability work below. Manual Obsidian acceptance testing remains pending.
+
+### Added
+
+- Session lifecycle handling for planned, in-progress, completed, and archived sessions, with archive/delete controls.
+- Per-session scene planning and preparation focused on the selected session.
+- Linked-adventure support in live sessions and clearer multi-adventure selection.
+- Unsaved-change protection in major creation/editing modals, including session scene-plan edits.
+- Unified campaign content search and more actionable empty states.
+- 24 additional regression tests since beta.1, bringing the suite to 186 tests.
+
+### Changed
+
+- All development now integrates through `dev`; tested stable releases are promoted to `main`.
+- Updated development-toolchain dependencies from the existing `dev` work; remaining audit findings are tracked in `tasks/todo.md`.
+
+### Fixed
+
+- Preserve manual player-map panning and rotation when delayed initial centering retries.
+- Preserve session completion state across live-session workflows.
+- Reconcile session backlinks after edits and fall back safely when a planned scene is stale.
+- Isolate session run-dashboard workspace state and preserve core search shortcuts and interaction.
+
 ## [0.15.0-beta.1] - 2026-11-17
 
 Beta / unstable release for testing before a stable release. Manual Obsidian display and large-map performance checks remain pending.

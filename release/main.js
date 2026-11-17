@@ -117,11 +117,13 @@ type: adventure
 `;
     SESSION_GM_TEMPLATE = `---
 type: session
-template_version: 1.7.0
+status: planned
+template_version: 1.9.0
 campaign: 
 world: 
 adventure:
 adventures: []
+planned_scenes: []
 starting_scene: ""
 ending_scene: ""
 party_id: ""
@@ -186,11 +188,13 @@ scene-navigator
 `;
     SESSION_PLAYER_TEMPLATE = `---
 type: session
-template_version: 1.7.0
+status: planned
+template_version: 1.9.0
 campaign: 
 world: 
 adventure:
 adventures: []
+planned_scenes: []
 sessionNum: 
 location: 
 date: 
@@ -1240,7 +1244,7 @@ var init_types2 = __esm({
     "use strict";
     TEMPLATE_VERSIONS = {
       world: "1.3.0",
-      session: "1.7.0",
+      session: "1.9.0",
       npc: "1.4.0",
       pc: "1.5.0",
       player: "1.5.0",
@@ -2052,6 +2056,34 @@ adventures:${value}`);
           if (out === ctx.content) out = addFrontmatterField(out, "adventures", "[]");
         }
         return setFrontmatterField(out, "template_version", "1.7.0");
+      }
+    },
+    {
+      id: "session-1.8.0",
+      entityTypes: ["session"],
+      targetVersion: "1.8.0",
+      description: "Add the planned/in-progress/completed session lifecycle",
+      async apply(ctx) {
+        let out = ctx.content;
+        if (!/^status:/m.test(out)) {
+          out = addFrontmatterFieldAfter(out, "type", "status", "planned");
+          if (out === ctx.content) out = addFrontmatterField(out, "status", "planned");
+        }
+        return setFrontmatterField(out, "template_version", "1.8.0");
+      }
+    },
+    {
+      id: "session-1.9.0",
+      entityTypes: ["session"],
+      targetVersion: "1.9.0",
+      description: "Add an ordered per-session scene plan",
+      async apply(ctx) {
+        let out = ctx.content;
+        if (!/^planned_scenes:/m.test(out)) {
+          out = addFrontmatterFieldAfter(out, "adventures", "planned_scenes", "[]");
+          if (out === ctx.content) out = addFrontmatterField(out, "planned_scenes", "[]");
+        }
+        return setFrontmatterField(out, "template_version", "1.9.0");
       }
     },
     // ── Adventure ────────────────────────────────────────────────────────
@@ -8072,6 +8104,7 @@ var require_inflate = __commonJS({
               hold = 0;
               bits = 0;
               state.mode = TIME;
+            /* falls through */
             case TIME:
               while (bits < 32) {
                 if (have === 0) {
@@ -8094,6 +8127,7 @@ var require_inflate = __commonJS({
               hold = 0;
               bits = 0;
               state.mode = OS;
+            /* falls through */
             case OS:
               while (bits < 16) {
                 if (have === 0) {
@@ -8115,6 +8149,7 @@ var require_inflate = __commonJS({
               hold = 0;
               bits = 0;
               state.mode = EXLEN;
+            /* falls through */
             case EXLEN:
               if (state.flags & 1024) {
                 while (bits < 16) {
@@ -8140,6 +8175,7 @@ var require_inflate = __commonJS({
                 state.head.extra = null;
               }
               state.mode = EXTRA;
+            /* falls through */
             case EXTRA:
               if (state.flags & 1024) {
                 copy = state.length;
@@ -8176,6 +8212,7 @@ var require_inflate = __commonJS({
               }
               state.length = 0;
               state.mode = NAME;
+            /* falls through */
             case NAME:
               if (state.flags & 2048) {
                 if (have === 0) {
@@ -8201,6 +8238,7 @@ var require_inflate = __commonJS({
               }
               state.length = 0;
               state.mode = COMMENT;
+            /* falls through */
             case COMMENT:
               if (state.flags & 4096) {
                 if (have === 0) {
@@ -8225,6 +8263,7 @@ var require_inflate = __commonJS({
                 state.head.comment = null;
               }
               state.mode = HCRC;
+            /* falls through */
             case HCRC:
               if (state.flags & 512) {
                 while (bits < 16) {
@@ -8263,6 +8302,7 @@ var require_inflate = __commonJS({
               hold = 0;
               bits = 0;
               state.mode = DICT;
+            /* falls through */
             case DICT:
               if (state.havedict === 0) {
                 strm.next_out = put;
@@ -8275,10 +8315,12 @@ var require_inflate = __commonJS({
               }
               strm.adler = state.check = 1;
               state.mode = TYPE;
+            /* falls through */
             case TYPE:
               if (flush === Z_BLOCK || flush === Z_TREES) {
                 break inf_leave;
               }
+            /* falls through */
             case TYPEDO:
               if (state.last) {
                 hold >>>= bits & 7;
@@ -8343,8 +8385,10 @@ var require_inflate = __commonJS({
               if (flush === Z_TREES) {
                 break inf_leave;
               }
+            /* falls through */
             case COPY_:
               state.mode = COPY;
+            /* falls through */
             case COPY:
               copy = state.length;
               if (copy) {
@@ -8392,6 +8436,7 @@ var require_inflate = __commonJS({
               }
               state.have = 0;
               state.mode = LENLENS;
+            /* falls through */
             case LENLENS:
               while (state.have < state.ncode) {
                 while (bits < 3) {
@@ -8421,6 +8466,7 @@ var require_inflate = __commonJS({
               }
               state.have = 0;
               state.mode = CODELENS;
+            /* falls through */
             case CODELENS:
               while (state.have < state.nlen + state.ndist) {
                 for (; ; ) {
@@ -8538,8 +8584,10 @@ var require_inflate = __commonJS({
               if (flush === Z_TREES) {
                 break inf_leave;
               }
+            /* falls through */
             case LEN_:
               state.mode = LEN;
+            /* falls through */
             case LEN:
               if (have >= 6 && left >= 258) {
                 strm.next_out = put;
@@ -8621,6 +8669,7 @@ var require_inflate = __commonJS({
               }
               state.extra = here_op & 15;
               state.mode = LENEXT;
+            /* falls through */
             case LENEXT:
               if (state.extra) {
                 n = state.extra;
@@ -8639,6 +8688,7 @@ var require_inflate = __commonJS({
               }
               state.was = state.length;
               state.mode = DIST;
+            /* falls through */
             case DIST:
               for (; ; ) {
                 here = state.distcode[hold & (1 << state.distbits) - 1];
@@ -8689,6 +8739,7 @@ var require_inflate = __commonJS({
               state.offset = here_val;
               state.extra = here_op & 15;
               state.mode = DISTEXT;
+            /* falls through */
             case DISTEXT:
               if (state.extra) {
                 n = state.extra;
@@ -8711,6 +8762,7 @@ var require_inflate = __commonJS({
                 break;
               }
               state.mode = MATCH;
+            /* falls through */
             case MATCH:
               if (left === 0) {
                 break inf_leave;
@@ -8787,6 +8839,7 @@ var require_inflate = __commonJS({
                 bits = 0;
               }
               state.mode = LENGTH;
+            /* falls through */
             case LENGTH:
               if (state.wrap && state.flags) {
                 while (bits < 32) {
@@ -8806,6 +8859,7 @@ var require_inflate = __commonJS({
                 bits = 0;
               }
               state.mode = DONE;
+            /* falls through */
             case DONE:
               ret = Z_STREAM_END;
               break inf_leave;
@@ -8815,6 +8869,7 @@ var require_inflate = __commonJS({
             case MEM:
               return Z_MEM_ERROR;
             case SYNC:
+            /* falls through */
             default:
               return Z_STREAM_ERROR;
           }
@@ -9222,19 +9277,19 @@ function detectHandoutContentType(filePath) {
 async function projectInlineHandout(plugin, config, control) {
   const normalized = normalizeHandoutConfig(config);
   if (!normalized.contentType) {
-    new import_obsidian82.Notice("This handout file type cannot be projected.");
+    new import_obsidian84.Notice("This handout file type cannot be projected.");
     return;
   }
   const spm = plugin.sessionProjectionManager;
   if (!(spm == null ? void 0 : spm.isActive())) {
     plugin.openSessionProjectionHub();
-    new import_obsidian82.Notice("Start a projection session, then project the handout.");
+    new import_obsidian84.Notice("Start a projection session, then project the handout.");
     return;
   }
   const state = spm.getAllScreenStates()[0];
   if (!state) {
     plugin.openSessionProjectionHub();
-    new import_obsidian82.Notice("No projection screen is available for handouts.");
+    new import_obsidian84.Notice("No projection screen is available for handouts.");
     return;
   }
   control.classList.add("playing");
@@ -9282,12 +9337,12 @@ function escapeHtmlText5(value) {
 function unescapeHtmlAttribute5(value) {
   return value.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 }
-var import_obsidian82, InsertHandoutWidgetModal;
+var import_obsidian84, InsertHandoutWidgetModal;
 var init_InlineHandoutBlock = __esm({
   "src/projection/InlineHandoutBlock.ts"() {
     "use strict";
-    import_obsidian82 = require("obsidian");
-    InsertHandoutWidgetModal = class extends import_obsidian82.Modal {
+    import_obsidian84 = require("obsidian");
+    InsertHandoutWidgetModal = class extends import_obsidian84.Modal {
       constructor(app, plugin, onSelect) {
         super(app);
         this.plugin = plugin;
@@ -9423,11 +9478,11 @@ var MarkerPickerModal_exports = {};
 __export(MarkerPickerModal_exports, {
   MarkerPickerModal: () => MarkerPickerModal
 });
-var import_obsidian89, SIZE_LABELS, TYPE_LABELS, TYPE_ORDER, MarkerPickerModal;
+var import_obsidian91, SIZE_LABELS, TYPE_LABELS2, TYPE_ORDER, MarkerPickerModal;
 var init_MarkerPickerModal = __esm({
   "src/marker/MarkerPickerModal.ts"() {
     "use strict";
-    import_obsidian89 = require("obsidian");
+    import_obsidian91 = require("obsidian");
     init_MarkerLibraryModal();
     SIZE_LABELS = {
       tiny: "Tiny",
@@ -9437,7 +9492,7 @@ var init_MarkerPickerModal = __esm({
       huge: "Huge",
       gargantuan: "Gargantuan"
     };
-    TYPE_LABELS = {
+    TYPE_LABELS2 = {
       player: "\u{1F6E1}\uFE0F Player Characters",
       npc: "\u{1F464} NPCs",
       creature: "\u{1F409} Creatures",
@@ -9445,7 +9500,7 @@ var init_MarkerPickerModal = __esm({
       other: "\u{1F4E6} Other"
     };
     TYPE_ORDER = ["player", "npc", "creature", "poi", "other"];
-    MarkerPickerModal = class extends import_obsidian89.Modal {
+    MarkerPickerModal = class extends import_obsidian91.Modal {
       constructor(app, markerLibrary, onSelect) {
         super(app);
         this.markerLibrary = markerLibrary;
@@ -9556,7 +9611,7 @@ var init_MarkerPickerModal = __esm({
               const confirmed = confirm(`Delete marker "${marker.name}"?`);
               if (confirmed) {
                 await this.markerLibrary.deleteMarker(marker.id);
-                new import_obsidian89.Notice(`Deleted marker: ${marker.name}`);
+                new import_obsidian91.Notice(`Deleted marker: ${marker.name}`);
                 this.onOpen();
               }
             });
@@ -9610,7 +9665,7 @@ var init_MarkerPickerModal = __esm({
               toggleIcon.style.fontSize = "10px";
               toggleIcon.style.transition = "transform 0.2s ease";
               toggleIcon.style.display = "inline-block";
-              headerLeft.createSpan({ text: TYPE_LABELS[type] });
+              headerLeft.createSpan({ text: TYPE_LABELS2[type] });
               const countBadge = categoryHeader.createSpan({ text: `${typeMarkers.length}` });
               countBadge.style.fontSize = "12px";
               countBadge.style.padding = "2px 8px";
@@ -9667,13 +9722,13 @@ var init_MarkerPickerModal = __esm({
 });
 
 // src/envasset/EnvAssetLibraryModal.ts
-var import_obsidian90, EnvAssetLibraryModal, EnvAssetImageBrowser;
+var import_obsidian92, EnvAssetLibraryModal, EnvAssetImageBrowser;
 var init_EnvAssetLibraryModal = __esm({
   "src/envasset/EnvAssetLibraryModal.ts"() {
     "use strict";
-    import_obsidian90 = require("obsidian");
+    import_obsidian92 = require("obsidian");
     init_EnvAssetTypes();
-    EnvAssetLibraryModal = class extends import_obsidian90.Modal {
+    EnvAssetLibraryModal = class extends import_obsidian92.Modal {
       constructor(app, assetLibrary, asset, onSave) {
         var _a;
         super(app);
@@ -9710,12 +9765,12 @@ var init_EnvAssetLibraryModal = __esm({
         previewWrap.createEl("h3", { text: "Preview" });
         this.previewEl = previewWrap.createDiv({ cls: "env-asset-preview" });
         this.updatePreview();
-        new import_obsidian90.Setting(contentEl).setName("Name").setDesc("A descriptive name for this asset").addText(
+        new import_obsidian92.Setting(contentEl).setName("Name").setDesc("A descriptive name for this asset").addText(
           (text) => text.setValue(this.name).setPlaceholder("e.g. Wooden Door, Boulder, \u2026").onChange((v) => {
             this.name = v;
           })
         );
-        const imgSetting = new import_obsidian90.Setting(contentEl).setName("Asset Image (PNG)").setDesc(this.imageFile ? `Selected: ${this.imageFile}` : "Choose a PNG with transparency");
+        const imgSetting = new import_obsidian92.Setting(contentEl).setName("Asset Image (PNG)").setDesc(this.imageFile ? `Selected: ${this.imageFile}` : "Choose a PNG with transparency");
         imgSetting.addButton(
           (btn) => btn.setButtonText("Browse Vault").onClick(() => {
             const pngFiles = this.app.vault.getFiles().filter(
@@ -9762,9 +9817,9 @@ var init_EnvAssetLibraryModal = __esm({
                 imgSetting.setDesc(`Selected: ${this.imageFile}`);
                 this.readImageDimensions(dest);
                 this.updatePreview();
-                new import_obsidian90.Notice(`Image saved to ${dest}`);
+                new import_obsidian92.Notice(`Image saved to ${dest}`);
               } catch (err) {
-                new import_obsidian90.Notice("Failed to import image");
+                new import_obsidian92.Notice("Failed to import image");
                 console.error(err);
               }
             });
@@ -9780,26 +9835,26 @@ var init_EnvAssetLibraryModal = __esm({
             })
           );
         }
-        new import_obsidian90.Setting(contentEl).setName("Default Width (px)").setDesc("Initial width when placed on the map").addText(
+        new import_obsidian92.Setting(contentEl).setName("Default Width (px)").setDesc("Initial width when placed on the map").addText(
           (text) => text.setValue(String(this.defaultWidth)).setPlaceholder("70").onChange((v) => {
             this.defaultWidth = Math.max(10, parseInt(v) || 70);
           })
         );
-        new import_obsidian90.Setting(contentEl).setName("Default Height (px)").setDesc("Initial height when placed on the map").addText(
+        new import_obsidian92.Setting(contentEl).setName("Default Height (px)").setDesc("Initial height when placed on the map").addText(
           (text) => text.setValue(String(this.defaultHeight)).setPlaceholder("70").onChange((v) => {
             this.defaultHeight = Math.max(10, parseInt(v) || 70);
           })
         );
         this.scatterConfigEl = contentEl.createDiv({ cls: "env-asset-scatter-config" });
         this.scatterConfigEl.createEl("h3", { text: "\u{1FAA8} Scatter Configuration" });
-        new import_obsidian90.Setting(this.scatterConfigEl).setName("Blocks Vision").setDesc("If enabled, a wall segment is generated along the bounding box").addToggle(
+        new import_obsidian92.Setting(this.scatterConfigEl).setName("Blocks Vision").setDesc("If enabled, a wall segment is generated along the bounding box").addToggle(
           (toggle) => toggle.setValue(this.scatterBlocksVision).onChange((v) => {
             this.scatterBlocksVision = v;
             this.toggleScatterHeightControl();
           })
         );
         this.scatterHeightEl = this.scatterConfigEl.createDiv();
-        new import_obsidian90.Setting(this.scatterHeightEl).setName("Wall Height (ft)").setDesc("Effective height of the scatter for partial cover (5 = normal wall)").addText(
+        new import_obsidian92.Setting(this.scatterHeightEl).setName("Wall Height (ft)").setDesc("Effective height of the scatter for partial cover (5 = normal wall)").addText(
           (t) => t.setValue(String(this.scatterWallHeight)).setPlaceholder("5").onChange((v) => {
             this.scatterWallHeight = Math.max(0, parseInt(v) || 5);
           })
@@ -9867,11 +9922,11 @@ var init_EnvAssetLibraryModal = __esm({
       async save() {
         var _a, _b;
         if (!this.name.trim()) {
-          new import_obsidian90.Notice("Enter a name for the asset");
+          new import_obsidian92.Notice("Enter a name for the asset");
           return;
         }
         if (!this.imageFile) {
-          new import_obsidian90.Notice("Select an image for the asset");
+          new import_obsidian92.Notice("Select an image for the asset");
           return;
         }
         const now = Date.now();
@@ -9900,7 +9955,7 @@ var init_EnvAssetLibraryModal = __esm({
         this.contentEl.empty();
       }
     };
-    EnvAssetImageBrowser = class extends import_obsidian90.Modal {
+    EnvAssetImageBrowser = class extends import_obsidian92.Modal {
       constructor(app, files, onSelect) {
         super(app);
         this.files = files;
@@ -9978,18 +10033,18 @@ var EnvAssetPickerModal_exports = {};
 __export(EnvAssetPickerModal_exports, {
   EnvAssetPickerModal: () => EnvAssetPickerModal
 });
-var import_obsidian91, CATEGORY_LABELS, CATEGORY_ORDER, EnvAssetPickerModal;
+var import_obsidian93, CATEGORY_LABELS, CATEGORY_ORDER, EnvAssetPickerModal;
 var init_EnvAssetPickerModal = __esm({
   "src/envasset/EnvAssetPickerModal.ts"() {
     "use strict";
-    import_obsidian91 = require("obsidian");
+    import_obsidian93 = require("obsidian");
     init_EnvAssetLibraryModal();
     init_EnvAssetTypes();
     CATEGORY_LABELS = {
       scatter: "\u{1FAA8} Scatter"
     };
     CATEGORY_ORDER = ["scatter"];
-    EnvAssetPickerModal = class extends import_obsidian91.Modal {
+    EnvAssetPickerModal = class extends import_obsidian93.Modal {
       constructor(app, assetLibrary, onSelect) {
         super(app);
         this.assetLibrary = assetLibrary;
@@ -10083,7 +10138,7 @@ var init_EnvAssetPickerModal = __esm({
               e.stopPropagation();
               if (confirm(`Delete asset "${asset.name}"?`)) {
                 await this.assetLibrary.deleteAsset(asset.id);
-                new import_obsidian91.Notice(`Deleted asset: ${asset.name}`);
+                new import_obsidian93.Notice(`Deleted asset: ${asset.name}`);
                 this.onOpen();
               }
             });
@@ -10188,16 +10243,16 @@ __export(PoiModals_exports, {
   PoiPickerModal: () => PoiPickerModal,
   PoiPickerMultiModal: () => PoiPickerMultiModal
 });
-var import_obsidian92, PoiEditModal, PoiPickerModal, PoiCreationModal, PoiPickerMultiModal;
+var import_obsidian94, PoiEditModal, PoiPickerModal, PoiCreationModal, PoiPickerMultiModal;
 var init_PoiModals = __esm({
   "src/poi/PoiModals.ts"() {
     "use strict";
-    import_obsidian92 = require("obsidian");
+    import_obsidian94 = require("obsidian");
     init_types();
     init_migration();
     init_templates();
     init_YamlFrontmatter();
-    PoiEditModal = class extends import_obsidian92.Modal {
+    PoiEditModal = class extends import_obsidian94.Modal {
       constructor(app, filePath) {
         super(app);
         this.name = "";
@@ -10217,14 +10272,14 @@ var init_PoiModals = __esm({
         contentEl.addClass("poi-creation-modal");
         contentEl.createEl("h2", { text: "\u270F\uFE0F Edit Point of Interest" });
         const file = this.app.vault.getAbstractFileByPath(this.filePath);
-        if (!(file instanceof import_obsidian92.TFile)) {
-          new import_obsidian92.Notice("PoI file not found");
+        if (!(file instanceof import_obsidian94.TFile)) {
+          new import_obsidian94.Notice("PoI file not found");
           this.close();
           return;
         }
         const cache = this.app.metadataCache.getFileCache(file);
         if (!(cache == null ? void 0 : cache.frontmatter)) {
-          new import_obsidian92.Notice("Invalid PoI file: missing frontmatter");
+          new import_obsidian94.Notice("Invalid PoI file: missing frontmatter");
           this.close();
           return;
         }
@@ -10238,10 +10293,10 @@ var init_PoiModals = __esm({
         this.dangerLevel = cache.frontmatter["danger-level"] || "";
         const tagsArray = cache.frontmatter.tags || [];
         this.tags = Array.isArray(tagsArray) ? tagsArray.join(", ") : "";
-        new import_obsidian92.Setting(contentEl).setName("Name").setDesc("Name of this location").addText(
+        new import_obsidian94.Setting(contentEl).setName("Name").setDesc("Name of this location").addText(
           (text) => text.setPlaceholder("Waterdeep").setValue(this.name).onChange((value) => this.name = value)
         );
-        new import_obsidian92.Setting(contentEl).setName("Type").setDesc("Category of this point of interest (icon will be set automatically)").addDropdown((dropdown) => {
+        new import_obsidian94.Setting(contentEl).setName("Type").setDesc("Category of this point of interest (icon will be set automatically)").addDropdown((dropdown) => {
           POI_TYPES.forEach((type) => {
             dropdown.addOption(type.value, `${type.icon} ${type.label}`);
           });
@@ -10254,22 +10309,22 @@ var init_PoiModals = __esm({
             }
           });
         });
-        new import_obsidian92.Setting(contentEl).setName("Region").setDesc("Geographic region or area").addText(
+        new import_obsidian94.Setting(contentEl).setName("Region").setDesc("Geographic region or area").addText(
           (text) => text.setPlaceholder("Sword Coast").setValue(this.region).onChange((value) => this.region = value)
         );
-        new import_obsidian92.Setting(contentEl).setName("Discovery Status").setDesc("Has the party discovered this location?").addToggle(
+        new import_obsidian94.Setting(contentEl).setName("Discovery Status").setDesc("Has the party discovered this location?").addToggle(
           (toggle) => toggle.setValue(this.discovered).onChange((value) => this.discovered = value)
         );
-        new import_obsidian92.Setting(contentEl).setName("Visited").setDesc("Has the party visited this location?").addToggle(
+        new import_obsidian94.Setting(contentEl).setName("Visited").setDesc("Has the party visited this location?").addToggle(
           (toggle) => toggle.setValue(this.visited).onChange((value) => this.visited = value)
         );
-        new import_obsidian92.Setting(contentEl).setName("Quest Related").setDesc("Is this location related to an active quest?").addToggle(
+        new import_obsidian94.Setting(contentEl).setName("Quest Related").setDesc("Is this location related to an active quest?").addToggle(
           (toggle) => toggle.setValue(this.questRelated).onChange((value) => this.questRelated = value)
         );
-        new import_obsidian92.Setting(contentEl).setName("Danger Level").setDesc("Threat level or difficulty rating").addText(
+        new import_obsidian94.Setting(contentEl).setName("Danger Level").setDesc("Threat level or difficulty rating").addText(
           (text) => text.setPlaceholder("Low, Medium, High, Deadly").setValue(this.dangerLevel).onChange((value) => this.dangerLevel = value)
         );
-        new import_obsidian92.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags for organization").addText(
+        new import_obsidian94.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags for organization").addText(
           (text) => text.setPlaceholder("city, waterdeep, port").setValue(this.tags).onChange((value) => this.tags = value)
         );
         const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
@@ -10284,13 +10339,13 @@ var init_PoiModals = __esm({
       }
       async savePoi() {
         if (!this.name) {
-          new import_obsidian92.Notice("Please enter a name for the Point of Interest");
+          new import_obsidian94.Notice("Please enter a name for the Point of Interest");
           return;
         }
         try {
           const file = this.app.vault.getAbstractFileByPath(this.filePath);
-          if (!(file instanceof import_obsidian92.TFile)) {
-            new import_obsidian92.Notice("PoI file not found");
+          if (!(file instanceof import_obsidian94.TFile)) {
+            new import_obsidian94.Notice("PoI file not found");
             return;
           }
           let content = await this.app.vault.read(file);
@@ -10328,15 +10383,15 @@ var init_PoiModals = __esm({
             `**Status:** ${statusText}`
           );
           await this.app.vault.modify(file, content);
-          new import_obsidian92.Notice(`Updated Point of Interest: ${this.name}`);
+          new import_obsidian94.Notice(`Updated Point of Interest: ${this.name}`);
           this.close();
         } catch (error2) {
           console.error("Error updating PoI:", error2);
-          new import_obsidian92.Notice("Failed to update Point of Interest");
+          new import_obsidian94.Notice("Failed to update Point of Interest");
         }
       }
     };
-    PoiPickerModal = class extends import_obsidian92.Modal {
+    PoiPickerModal = class extends import_obsidian94.Modal {
       constructor(app, campaignFolder, hexCoords, onSelect) {
         super(app);
         this.campaignFolder = campaignFolder;
@@ -10434,7 +10489,7 @@ var init_PoiModals = __esm({
         return pois;
       }
     };
-    PoiCreationModal = class extends import_obsidian92.Modal {
+    PoiCreationModal = class extends import_obsidian94.Modal {
       constructor(app, campaignFolder, hexCoords, onSelect) {
         super(app);
         this.name = "";
@@ -10451,10 +10506,10 @@ var init_PoiModals = __esm({
         contentEl.empty();
         contentEl.addClass("poi-creation-modal");
         contentEl.createEl("h2", { text: "\u2728 Create Point of Interest" });
-        new import_obsidian92.Setting(contentEl).setName("Name").setDesc("Name of this location").addText(
+        new import_obsidian94.Setting(contentEl).setName("Name").setDesc("Name of this location").addText(
           (text) => text.setPlaceholder("Waterdeep").setValue(this.name).onChange((value) => this.name = value)
         );
-        new import_obsidian92.Setting(contentEl).setName("Type").setDesc("Category of this point of interest (icon will be set automatically)").addDropdown((dropdown) => {
+        new import_obsidian94.Setting(contentEl).setName("Type").setDesc("Category of this point of interest (icon will be set automatically)").addDropdown((dropdown) => {
           POI_TYPES.forEach((type) => {
             dropdown.addOption(type.value, `${type.icon} ${type.label}`);
           });
@@ -10467,10 +10522,10 @@ var init_PoiModals = __esm({
             }
           });
         });
-        new import_obsidian92.Setting(contentEl).setName("Region").setDesc("Geographic region or area").addText(
+        new import_obsidian94.Setting(contentEl).setName("Region").setDesc("Geographic region or area").addText(
           (text) => text.setPlaceholder("Sword Coast").setValue(this.region).onChange((value) => this.region = value)
         );
-        new import_obsidian92.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags for organization").addText(
+        new import_obsidian94.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags for organization").addText(
           (text) => text.setPlaceholder("city, waterdeep, port").setValue(this.tags).onChange((value) => this.tags = value)
         );
         const buttonContainer = contentEl.createDiv({ cls: "modal-button-container" });
@@ -10485,7 +10540,7 @@ var init_PoiModals = __esm({
       }
       async createPoi() {
         if (!this.name) {
-          new import_obsidian92.Notice("Please enter a name for the Point of Interest");
+          new import_obsidian94.Notice("Please enter a name for the Point of Interest");
           return;
         }
         try {
@@ -10497,7 +10552,7 @@ var init_PoiModals = __esm({
           const sanitizedName = this.name.replace(/[\\/:*?"<>|]/g, "_");
           const filePath = `${locationsFolder}/${sanitizedName}.md`;
           if (await this.app.vault.adapter.exists(filePath)) {
-            new import_obsidian92.Notice(`A Point of Interest named "${this.name}" already exists`);
+            new import_obsidian94.Notice(`A Point of Interest named "${this.name}" already exists`);
             return;
           }
           const campaignName = this.campaignFolder.split("/").pop() || "";
@@ -10536,16 +10591,16 @@ var init_PoiModals = __esm({
             "danger-level": ""
           }));
           const file = await this.app.vault.create(filePath, content);
-          new import_obsidian92.Notice(`Created Point of Interest: ${this.name}`);
+          new import_obsidian94.Notice(`Created Point of Interest: ${this.name}`);
           this.onSelect(file.path);
           this.close();
         } catch (error2) {
           console.error("Error creating PoI:", error2);
-          new import_obsidian92.Notice("Failed to create Point of Interest");
+          new import_obsidian94.Notice("Failed to create Point of Interest");
         }
       }
     };
-    PoiPickerMultiModal = class extends import_obsidian92.Modal {
+    PoiPickerMultiModal = class extends import_obsidian94.Modal {
       constructor(app, editor, campaignName) {
         super(app);
         this.availablePois = [];
@@ -10689,14 +10744,14 @@ var init_PoiModals = __esm({
        */
       insertCodeBlock() {
         if (this.selectedPois.length === 0) {
-          new import_obsidian92.Notice("Please select at least one PoI");
+          new import_obsidian94.Notice("Please select at least one PoI");
           return;
         }
         const sortedPois = [...this.selectedPois].sort((a, b) => a.order - b.order);
         const lines = sortedPois.map((poi) => `- ${poi.name}`);
         const codeBlock = "```dnd-poi\n" + lines.join("\n") + "\n```";
         this.editor.replaceSelection(codeBlock);
-        new import_obsidian92.Notice(`\u2705 Inserted ${sortedPois.length} PoI${sortedPois.length > 1 ? "s" : ""}`);
+        new import_obsidian94.Notice(`\u2705 Inserted ${sortedPois.length} PoI${sortedPois.length > 1 ? "s" : ""}`);
         this.close();
       }
     };
@@ -10710,7 +10765,7 @@ __export(EnvAssetContextMenu_exports, {
 });
 function showEnvAssetContextMenu(app, event, instance, definition, assetLibrary, callbacks) {
   var _a;
-  const menu = new import_obsidian93.Menu();
+  const menu = new import_obsidian95.Menu();
   const label = (_a = definition == null ? void 0 : definition.name) != null ? _a : "Env Asset";
   menu.addItem(
     (item) => item.setTitle(`\u{1F4E6} ${label}`).setDisabled(true)
@@ -10746,7 +10801,7 @@ function showEnvAssetContextMenu(app, event, instance, definition, assetLibrary,
       instance.locked = !instance.locked;
       callbacks.onUpdate(instance);
       callbacks.onRedraw();
-      new import_obsidian93.Notice(instance.locked ? `${label} locked` : `${label} unlocked`);
+      new import_obsidian95.Notice(instance.locked ? `${label} locked` : `${label} unlocked`);
       callbacks.onSave();
     })
   );
@@ -10795,11 +10850,11 @@ function showEnvAssetContextMenu(app, event, instance, definition, assetLibrary,
   );
   menu.showAtMouseEvent(event);
 }
-var import_obsidian93;
+var import_obsidian95;
 var init_EnvAssetContextMenu = __esm({
   "src/envasset/EnvAssetContextMenu.ts"() {
     "use strict";
-    import_obsidian93 = require("obsidian");
+    import_obsidian95 = require("obsidian");
   }
 });
 
@@ -10828,7 +10883,7 @@ function renderEncounterTableBlock(source, el, ctx, app, plugin) {
             filePath.replace(".md", ""),
             ctx.sourcePath
           );
-          if (resolved instanceof import_obsidian96.TFile) {
+          if (resolved instanceof import_obsidian98.TFile) {
             tableFile = resolved;
           }
         }
@@ -10988,11 +11043,11 @@ function parseEncounterTable(content) {
   }
   return rows;
 }
-var import_obsidian96;
+var import_obsidian98;
 var init_EncounterTableBlock = __esm({
   "src/encounter/EncounterTableBlock.ts"() {
     "use strict";
-    import_obsidian96 = require("obsidian");
+    import_obsidian98 = require("obsidian");
   }
 });
 
@@ -11001,12 +11056,12 @@ var InsertEncounterTableModal_exports = {};
 __export(InsertEncounterTableModal_exports, {
   InsertEncounterTableModal: () => InsertEncounterTableModal
 });
-var import_obsidian97, InsertEncounterTableModal;
+var import_obsidian99, InsertEncounterTableModal;
 var init_InsertEncounterTableModal = __esm({
   "src/encounter/InsertEncounterTableModal.ts"() {
     "use strict";
-    import_obsidian97 = require("obsidian");
-    InsertEncounterTableModal = class extends import_obsidian97.Modal {
+    import_obsidian99 = require("obsidian");
+    InsertEncounterTableModal = class extends import_obsidian99.Modal {
       constructor(app, plugin, onSelect) {
         super(app);
         this.availableTables = [];
@@ -11128,7 +11183,7 @@ var init_InsertEncounterTableModal = __esm({
         const linkPath = table.file.path.replace(/\.md$/, "");
         const codeblock = "```dnd-encounter-table\n[[" + linkPath + "]]\n```";
         this.onSelect(codeblock);
-        new import_obsidian97.Notice(`\u2705 Inserted encounter table: ${table.name}`);
+        new import_obsidian99.Notice(`\u2705 Inserted encounter table: ${table.name}`);
         this.close();
       }
     };
@@ -11140,14 +11195,14 @@ var RerollEncounterModal_exports = {};
 __export(RerollEncounterModal_exports, {
   RerollEncounterModal: () => RerollEncounterModal
 });
-var import_obsidian98, RerollEncounterModal;
+var import_obsidian100, RerollEncounterModal;
 var init_RerollEncounterModal = __esm({
   "src/encounter/RerollEncounterModal.ts"() {
     "use strict";
-    import_obsidian98 = require("obsidian");
+    import_obsidian100 = require("obsidian");
     init_SRDApiClient();
     init_EncounterGenerator();
-    RerollEncounterModal = class extends import_obsidian98.Modal {
+    RerollEncounterModal = class extends import_obsidian100.Modal {
       constructor(app, plugin, file) {
         super(app);
         this.rows = [];
@@ -11222,7 +11277,7 @@ var init_RerollEncounterModal = __esm({
           meta.createEl("span", { text: ` \xB7 ${row.xp} XP` });
           const btnContainer = item.createDiv({ cls: "reroll-entry-actions" });
           let rerollBtnComponent = null;
-          new import_obsidian98.ButtonComponent(btnContainer).setButtonText("\u{1F504} Reroll").onClick(async () => {
+          new import_obsidian100.ButtonComponent(btnContainer).setButtonText("\u{1F504} Reroll").onClick(async () => {
             await this.rerollEntry(i, btnContainer);
           }).then((btn) => {
             rerollBtnComponent = btn;
@@ -11251,7 +11306,7 @@ var init_RerollEncounterModal = __esm({
             row.difficulty || "Medium"
           );
           if (!newEntry) {
-            new import_obsidian98.Notice("\u26A0\uFE0F Could not generate a replacement. No monsters available for this environment/level.");
+            new import_obsidian100.Notice("\u26A0\uFE0F Could not generate a replacement. No monsters available for this environment/level.");
             return;
           }
           await this.updateNoteContent(row, newEntry);
@@ -11264,10 +11319,10 @@ var init_RerollEncounterModal = __esm({
             monsterNames: newEntry.monsters.map((m) => m.name)
           };
           this.renderEntryList();
-          new import_obsidian98.Notice(`\u2705 Rerolled entry ${row.roll}: ${newEncounterText}`);
+          new import_obsidian100.Notice(`\u2705 Rerolled entry ${row.roll}: ${newEncounterText}`);
         } catch (error2) {
           console.error("[RerollEncounter] Error:", error2);
-          new import_obsidian98.Notice("\u274C Error rerolling encounter. Check console for details.");
+          new import_obsidian100.Notice("\u274C Error rerolling encounter. Check console for details.");
         } finally {
           if (button) {
             button.disabled = false;
@@ -11377,7 +11432,7 @@ __export(main_exports, {
   default: () => DndCampaignHubPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian99 = require("obsidian");
+var import_obsidian101 = require("obsidian");
 init_templates();
 
 // src/map/MapManager.ts
@@ -26950,7 +27005,7 @@ creature: ${newName}
           <strong>Tuned Party Stats:</strong> DPR ${dprOverrides}/${partyCount}, Attack ${attackOverrides}/${partyCount}
         </div>` : "";
     const xpInfo = xp ? `<div style="margin-bottom: 8px; padding: 8px; background: var(--background-secondary); border-radius: 4px;">
-          <strong>DMG XP Budget:</strong> ${xp.rating}
+          <strong>D&D 5e DMG XP Budget:</strong> ${xp.rating}
           (${xp.adjustedXp.toLocaleString()} adjusted XP; ${xp.baseXp.toLocaleString()} base XP \xD7${xp.multiplier})
         </div>` : "";
     analysisSummary.innerHTML = `
@@ -26968,8 +27023,8 @@ creature: ${newName}
     const partyMembers = await this.getPartyForDifficulty();
     if (result.partyStats.memberCount === 0 || partyMembers.length === 0) {
       const warningEl = difficultyCard.createDiv({ cls: "dnd-difficulty-warning" });
-      warningEl.innerHTML = `\u26A0\uFE0F <strong>No party registered!</strong> Using default estimates for 4 Level-3 PCs.
-        <br>Register PCs via "Create PC" to get accurate calculations.`;
+      warningEl.innerHTML = `\u26A0\uFE0F <strong>No party registered!</strong> Using D&D 5e default estimates for four level-3 characters.
+        <br>Register characters via "Create PC" to get accurate calculations.`;
     }
   }
   /**
@@ -35279,7 +35334,7 @@ var FontNames;
 var fontCache = {};
 var Font = (
   /** @class */
-  function() {
+  (function() {
     function Font2() {
       var _this = this;
       this.getWidthOfGlyph = function(glyphName) {
@@ -35310,7 +35365,7 @@ var Font = (
       return font;
     };
     return Font2;
-  }()
+  })()
 );
 
 // node_modules/@pdf-lib/standard-fonts/es/all-encodings.compressed.json
@@ -35321,7 +35376,7 @@ var decompressedEncodings = decompressJson(all_encodings_compressed_default);
 var allUnicodeMappings = JSON.parse(decompressedEncodings);
 var Encoding = (
   /** @class */
-  /* @__PURE__ */ function() {
+  /* @__PURE__ */ (function() {
     function Encoding2(name, unicodeMappings) {
       var _this = this;
       this.canEncodeUnicodeCodePoint = function(codePoint) {
@@ -35344,7 +35399,7 @@ var Encoding = (
       this.unicodeMappings = unicodeMappings;
     }
     return Encoding2;
-  }()
+  })()
 );
 var Encodings = {
   Symbol: new Encoding("Symbol", allUnicodeMappings.symbol),
@@ -35604,7 +35659,7 @@ var pdfDocEncodingDecode = function(bytes) {
 // node_modules/pdf-lib/es/utils/Cache.js
 var Cache = (
   /** @class */
-  function() {
+  (function() {
     function Cache2(populate) {
       this.populate = populate;
       this.value = void 0;
@@ -35624,14 +35679,14 @@ var Cache = (
       return new Cache2(populate);
     };
     return Cache2;
-  }()
+  })()
 );
 var Cache_default = Cache;
 
 // node_modules/pdf-lib/es/core/errors.js
 var MethodNotImplementedError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(MethodNotImplementedError2, _super);
     function MethodNotImplementedError2(className, methodName) {
       var _this = this;
@@ -35640,11 +35695,11 @@ var MethodNotImplementedError = (
       return _this;
     }
     return MethodNotImplementedError2;
-  }(Error)
+  })(Error)
 );
 var PrivateConstructorError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PrivateConstructorError2, _super);
     function PrivateConstructorError2(className) {
       var _this = this;
@@ -35653,11 +35708,11 @@ var PrivateConstructorError = (
       return _this;
     }
     return PrivateConstructorError2;
-  }(Error)
+  })(Error)
 );
 var UnexpectedObjectTypeError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(UnexpectedObjectTypeError2, _super);
     function UnexpectedObjectTypeError2(expected, actual) {
       var _this = this;
@@ -35671,11 +35726,11 @@ var UnexpectedObjectTypeError = (
       return _this;
     }
     return UnexpectedObjectTypeError2;
-  }(Error)
+  })(Error)
 );
 var UnsupportedEncodingError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(UnsupportedEncodingError2, _super);
     function UnsupportedEncodingError2(encoding) {
       var _this = this;
@@ -35684,11 +35739,11 @@ var UnsupportedEncodingError = (
       return _this;
     }
     return UnsupportedEncodingError2;
-  }(Error)
+  })(Error)
 );
 var ReparseError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(ReparseError2, _super);
     function ReparseError2(className, methodName) {
       var _this = this;
@@ -35697,11 +35752,11 @@ var ReparseError = (
       return _this;
     }
     return ReparseError2;
-  }(Error)
+  })(Error)
 );
 var MissingCatalogError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(MissingCatalogError2, _super);
     function MissingCatalogError2(ref) {
       var _this = this;
@@ -35710,11 +35765,11 @@ var MissingCatalogError = (
       return _this;
     }
     return MissingCatalogError2;
-  }(Error)
+  })(Error)
 );
 var MissingPageContentsEmbeddingError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(MissingPageContentsEmbeddingError2, _super);
     function MissingPageContentsEmbeddingError2() {
       var _this = this;
@@ -35723,11 +35778,11 @@ var MissingPageContentsEmbeddingError = (
       return _this;
     }
     return MissingPageContentsEmbeddingError2;
-  }(Error)
+  })(Error)
 );
 var UnrecognizedStreamTypeError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(UnrecognizedStreamTypeError2, _super);
     function UnrecognizedStreamTypeError2(stream2) {
       var _a, _b, _c;
@@ -35738,11 +35793,11 @@ var UnrecognizedStreamTypeError = (
       return _this;
     }
     return UnrecognizedStreamTypeError2;
-  }(Error)
+  })(Error)
 );
 var PageEmbeddingMismatchedContextError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PageEmbeddingMismatchedContextError2, _super);
     function PageEmbeddingMismatchedContextError2() {
       var _this = this;
@@ -35751,11 +35806,11 @@ var PageEmbeddingMismatchedContextError = (
       return _this;
     }
     return PageEmbeddingMismatchedContextError2;
-  }(Error)
+  })(Error)
 );
 var PDFArrayIsNotRectangleError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFArrayIsNotRectangleError2, _super);
     function PDFArrayIsNotRectangleError2(size) {
       var _this = this;
@@ -35764,11 +35819,11 @@ var PDFArrayIsNotRectangleError = (
       return _this;
     }
     return PDFArrayIsNotRectangleError2;
-  }(Error)
+  })(Error)
 );
 var InvalidPDFDateStringError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(InvalidPDFDateStringError2, _super);
     function InvalidPDFDateStringError2(value) {
       var _this = this;
@@ -35777,11 +35832,11 @@ var InvalidPDFDateStringError = (
       return _this;
     }
     return InvalidPDFDateStringError2;
-  }(Error)
+  })(Error)
 );
 var InvalidTargetIndexError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(InvalidTargetIndexError2, _super);
     function InvalidTargetIndexError2(targetIndex, Count) {
       var _this = this;
@@ -35790,11 +35845,11 @@ var InvalidTargetIndexError = (
       return _this;
     }
     return InvalidTargetIndexError2;
-  }(Error)
+  })(Error)
 );
 var CorruptPageTreeError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(CorruptPageTreeError2, _super);
     function CorruptPageTreeError2(targetIndex, operation) {
       var _this = this;
@@ -35803,11 +35858,11 @@ var CorruptPageTreeError = (
       return _this;
     }
     return CorruptPageTreeError2;
-  }(Error)
+  })(Error)
 );
 var IndexOutOfBoundsError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(IndexOutOfBoundsError2, _super);
     function IndexOutOfBoundsError2(index, min, max) {
       var _this = this;
@@ -35816,11 +35871,11 @@ var IndexOutOfBoundsError = (
       return _this;
     }
     return IndexOutOfBoundsError2;
-  }(Error)
+  })(Error)
 );
 var InvalidAcroFieldValueError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(InvalidAcroFieldValueError2, _super);
     function InvalidAcroFieldValueError2() {
       var _this = this;
@@ -35829,11 +35884,11 @@ var InvalidAcroFieldValueError = (
       return _this;
     }
     return InvalidAcroFieldValueError2;
-  }(Error)
+  })(Error)
 );
 var MultiSelectValueError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(MultiSelectValueError2, _super);
     function MultiSelectValueError2() {
       var _this = this;
@@ -35842,11 +35897,11 @@ var MultiSelectValueError = (
       return _this;
     }
     return MultiSelectValueError2;
-  }(Error)
+  })(Error)
 );
 var MissingDAEntryError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(MissingDAEntryError2, _super);
     function MissingDAEntryError2(fieldName) {
       var _this = this;
@@ -35855,11 +35910,11 @@ var MissingDAEntryError = (
       return _this;
     }
     return MissingDAEntryError2;
-  }(Error)
+  })(Error)
 );
 var MissingTfOperatorError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(MissingTfOperatorError2, _super);
     function MissingTfOperatorError2(fieldName) {
       var _this = this;
@@ -35868,11 +35923,11 @@ var MissingTfOperatorError = (
       return _this;
     }
     return MissingTfOperatorError2;
-  }(Error)
+  })(Error)
 );
 var NumberParsingError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(NumberParsingError2, _super);
     function NumberParsingError2(pos, value) {
       var _this = this;
@@ -35881,11 +35936,11 @@ var NumberParsingError = (
       return _this;
     }
     return NumberParsingError2;
-  }(Error)
+  })(Error)
 );
 var PDFParsingError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFParsingError2, _super);
     function PDFParsingError2(pos, details) {
       var _this = this;
@@ -35894,11 +35949,11 @@ var PDFParsingError = (
       return _this;
     }
     return PDFParsingError2;
-  }(Error)
+  })(Error)
 );
 var NextByteAssertionError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(NextByteAssertionError2, _super);
     function NextByteAssertionError2(pos, expectedByte, actualByte) {
       var _this = this;
@@ -35907,11 +35962,11 @@ var NextByteAssertionError = (
       return _this;
     }
     return NextByteAssertionError2;
-  }(PDFParsingError)
+  })(PDFParsingError)
 );
 var PDFObjectParsingError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFObjectParsingError2, _super);
     function PDFObjectParsingError2(pos, byte) {
       var _this = this;
@@ -35920,11 +35975,11 @@ var PDFObjectParsingError = (
       return _this;
     }
     return PDFObjectParsingError2;
-  }(PDFParsingError)
+  })(PDFParsingError)
 );
 var PDFInvalidObjectParsingError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFInvalidObjectParsingError2, _super);
     function PDFInvalidObjectParsingError2(pos) {
       var _this = this;
@@ -35933,11 +35988,11 @@ var PDFInvalidObjectParsingError = (
       return _this;
     }
     return PDFInvalidObjectParsingError2;
-  }(PDFParsingError)
+  })(PDFParsingError)
 );
 var PDFStreamParsingError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFStreamParsingError2, _super);
     function PDFStreamParsingError2(pos) {
       var _this = this;
@@ -35946,11 +36001,11 @@ var PDFStreamParsingError = (
       return _this;
     }
     return PDFStreamParsingError2;
-  }(PDFParsingError)
+  })(PDFParsingError)
 );
 var UnbalancedParenthesisError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(UnbalancedParenthesisError2, _super);
     function UnbalancedParenthesisError2(pos) {
       var _this = this;
@@ -35959,11 +36014,11 @@ var UnbalancedParenthesisError = (
       return _this;
     }
     return UnbalancedParenthesisError2;
-  }(PDFParsingError)
+  })(PDFParsingError)
 );
 var StalledParserError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(StalledParserError2, _super);
     function StalledParserError2(pos) {
       var _this = this;
@@ -35972,11 +36027,11 @@ var StalledParserError = (
       return _this;
     }
     return StalledParserError2;
-  }(PDFParsingError)
+  })(PDFParsingError)
 );
 var MissingPDFHeaderError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(MissingPDFHeaderError2, _super);
     function MissingPDFHeaderError2(pos) {
       var _this = this;
@@ -35985,11 +36040,11 @@ var MissingPDFHeaderError = (
       return _this;
     }
     return MissingPDFHeaderError2;
-  }(PDFParsingError)
+  })(PDFParsingError)
 );
 var MissingKeywordError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(MissingKeywordError2, _super);
     function MissingKeywordError2(pos, keyword) {
       var _this = this;
@@ -35998,7 +36053,7 @@ var MissingKeywordError = (
       return _this;
     }
     return MissingKeywordError2;
-  }(PDFParsingError)
+  })(PDFParsingError)
 );
 
 // node_modules/pdf-lib/es/core/syntax/CharCodes.js
@@ -36071,7 +36126,7 @@ var import_pako3 = __toESM(require_pako());
 // node_modules/pdf-lib/es/core/document/PDFHeader.js
 var PDFHeader = (
   /** @class */
-  function() {
+  (function() {
     function PDFHeader2(major, minor) {
       this.major = String(major);
       this.minor = String(minor);
@@ -36105,14 +36160,14 @@ var PDFHeader = (
       return new PDFHeader2(major, minor);
     };
     return PDFHeader2;
-  }()
+  })()
 );
 var PDFHeader_default = PDFHeader;
 
 // node_modules/pdf-lib/es/core/objects/PDFObject.js
 var PDFObject = (
   /** @class */
-  function() {
+  (function() {
     function PDFObject2() {
     }
     PDFObject2.prototype.clone = function(_context) {
@@ -36128,14 +36183,14 @@ var PDFObject = (
       throw new MethodNotImplementedError(this.constructor.name, "copyBytesInto");
     };
     return PDFObject2;
-  }()
+  })()
 );
 var PDFObject_default = PDFObject;
 
 // node_modules/pdf-lib/es/core/objects/PDFNumber.js
 var PDFNumber = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFNumber2, _super);
     function PDFNumber2(value) {
       var _this = _super.call(this) || this;
@@ -36166,14 +36221,14 @@ var PDFNumber = (
       return new PDFNumber2(value);
     };
     return PDFNumber2;
-  }(PDFObject_default)
+  })(PDFObject_default)
 );
 var PDFNumber_default = PDFNumber;
 
 // node_modules/pdf-lib/es/core/objects/PDFArray.js
 var PDFArray = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFArray2, _super);
     function PDFArray2(context) {
       var _this = _super.call(this) || this;
@@ -36282,7 +36337,7 @@ var PDFArray = (
       return new PDFArray2(context);
     };
     return PDFArray2;
-  }(PDFObject_default)
+  })(PDFObject_default)
 );
 var PDFArray_default = PDFArray;
 
@@ -36290,7 +36345,7 @@ var PDFArray_default = PDFArray;
 var ENFORCER = {};
 var PDFBool = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFBool2, _super);
     function PDFBool2(enforcer, value) {
       var _this = this;
@@ -36331,7 +36386,7 @@ var PDFBool = (
     PDFBool2.True = new PDFBool2(ENFORCER, true);
     PDFBool2.False = new PDFBool2(ENFORCER, false);
     return PDFBool2;
-  }(PDFObject_default)
+  })(PDFObject_default)
 );
 var PDFBool_default = PDFBool;
 
@@ -36379,7 +36434,7 @@ var ENFORCER2 = {};
 var pool = /* @__PURE__ */ new Map();
 var PDFName = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFName2, _super);
     function PDFName2(enforcer, name) {
       var _this = this;
@@ -36485,14 +36540,14 @@ var PDFName = (
     PDFName2.CreationDate = PDFName2.of("CreationDate");
     PDFName2.ModDate = PDFName2.of("ModDate");
     return PDFName2;
-  }(PDFObject_default)
+  })(PDFObject_default)
 );
 var PDFName_default = PDFName;
 
 // node_modules/pdf-lib/es/core/objects/PDFNull.js
 var PDFNull = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFNull2, _super);
     function PDFNull2() {
       return _super !== null && _super.apply(this, arguments) || this;
@@ -36517,14 +36572,14 @@ var PDFNull = (
       return 4;
     };
     return PDFNull2;
-  }(PDFObject_default)
+  })(PDFObject_default)
 );
 var PDFNull_default = new PDFNull();
 
 // node_modules/pdf-lib/es/core/objects/PDFDict.js
 var PDFDict = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFDict2, _super);
     function PDFDict2(map, context) {
       var _this = _super.call(this) || this;
@@ -36650,14 +36705,14 @@ var PDFDict = (
       return new PDFDict2(map, context);
     };
     return PDFDict2;
-  }(PDFObject_default)
+  })(PDFObject_default)
 );
 var PDFDict_default = PDFDict;
 
 // node_modules/pdf-lib/es/core/objects/PDFStream.js
 var PDFStream = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFStream2, _super);
     function PDFStream2(dict) {
       var _this = _super.call(this) || this;
@@ -36721,14 +36776,14 @@ var PDFStream = (
       return offset - initialOffset;
     };
     return PDFStream2;
-  }(PDFObject_default)
+  })(PDFObject_default)
 );
 var PDFStream_default = PDFStream;
 
 // node_modules/pdf-lib/es/core/objects/PDFRawStream.js
 var PDFRawStream = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFRawStream2, _super);
     function PDFRawStream2(dict, contents) {
       var _this = _super.call(this, dict) || this;
@@ -36754,7 +36809,7 @@ var PDFRawStream = (
       return new PDFRawStream2(dict, contents);
     };
     return PDFRawStream2;
-  }(PDFStream_default)
+  })(PDFStream_default)
 );
 var PDFRawStream_default = PDFRawStream;
 
@@ -36763,7 +36818,7 @@ var ENFORCER3 = {};
 var pool2 = /* @__PURE__ */ new Map();
 var PDFRef = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFRef2, _super);
     function PDFRef2(enforcer, objectNumber, generationNumber) {
       var _this = this;
@@ -36801,14 +36856,14 @@ var PDFRef = (
       return instance;
     };
     return PDFRef2;
-  }(PDFObject_default)
+  })(PDFObject_default)
 );
 var PDFRef_default = PDFRef;
 
 // node_modules/pdf-lib/es/core/operators/PDFOperator.js
 var PDFOperator = (
   /** @class */
-  function() {
+  (function() {
     function PDFOperator2(name, args) {
       this.name = name;
       this.args = args || [];
@@ -36856,7 +36911,7 @@ var PDFOperator = (
       return new PDFOperator2(name, args);
     };
     return PDFOperator2;
-  }()
+  })()
 );
 var PDFOperator_default = PDFOperator;
 
@@ -36943,7 +36998,7 @@ var PDFOperatorNames_default = PDFOperatorNames;
 var import_pako2 = __toESM(require_pako());
 var PDFFlateStream = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFFlateStream2, _super);
     function PDFFlateStream2(dict, encode) {
       var _this = _super.call(this, dict) || this;
@@ -36967,14 +37022,14 @@ var PDFFlateStream = (
       throw new MethodNotImplementedError(this.constructor.name, "getUnencodedContents");
     };
     return PDFFlateStream2;
-  }(PDFStream_default)
+  })(PDFStream_default)
 );
 var PDFFlateStream_default = PDFFlateStream;
 
 // node_modules/pdf-lib/es/core/structures/PDFContentStream.js
 var PDFContentStream = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFContentStream2, _super);
     function PDFContentStream2(dict, operators, encode) {
       if (encode === void 0) {
@@ -37030,14 +37085,14 @@ var PDFContentStream = (
       return new PDFContentStream2(dict, operators, encode);
     };
     return PDFContentStream2;
-  }(PDFFlateStream_default)
+  })(PDFFlateStream_default)
 );
 var PDFContentStream_default = PDFContentStream;
 
 // node_modules/pdf-lib/es/utils/rng.js
 var SimpleRNG = (
   /** @class */
-  function() {
+  (function() {
     function SimpleRNG2(seed) {
       this.seed = seed;
     }
@@ -37049,7 +37104,7 @@ var SimpleRNG = (
       return new SimpleRNG2(seed);
     };
     return SimpleRNG2;
-  }()
+  })()
 );
 
 // node_modules/pdf-lib/es/core/PDFContext.js
@@ -37060,7 +37115,7 @@ var byAscendingObjectNumber = function(_a, _b) {
 };
 var PDFContext = (
   /** @class */
-  function() {
+  (function() {
     function PDFContext2() {
       this.largestObjectNumber = 0;
       this.header = PDFHeader_default.forVersion(1, 7);
@@ -37223,14 +37278,14 @@ var PDFContext = (
       return new PDFContext2();
     };
     return PDFContext2;
-  }()
+  })()
 );
 var PDFContext_default = PDFContext;
 
 // node_modules/pdf-lib/es/core/structures/PDFPageLeaf.js
 var PDFPageLeaf = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFPageLeaf2, _super);
     function PDFPageLeaf2(map, context, autoNormalizeCTM) {
       if (autoNormalizeCTM === void 0) {
@@ -37425,14 +37480,14 @@ var PDFPageLeaf = (
       return new PDFPageLeaf2(map, context, autoNormalizeCTM);
     };
     return PDFPageLeaf2;
-  }(PDFDict_default)
+  })(PDFDict_default)
 );
 var PDFPageLeaf_default = PDFPageLeaf;
 
 // node_modules/pdf-lib/es/core/PDFObjectCopier.js
 var PDFObjectCopier = (
   /** @class */
-  function() {
+  (function() {
     function PDFObjectCopier2(src, dest) {
       var _this = this;
       this.traversedObjects = /* @__PURE__ */ new Map();
@@ -37509,14 +37564,14 @@ var PDFObjectCopier = (
       return new PDFObjectCopier2(src, dest);
     };
     return PDFObjectCopier2;
-  }()
+  })()
 );
 var PDFObjectCopier_default = PDFObjectCopier;
 
 // node_modules/pdf-lib/es/core/document/PDFCrossRefSection.js
 var PDFCrossRefSection = (
   /** @class */
-  function() {
+  (function() {
     function PDFCrossRefSection2(firstEntry) {
       this.subsections = firstEntry ? [[firstEntry]] : [];
       this.chunkIdx = 0;
@@ -37628,14 +37683,14 @@ var PDFCrossRefSection = (
       return new PDFCrossRefSection2();
     };
     return PDFCrossRefSection2;
-  }()
+  })()
 );
 var PDFCrossRefSection_default = PDFCrossRefSection;
 
 // node_modules/pdf-lib/es/core/document/PDFTrailer.js
 var PDFTrailer = (
   /** @class */
-  function() {
+  (function() {
     function PDFTrailer2(lastXRefOffset) {
       this.lastXRefOffset = String(lastXRefOffset);
     }
@@ -37670,14 +37725,14 @@ var PDFTrailer = (
       return new PDFTrailer2(offset);
     };
     return PDFTrailer2;
-  }()
+  })()
 );
 var PDFTrailer_default = PDFTrailer;
 
 // node_modules/pdf-lib/es/core/document/PDFTrailerDict.js
 var PDFTrailerDict = (
   /** @class */
-  function() {
+  (function() {
     function PDFTrailerDict2(dict) {
       this.dict = dict;
     }
@@ -37704,14 +37759,14 @@ var PDFTrailerDict = (
       return new PDFTrailerDict2(dict);
     };
     return PDFTrailerDict2;
-  }()
+  })()
 );
 var PDFTrailerDict_default = PDFTrailerDict;
 
 // node_modules/pdf-lib/es/core/structures/PDFObjectStream.js
 var PDFObjectStream = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFObjectStream2, _super);
     function PDFObjectStream2(context, objects, encode) {
       if (encode === void 0) {
@@ -37778,14 +37833,14 @@ var PDFObjectStream = (
       return new PDFObjectStream2(context, objects, encode);
     };
     return PDFObjectStream2;
-  }(PDFFlateStream_default)
+  })(PDFFlateStream_default)
 );
 var PDFObjectStream_default = PDFObjectStream;
 
 // node_modules/pdf-lib/es/core/writers/PDFWriter.js
 var PDFWriter = (
   /** @class */
-  function() {
+  (function() {
     function PDFWriter2(context, objectsPerTick) {
       var _this = this;
       this.parsedObjects = 0;
@@ -37917,14 +37972,14 @@ var PDFWriter = (
       return new PDFWriter2(context, objectsPerTick);
     };
     return PDFWriter2;
-  }()
+  })()
 );
 var PDFWriter_default = PDFWriter;
 
 // node_modules/pdf-lib/es/core/objects/PDFInvalidObject.js
 var PDFInvalidObject = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFInvalidObject2, _super);
     function PDFInvalidObject2(data) {
       var _this = _super.call(this) || this;
@@ -37951,7 +38006,7 @@ var PDFInvalidObject = (
       return new PDFInvalidObject2(data);
     };
     return PDFInvalidObject2;
-  }(PDFObject_default)
+  })(PDFObject_default)
 );
 var PDFInvalidObject_default = PDFInvalidObject;
 
@@ -37964,7 +38019,7 @@ var EntryType;
 })(EntryType || (EntryType = {}));
 var PDFCrossRefStream = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFCrossRefStream2, _super);
     function PDFCrossRefStream2(dict, entries, encode) {
       if (encode === void 0) {
@@ -38131,14 +38186,14 @@ var PDFCrossRefStream = (
       return new PDFCrossRefStream2(dict, entries, encode);
     };
     return PDFCrossRefStream2;
-  }(PDFFlateStream_default)
+  })(PDFFlateStream_default)
 );
 var PDFCrossRefStream_default = PDFCrossRefStream;
 
 // node_modules/pdf-lib/es/core/writers/PDFStreamWriter.js
 var PDFStreamWriter = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFStreamWriter2, _super);
     function PDFStreamWriter2(context, objectsPerTick, encodeStreams, objectsPerStream) {
       var _this = _super.call(this, context, objectsPerTick) || this;
@@ -38236,14 +38291,14 @@ var PDFStreamWriter = (
       return new PDFStreamWriter2(context, objectsPerTick, encodeStreams, objectsPerStream);
     };
     return PDFStreamWriter2;
-  }(PDFWriter_default)
+  })(PDFWriter_default)
 );
 var PDFStreamWriter_default = PDFStreamWriter;
 
 // node_modules/pdf-lib/es/core/objects/PDFHexString.js
 var PDFHexString = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFHexString2, _super);
     function PDFHexString2(value) {
       var _this = _super.call(this) || this;
@@ -38307,14 +38362,14 @@ var PDFHexString = (
       return new PDFHexString2(hex);
     };
     return PDFHexString2;
-  }(PDFObject_default)
+  })(PDFObject_default)
 );
 var PDFHexString_default = PDFHexString;
 
 // node_modules/pdf-lib/es/core/embedders/StandardFontEmbedder.js
 var StandardFontEmbedder = (
   /** @class */
-  function() {
+  (function() {
     function StandardFontEmbedder2(fontName, customName) {
       this.encoding = fontName === FontNames.ZapfDingbats ? Encodings.ZapfDingbats : fontName === FontNames.Symbol ? Encodings.Symbol : Encodings.WinAnsi;
       this.font = Font.load(fontName);
@@ -38390,7 +38445,7 @@ var StandardFontEmbedder = (
       return new StandardFontEmbedder2(fontName, customName);
     };
     return StandardFontEmbedder2;
-  }()
+  })()
 );
 var StandardFontEmbedder_default = StandardFontEmbedder;
 
@@ -38475,7 +38530,7 @@ var deriveFontFlags = function(font) {
 // node_modules/pdf-lib/es/core/objects/PDFString.js
 var PDFString = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFString2, _super);
     function PDFString2(value) {
       var _this = _super.call(this) || this;
@@ -38578,14 +38633,14 @@ var PDFString = (
       return new PDFString2("D:" + year + month + day + hours + mins + secs + "Z");
     };
     return PDFString2;
-  }(PDFObject_default)
+  })(PDFObject_default)
 );
 var PDFString_default = PDFString;
 
 // node_modules/pdf-lib/es/core/embedders/CustomFontEmbedder.js
 var CustomFontEmbedder = (
   /** @class */
-  function() {
+  (function() {
     function CustomFontEmbedder2(font, fontData, customName, fontFeatures) {
       var _this = this;
       this.allGlyphsInFontSortedById = function() {
@@ -38809,14 +38864,14 @@ var CustomFontEmbedder = (
       return widths;
     };
     return CustomFontEmbedder2;
-  }()
+  })()
 );
 var CustomFontEmbedder_default = CustomFontEmbedder;
 
 // node_modules/pdf-lib/es/core/embedders/CustomFontSubsetEmbedder.js
 var CustomFontSubsetEmbedder = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(CustomFontSubsetEmbedder2, _super);
     function CustomFontSubsetEmbedder2(font, fontData, customFontName, fontFeatures) {
       var _this = _super.call(this, font, fontData, customFontName, fontFeatures) || this;
@@ -38875,7 +38930,7 @@ var CustomFontSubsetEmbedder = (
       });
     };
     return CustomFontSubsetEmbedder2;
-  }(CustomFontEmbedder_default)
+  })(CustomFontEmbedder_default)
 );
 var CustomFontSubsetEmbedder_default = CustomFontSubsetEmbedder;
 
@@ -38893,7 +38948,7 @@ var AFRelationship;
 })(AFRelationship || (AFRelationship = {}));
 var FileEmbedder = (
   /** @class */
-  function() {
+  (function() {
     function FileEmbedder2(fileData, fileName, options) {
       if (options === void 0) {
         options = {};
@@ -38945,7 +39000,7 @@ var FileEmbedder = (
       });
     };
     return FileEmbedder2;
-  }()
+  })()
 );
 var FileEmbedder_default = FileEmbedder;
 
@@ -38980,7 +39035,7 @@ var ChannelToColorSpace = {
 };
 var JpegEmbedder = (
   /** @class */
-  function() {
+  (function() {
     function JpegEmbedder2(imageData, bitsPerComponent, width, height, colorSpace) {
       this.imageData = imageData;
       this.bitsPerComponent = bitsPerComponent;
@@ -39057,7 +39112,7 @@ var JpegEmbedder = (
       });
     };
     return JpegEmbedder2;
-  }()
+  })()
 );
 var JpegEmbedder_default = JpegEmbedder;
 
@@ -39316,7 +39371,7 @@ UPNG.decode._inflate = function(data, buff) {
   var out = UPNG["inflateRaw"](new Uint8Array(data.buffer, 2, data.length - 6), buff);
   return out;
 };
-UPNG.inflateRaw = function() {
+UPNG.inflateRaw = (function() {
   var H = {};
   H.H = {};
   H.H.N = function(N, W) {
@@ -39521,10 +39576,10 @@ UPNG.inflateRaw = function() {
   H.H.i = function(N, W) {
     return (N[W >>> 3] | N[(W >>> 3) + 1] << 8 | N[(W >>> 3) + 2] << 16 | N[(W >>> 3) + 3] << 24) >>> (W & 7);
   };
-  H.H.m = function() {
+  H.H.m = (function() {
     var N = Uint16Array, W = Uint32Array;
     return { K: new N(16), j: new N(16), X: [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15], S: [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258, 999, 999, 999], T: [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0, 0, 0, 0], q: new N(32), p: [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577, 65535, 65535], z: [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13, 0, 0], c: new W(32), J: new N(512), _: [], h: new N(32), $: [], w: new N(32768), C: [], v: [], d: new N(32768), D: [], u: new N(512), Q: [], r: new N(1 << 15), s: new W(286), Y: new W(30), a: new W(19), t: new W(15e3), k: new N(1 << 16), g: new N(1 << 15) };
-  }();
+  })();
   (function() {
     var N = H.H.m, W = 1 << 15;
     for (var R = 0; R < W; R++) {
@@ -39559,7 +39614,7 @@ UPNG.inflateRaw = function() {
     n(N.v, 320, 0);
   })();
   return H.H.N;
-}();
+})();
 UPNG.decode._readInterlace = function(data, out) {
   var w = out.width, h = out.height;
   var bpp = UPNG.decode._getBPP(out), cbpp = bpp >> 3, bpl = Math.ceil(w * bpp / 8);
@@ -40190,7 +40245,7 @@ UPNG.encode._filterLine = function(data, img, y, bpl, bpp, type) {
   }
 };
 UPNG.crc = {
-  table: function() {
+  table: (function() {
     var tab = new Uint32Array(256);
     for (var n = 0; n < 256; n++) {
       var c = n;
@@ -40201,7 +40256,7 @@ UPNG.crc = {
       tab[n] = c;
     }
     return tab;
-  }(),
+  })(),
   update: function(c, buf, off, len) {
     for (var i = 0; i < len; i++) c = UPNG.crc.table[(c ^ buf[off + i]) & 255] ^ c >>> 8;
     return c;
@@ -40456,7 +40511,7 @@ var PngType;
 })(PngType || (PngType = {}));
 var PNG = (
   /** @class */
-  function() {
+  (function() {
     function PNG2(pngData) {
       var upng = UPNG_default.decode(pngData);
       var frames = UPNG_default.toRGBA8(upng);
@@ -40479,13 +40534,13 @@ var PNG = (
       return new PNG2(pngData);
     };
     return PNG2;
-  }()
+  })()
 );
 
 // node_modules/pdf-lib/es/core/embedders/PngEmbedder.js
 var PngEmbedder = (
   /** @class */
-  function() {
+  (function() {
     function PngEmbedder2(png) {
       this.image = png;
       this.bitsPerComponent = png.bitsPerComponent;
@@ -40544,14 +40599,14 @@ var PngEmbedder = (
       return context.register(xObject);
     };
     return PngEmbedder2;
-  }()
+  })()
 );
 var PngEmbedder_default = PngEmbedder;
 
 // node_modules/pdf-lib/es/core/streams/Stream.js
 var Stream = (
   /** @class */
-  function() {
+  (function() {
     function Stream2(buffer, start, length) {
       this.bytes = buffer;
       this.start = start || 0;
@@ -40645,7 +40700,7 @@ var Stream = (
       return this.bytes;
     };
     return Stream2;
-  }()
+  })()
 );
 var Stream_default = Stream;
 
@@ -40653,7 +40708,7 @@ var Stream_default = Stream;
 var emptyBuffer = new Uint8Array(0);
 var DecodeStream = (
   /** @class */
-  function() {
+  (function() {
     function DecodeStream2(maybeMinBufferLength) {
       this.pos = 0;
       this.bufferLength = 0;
@@ -40783,7 +40838,7 @@ var DecodeStream = (
       return this.buffer = buffer2;
     };
     return DecodeStream2;
-  }()
+  })()
 );
 var DecodeStream_default = DecodeStream;
 
@@ -40793,7 +40848,7 @@ var isSpace = function(ch) {
 };
 var Ascii85Stream = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(Ascii85Stream2, _super);
     function Ascii85Stream2(stream2, maybeLength) {
       var _this = _super.call(this, maybeLength) || this;
@@ -40858,14 +40913,14 @@ var Ascii85Stream = (
       }
     };
     return Ascii85Stream2;
-  }(DecodeStream_default)
+  })(DecodeStream_default)
 );
 var Ascii85Stream_default = Ascii85Stream;
 
 // node_modules/pdf-lib/es/core/streams/AsciiHexStream.js
 var AsciiHexStream = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(AsciiHexStream2, _super);
     function AsciiHexStream2(stream2, maybeLength) {
       var _this = _super.call(this, maybeLength) || this;
@@ -40915,7 +40970,7 @@ var AsciiHexStream = (
       this.bufferLength = bufferLength;
     };
     return AsciiHexStream2;
-  }(DecodeStream_default)
+  })(DecodeStream_default)
 );
 var AsciiHexStream_default = AsciiHexStream;
 
@@ -41556,7 +41611,7 @@ var fixedDistCodeTab = [new Int32Array([
 ]), 5];
 var FlateStream = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(FlateStream2, _super);
     function FlateStream2(stream2, maybeLength) {
       var _this = _super.call(this, maybeLength) || this;
@@ -41794,14 +41849,14 @@ var FlateStream = (
       return [codes, maxLen];
     };
     return FlateStream2;
-  }(DecodeStream_default)
+  })(DecodeStream_default)
 );
 var FlateStream_default = FlateStream;
 
 // node_modules/pdf-lib/es/core/streams/LZWStream.js
 var LZWStream = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(LZWStream2, _super);
     function LZWStream2(stream2, maybeLength, earlyChange) {
       var _this = _super.call(this, maybeLength) || this;
@@ -41917,14 +41972,14 @@ var LZWStream = (
       return cachedData >>> bitsCached & (1 << n) - 1;
     };
     return LZWStream2;
-  }(DecodeStream_default)
+  })(DecodeStream_default)
 );
 var LZWStream_default = LZWStream;
 
 // node_modules/pdf-lib/es/core/streams/RunLengthStream.js
 var RunLengthStream = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(RunLengthStream2, _super);
     function RunLengthStream2(stream2, maybeLength) {
       var _this = _super.call(this, maybeLength) || this;
@@ -41959,7 +42014,7 @@ var RunLengthStream = (
       this.bufferLength = bufferLength;
     };
     return RunLengthStream2;
-  }(DecodeStream_default)
+  })(DecodeStream_default)
 );
 var RunLengthStream_default = RunLengthStream;
 
@@ -42018,7 +42073,7 @@ var boundingBoxAdjustedMatrix = function(bb) {
 };
 var PDFPageEmbedder = (
   /** @class */
-  function() {
+  (function() {
     function PDFPageEmbedder2(page, boundingBox, transformationMatrix) {
       this.page = page;
       var bb = boundingBox !== null && boundingBox !== void 0 ? boundingBox : fullPageBoundingBox(page);
@@ -42082,7 +42137,7 @@ var PDFPageEmbedder = (
       return mergeIntoTypedArray.apply(void 0, decodedContents);
     };
     return PDFPageEmbedder2;
-  }()
+  })()
 );
 var PDFPageEmbedder_default = PDFPageEmbedder;
 
@@ -42117,7 +42172,7 @@ var Duplex;
 })(Duplex || (Duplex = {}));
 var ViewerPreferences = (
   /** @class */
-  function() {
+  (function() {
     function ViewerPreferences2(dict) {
       this.dict = dict;
     }
@@ -42316,7 +42371,7 @@ var ViewerPreferences = (
       return new ViewerPreferences2(dict);
     };
     return ViewerPreferences2;
-  }()
+  })()
 );
 var ViewerPreferences_default = ViewerPreferences;
 
@@ -42324,7 +42379,7 @@ var ViewerPreferences_default = ViewerPreferences;
 var tfRegex = /\/([^\0\t\n\f\r\ ]+)[\0\t\n\f\r\ ]*(\d*\.\d+|\d+)?[\0\t\n\f\r\ ]+Tf/;
 var PDFAcroField = (
   /** @class */
-  function() {
+  (function() {
     function PDFAcroField2(dict, ref) {
       this.dict = dict;
       this.ref = ref;
@@ -42447,14 +42502,14 @@ var PDFAcroField = (
         parent.ascend(visitor);
     };
     return PDFAcroField2;
-  }()
+  })()
 );
 var PDFAcroField_default = PDFAcroField;
 
 // node_modules/pdf-lib/es/core/annotation/BorderStyle.js
 var BorderStyle = (
   /** @class */
-  function() {
+  (function() {
     function BorderStyle2(dict) {
       this.dict = dict;
     }
@@ -42476,14 +42531,14 @@ var BorderStyle = (
       return new BorderStyle2(dict);
     };
     return BorderStyle2;
-  }()
+  })()
 );
 var BorderStyle_default = BorderStyle;
 
 // node_modules/pdf-lib/es/core/annotation/PDFAnnotation.js
 var PDFAnnotation = (
   /** @class */
-  function() {
+  (function() {
     function PDFAnnotation2(dict) {
       this.dict = dict;
     }
@@ -42592,14 +42647,14 @@ var PDFAnnotation = (
       return new PDFAnnotation2(dict);
     };
     return PDFAnnotation2;
-  }()
+  })()
 );
 var PDFAnnotation_default = PDFAnnotation;
 
 // node_modules/pdf-lib/es/core/annotation/AppearanceCharacteristics.js
 var AppearanceCharacteristics = (
   /** @class */
-  function() {
+  (function() {
     function AppearanceCharacteristics2(dict) {
       this.dict = dict;
     }
@@ -42709,14 +42764,14 @@ var AppearanceCharacteristics = (
       return new AppearanceCharacteristics2(dict);
     };
     return AppearanceCharacteristics2;
-  }()
+  })()
 );
 var AppearanceCharacteristics_default = AppearanceCharacteristics;
 
 // node_modules/pdf-lib/es/core/annotation/PDFWidgetAnnotation.js
 var PDFWidgetAnnotation = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFWidgetAnnotation2, _super);
     function PDFWidgetAnnotation2() {
       return _super !== null && _super.apply(this, arguments) || this;
@@ -42812,14 +42867,14 @@ var PDFWidgetAnnotation = (
       return new PDFWidgetAnnotation2(dict);
     };
     return PDFWidgetAnnotation2;
-  }(PDFAnnotation_default)
+  })(PDFAnnotation_default)
 );
 var PDFWidgetAnnotation_default = PDFWidgetAnnotation;
 
 // node_modules/pdf-lib/es/core/acroform/PDFAcroTerminal.js
 var PDFAcroTerminal = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFAcroTerminal2, _super);
     function PDFAcroTerminal2() {
       return _super !== null && _super.apply(this, arguments) || this;
@@ -42868,14 +42923,14 @@ var PDFAcroTerminal = (
       return new PDFAcroTerminal2(dict, ref);
     };
     return PDFAcroTerminal2;
-  }(PDFAcroField_default)
+  })(PDFAcroField_default)
 );
 var PDFAcroTerminal_default = PDFAcroTerminal;
 
 // node_modules/pdf-lib/es/core/acroform/PDFAcroButton.js
 var PDFAcroButton = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFAcroButton2, _super);
     function PDFAcroButton2() {
       return _super !== null && _super.apply(this, arguments) || this;
@@ -42953,14 +43008,14 @@ var PDFAcroButton = (
       return apStateValue;
     };
     return PDFAcroButton2;
-  }(PDFAcroTerminal_default)
+  })(PDFAcroTerminal_default)
 );
 var PDFAcroButton_default = PDFAcroButton;
 
 // node_modules/pdf-lib/es/core/acroform/PDFAcroCheckBox.js
 var PDFAcroCheckBox = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFAcroCheckBox2, _super);
     function PDFAcroCheckBox2() {
       return _super !== null && _super.apply(this, arguments) || this;
@@ -43001,7 +43056,7 @@ var PDFAcroCheckBox = (
       return new PDFAcroCheckBox2(dict, ref);
     };
     return PDFAcroCheckBox2;
-  }(PDFAcroButton_default)
+  })(PDFAcroButton_default)
 );
 var PDFAcroCheckBox_default = PDFAcroCheckBox;
 
@@ -43045,7 +43100,7 @@ var AcroChoiceFlags;
 // node_modules/pdf-lib/es/core/acroform/PDFAcroChoice.js
 var PDFAcroChoice = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFAcroChoice2, _super);
     function PDFAcroChoice2() {
       return _super !== null && _super.apply(this, arguments) || this;
@@ -43155,14 +43210,14 @@ var PDFAcroChoice = (
       return [];
     };
     return PDFAcroChoice2;
-  }(PDFAcroTerminal_default)
+  })(PDFAcroTerminal_default)
 );
 var PDFAcroChoice_default = PDFAcroChoice;
 
 // node_modules/pdf-lib/es/core/acroform/PDFAcroComboBox.js
 var PDFAcroComboBox = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFAcroComboBox2, _super);
     function PDFAcroComboBox2() {
       return _super !== null && _super.apply(this, arguments) || this;
@@ -43180,14 +43235,14 @@ var PDFAcroComboBox = (
       return new PDFAcroComboBox2(dict, ref);
     };
     return PDFAcroComboBox2;
-  }(PDFAcroChoice_default)
+  })(PDFAcroChoice_default)
 );
 var PDFAcroComboBox_default = PDFAcroComboBox;
 
 // node_modules/pdf-lib/es/core/acroform/PDFAcroNonTerminal.js
 var PDFAcroNonTerminal = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFAcroNonTerminal2, _super);
     function PDFAcroNonTerminal2() {
       return _super !== null && _super.apply(this, arguments) || this;
@@ -43213,14 +43268,14 @@ var PDFAcroNonTerminal = (
       return new PDFAcroNonTerminal2(dict, ref);
     };
     return PDFAcroNonTerminal2;
-  }(PDFAcroField_default)
+  })(PDFAcroField_default)
 );
 var PDFAcroNonTerminal_default = PDFAcroNonTerminal;
 
 // node_modules/pdf-lib/es/core/acroform/PDFAcroSignature.js
 var PDFAcroSignature = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFAcroSignature2, _super);
     function PDFAcroSignature2() {
       return _super !== null && _super.apply(this, arguments) || this;
@@ -43229,14 +43284,14 @@ var PDFAcroSignature = (
       return new PDFAcroSignature2(dict, ref);
     };
     return PDFAcroSignature2;
-  }(PDFAcroTerminal_default)
+  })(PDFAcroTerminal_default)
 );
 var PDFAcroSignature_default = PDFAcroSignature;
 
 // node_modules/pdf-lib/es/core/acroform/PDFAcroText.js
 var PDFAcroText = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFAcroText2, _super);
     function PDFAcroText2() {
       return _super !== null && _super.apply(this, arguments) || this;
@@ -43294,14 +43349,14 @@ var PDFAcroText = (
       return new PDFAcroText2(dict, ref);
     };
     return PDFAcroText2;
-  }(PDFAcroTerminal_default)
+  })(PDFAcroTerminal_default)
 );
 var PDFAcroText_default = PDFAcroText;
 
 // node_modules/pdf-lib/es/core/acroform/PDFAcroPushButton.js
 var PDFAcroPushButton = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFAcroPushButton2, _super);
     function PDFAcroPushButton2() {
       return _super !== null && _super.apply(this, arguments) || this;
@@ -43319,14 +43374,14 @@ var PDFAcroPushButton = (
       return new PDFAcroPushButton2(dict, ref);
     };
     return PDFAcroPushButton2;
-  }(PDFAcroButton_default)
+  })(PDFAcroButton_default)
 );
 var PDFAcroPushButton_default = PDFAcroPushButton;
 
 // node_modules/pdf-lib/es/core/acroform/PDFAcroRadioButton.js
 var PDFAcroRadioButton = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFAcroRadioButton2, _super);
     function PDFAcroRadioButton2() {
       return _super !== null && _super.apply(this, arguments) || this;
@@ -43373,14 +43428,14 @@ var PDFAcroRadioButton = (
       return new PDFAcroRadioButton2(dict, ref);
     };
     return PDFAcroRadioButton2;
-  }(PDFAcroButton_default)
+  })(PDFAcroButton_default)
 );
 var PDFAcroRadioButton_default = PDFAcroRadioButton;
 
 // node_modules/pdf-lib/es/core/acroform/PDFAcroListBox.js
 var PDFAcroListBox = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFAcroListBox2, _super);
     function PDFAcroListBox2() {
       return _super !== null && _super.apply(this, arguments) || this;
@@ -43397,7 +43452,7 @@ var PDFAcroListBox = (
       return new PDFAcroListBox2(dict, ref);
     };
     return PDFAcroListBox2;
-  }(PDFAcroChoice_default)
+  })(PDFAcroChoice_default)
 );
 var PDFAcroListBox_default = PDFAcroListBox;
 
@@ -43491,7 +43546,7 @@ var ascend = function(startNode, visitor) {
 // node_modules/pdf-lib/es/core/acroform/PDFAcroForm.js
 var PDFAcroForm = (
   /** @class */
-  function() {
+  (function() {
     function PDFAcroForm2(dict) {
       this.dict = dict;
     }
@@ -43560,14 +43615,14 @@ var PDFAcroForm = (
       return new PDFAcroForm2(dict);
     };
     return PDFAcroForm2;
-  }()
+  })()
 );
 var PDFAcroForm_default = PDFAcroForm;
 
 // node_modules/pdf-lib/es/core/structures/PDFCatalog.js
 var PDFCatalog = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFCatalog2, _super);
     function PDFCatalog2() {
       return _super !== null && _super.apply(this, arguments) || this;
@@ -43629,14 +43684,14 @@ var PDFCatalog = (
       return new PDFCatalog2(map, context);
     };
     return PDFCatalog2;
-  }(PDFDict_default)
+  })(PDFDict_default)
 );
 var PDFCatalog_default = PDFCatalog;
 
 // node_modules/pdf-lib/es/core/structures/PDFPageTree.js
 var PDFPageTree = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFPageTree2, _super);
     function PDFPageTree2() {
       return _super !== null && _super.apply(this, arguments) || this;
@@ -43771,7 +43826,7 @@ var PDFPageTree = (
       return new PDFPageTree2(map, context);
     };
     return PDFPageTree2;
-  }(PDFDict_default)
+  })(PDFDict_default)
 );
 var PDFPageTree_default = PDFPageTree;
 
@@ -43803,7 +43858,7 @@ var Newline = CharCodes_default.Newline;
 var CarriageReturn = CharCodes_default.CarriageReturn;
 var BaseParser = (
   /** @class */
-  function() {
+  (function() {
     function BaseParser2(bytes, capNumbers) {
       if (capNumbers === void 0) {
         capNumbers = false;
@@ -43897,14 +43952,14 @@ var BaseParser = (
       return true;
     };
     return BaseParser2;
-  }()
+  })()
 );
 var BaseParser_default = BaseParser;
 
 // node_modules/pdf-lib/es/core/parser/ByteStream.js
 var ByteStream = (
   /** @class */
-  function() {
+  (function() {
     function ByteStream2(bytes) {
       this.idx = 0;
       this.line = 0;
@@ -43959,7 +44014,7 @@ var ByteStream = (
       return ByteStream2.of(decodePDFRawStream(rawStream).decode());
     };
     return ByteStream2;
-  }()
+  })()
 );
 var ByteStream_default = ByteStream;
 
@@ -44048,7 +44103,7 @@ var Keywords = {
 // node_modules/pdf-lib/es/core/parser/PDFObjectParser.js
 var PDFObjectParser = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFObjectParser2, _super);
     function PDFObjectParser2(byteStream, context, capNumbers) {
       if (capNumbers === void 0) {
@@ -44232,22 +44287,22 @@ var PDFObjectParser = (
       return new PDFObjectParser2(byteStream, context, capNumbers);
     };
     return PDFObjectParser2;
-  }(BaseParser_default)
+  })(BaseParser_default)
 );
 var PDFObjectParser_default = PDFObjectParser;
 
 // node_modules/pdf-lib/es/core/parser/PDFObjectStreamParser.js
 var PDFObjectStreamParser = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFObjectStreamParser2, _super);
     function PDFObjectStreamParser2(rawStream, shouldWaitForTick) {
       var _this = _super.call(this, ByteStream_default.fromPDFRawStream(rawStream), rawStream.dict.context) || this;
       var dict = rawStream.dict;
       _this.alreadyParsed = false;
-      _this.shouldWaitForTick = shouldWaitForTick || function() {
+      _this.shouldWaitForTick = shouldWaitForTick || (function() {
         return false;
-      };
+      });
       _this.firstOffset = dict.lookup(PDFName_default.of("First"), PDFNumber_default).asNumber();
       _this.objectCount = dict.lookup(PDFName_default.of("N"), PDFNumber_default).asNumber();
       return _this;
@@ -44304,14 +44359,14 @@ var PDFObjectStreamParser = (
       return new PDFObjectStreamParser2(rawStream, shouldWaitForTick);
     };
     return PDFObjectStreamParser2;
-  }(PDFObjectParser_default)
+  })(PDFObjectParser_default)
 );
 var PDFObjectStreamParser_default = PDFObjectStreamParser;
 
 // node_modules/pdf-lib/es/core/parser/PDFXRefStreamParser.js
 var PDFXRefStreamParser = (
   /** @class */
-  function() {
+  (function() {
     function PDFXRefStreamParser2(rawStream) {
       this.alreadyParsed = false;
       this.dict = rawStream.dict;
@@ -44385,14 +44440,14 @@ var PDFXRefStreamParser = (
       return new PDFXRefStreamParser2(rawStream);
     };
     return PDFXRefStreamParser2;
-  }()
+  })()
 );
 var PDFXRefStreamParser_default = PDFXRefStreamParser;
 
 // node_modules/pdf-lib/es/core/parser/PDFParser.js
 var PDFParser = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFParser2, _super);
     function PDFParser2(pdfBytes, objectsPerTick, throwOnInvalidObject, capNumbers) {
       if (objectsPerTick === void 0) {
@@ -44701,7 +44756,7 @@ var PDFParser = (
       return new PDFParser2(pdfBytes, objectsPerTick, throwOnInvalidObject, capNumbers);
     };
     return PDFParser2;
-  }(PDFObjectParser_default)
+  })(PDFObjectParser_default)
 );
 var PDFParser_default = PDFParser;
 
@@ -45820,7 +45875,7 @@ var drawOptionList = function(options) {
 // node_modules/pdf-lib/es/api/errors.js
 var EncryptedPDFError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(EncryptedPDFError2, _super);
     function EncryptedPDFError2() {
       var _this = this;
@@ -45829,11 +45884,11 @@ var EncryptedPDFError = (
       return _this;
     }
     return EncryptedPDFError2;
-  }(Error)
+  })(Error)
 );
 var FontkitNotRegisteredError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(FontkitNotRegisteredError2, _super);
     function FontkitNotRegisteredError2() {
       var _this = this;
@@ -45842,11 +45897,11 @@ var FontkitNotRegisteredError = (
       return _this;
     }
     return FontkitNotRegisteredError2;
-  }(Error)
+  })(Error)
 );
 var ForeignPageError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(ForeignPageError2, _super);
     function ForeignPageError2() {
       var _this = this;
@@ -45855,11 +45910,11 @@ var ForeignPageError = (
       return _this;
     }
     return ForeignPageError2;
-  }(Error)
+  })(Error)
 );
 var RemovePageFromEmptyDocumentError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(RemovePageFromEmptyDocumentError2, _super);
     function RemovePageFromEmptyDocumentError2() {
       var _this = this;
@@ -45868,11 +45923,11 @@ var RemovePageFromEmptyDocumentError = (
       return _this;
     }
     return RemovePageFromEmptyDocumentError2;
-  }(Error)
+  })(Error)
 );
 var NoSuchFieldError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(NoSuchFieldError2, _super);
     function NoSuchFieldError2(name) {
       var _this = this;
@@ -45881,11 +45936,11 @@ var NoSuchFieldError = (
       return _this;
     }
     return NoSuchFieldError2;
-  }(Error)
+  })(Error)
 );
 var UnexpectedFieldTypeError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(UnexpectedFieldTypeError2, _super);
     function UnexpectedFieldTypeError2(name, expected, actual) {
       var _a, _b;
@@ -45897,11 +45952,11 @@ var UnexpectedFieldTypeError = (
       return _this;
     }
     return UnexpectedFieldTypeError2;
-  }(Error)
+  })(Error)
 );
 var MissingOnValueCheckError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(MissingOnValueCheckError2, _super);
     function MissingOnValueCheckError2(onValue) {
       var _this = this;
@@ -45910,11 +45965,11 @@ var MissingOnValueCheckError = (
       return _this;
     }
     return MissingOnValueCheckError2;
-  }(Error)
+  })(Error)
 );
 var FieldAlreadyExistsError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(FieldAlreadyExistsError2, _super);
     function FieldAlreadyExistsError2(name) {
       var _this = this;
@@ -45923,11 +45978,11 @@ var FieldAlreadyExistsError = (
       return _this;
     }
     return FieldAlreadyExistsError2;
-  }(Error)
+  })(Error)
 );
 var InvalidFieldNamePartError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(InvalidFieldNamePartError2, _super);
     function InvalidFieldNamePartError2(namePart) {
       var _this = this;
@@ -45936,11 +45991,11 @@ var InvalidFieldNamePartError = (
       return _this;
     }
     return InvalidFieldNamePartError2;
-  }(Error)
+  })(Error)
 );
 var FieldExistsAsNonTerminalError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(FieldExistsAsNonTerminalError2, _super);
     function FieldExistsAsNonTerminalError2(name) {
       var _this = this;
@@ -45949,11 +46004,11 @@ var FieldExistsAsNonTerminalError = (
       return _this;
     }
     return FieldExistsAsNonTerminalError2;
-  }(Error)
+  })(Error)
 );
 var RichTextFieldReadError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(RichTextFieldReadError2, _super);
     function RichTextFieldReadError2(fieldName) {
       var _this = this;
@@ -45962,11 +46017,11 @@ var RichTextFieldReadError = (
       return _this;
     }
     return RichTextFieldReadError2;
-  }(Error)
+  })(Error)
 );
 var CombedTextLayoutError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(CombedTextLayoutError2, _super);
     function CombedTextLayoutError2(lineLength, cellCount) {
       var _this = this;
@@ -45975,11 +46030,11 @@ var CombedTextLayoutError = (
       return _this;
     }
     return CombedTextLayoutError2;
-  }(Error)
+  })(Error)
 );
 var ExceededMaxLengthError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(ExceededMaxLengthError2, _super);
     function ExceededMaxLengthError2(textLength, maxLength, name) {
       var _this = this;
@@ -45988,11 +46043,11 @@ var ExceededMaxLengthError = (
       return _this;
     }
     return ExceededMaxLengthError2;
-  }(Error)
+  })(Error)
 );
 var InvalidMaxLengthError = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(InvalidMaxLengthError2, _super);
     function InvalidMaxLengthError2(textLength, maxLength, name) {
       var _this = this;
@@ -46001,7 +46056,7 @@ var InvalidMaxLengthError = (
       return _this;
     }
     return InvalidMaxLengthError2;
-  }(Error)
+  })(Error)
 );
 
 // node_modules/pdf-lib/es/api/text/alignment.js
@@ -46593,7 +46648,7 @@ var defaultOptionListAppearanceProvider = function(optionList, widget, font) {
 // node_modules/pdf-lib/es/api/PDFEmbeddedPage.js
 var PDFEmbeddedPage = (
   /** @class */
-  function() {
+  (function() {
     function PDFEmbeddedPage2(ref, doc, embedder) {
       this.alreadyEmbedded = false;
       assertIs(ref, "ref", [[PDFRef_default, "PDFRef"]]);
@@ -46636,14 +46691,14 @@ var PDFEmbeddedPage = (
       return new PDFEmbeddedPage2(ref, doc, embedder);
     };
     return PDFEmbeddedPage2;
-  }()
+  })()
 );
 var PDFEmbeddedPage_default = PDFEmbeddedPage;
 
 // node_modules/pdf-lib/es/api/PDFFont.js
 var PDFFont = (
   /** @class */
-  function() {
+  (function() {
     function PDFFont2(ref, doc, embedder) {
       this.modified = true;
       assertIs(ref, "ref", [[PDFRef_default, "PDFRef"]]);
@@ -46710,14 +46765,14 @@ var PDFFont = (
       return new PDFFont2(ref, doc, embedder);
     };
     return PDFFont2;
-  }()
+  })()
 );
 var PDFFont_default = PDFFont;
 
 // node_modules/pdf-lib/es/api/PDFImage.js
 var PDFImage = (
   /** @class */
-  function() {
+  (function() {
     function PDFImage2(ref, doc, embedder) {
       assertIs(ref, "ref", [[PDFRef_default, "PDFRef"]]);
       assertIs(doc, "doc", [[PDFDocument_default, "PDFDocument"]]);
@@ -46777,7 +46832,7 @@ var PDFImage = (
       return new PDFImage2(ref, doc, embedder);
     };
     return PDFImage2;
-  }()
+  })()
 );
 var PDFImage_default = PDFImage;
 
@@ -46809,7 +46864,7 @@ var assertFieldAppearanceOptions = function(options) {
 };
 var PDFField = (
   /** @class */
-  function() {
+  (function() {
     function PDFField2(acroField, ref, doc) {
       assertIs(acroField, "acroField", [[PDFAcroTerminal_default, "PDFAcroTerminal"]]);
       assertIs(ref, "ref", [[PDFRef_default, "PDFRef"]]);
@@ -46998,14 +47053,14 @@ var PDFField = (
       return appearanceDict;
     };
     return PDFField2;
-  }()
+  })()
 );
 var PDFField_default = PDFField;
 
 // node_modules/pdf-lib/es/api/form/PDFCheckBox.js
 var PDFCheckBox = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFCheckBox2, _super);
     function PDFCheckBox2(acroCheckBox, ref, doc) {
       var _this = _super.call(this, acroCheckBox, ref, doc) || this;
@@ -47101,14 +47156,14 @@ var PDFCheckBox = (
       return new PDFCheckBox2(acroCheckBox, ref, doc);
     };
     return PDFCheckBox2;
-  }(PDFField_default)
+  })(PDFField_default)
 );
 var PDFCheckBox_default = PDFCheckBox;
 
 // node_modules/pdf-lib/es/api/form/PDFDropdown.js
 var PDFDropdown = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFDropdown2, _super);
     function PDFDropdown2(acroComboBox, ref, doc) {
       var _this = _super.call(this, acroComboBox, ref, doc) || this;
@@ -47304,14 +47359,14 @@ var PDFDropdown = (
       return new PDFDropdown2(acroComboBox, ref, doc);
     };
     return PDFDropdown2;
-  }(PDFField_default)
+  })(PDFField_default)
 );
 var PDFDropdown_default = PDFDropdown;
 
 // node_modules/pdf-lib/es/api/form/PDFOptionList.js
 var PDFOptionList = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFOptionList2, _super);
     function PDFOptionList2(acroListBox, ref, doc) {
       var _this = _super.call(this, acroListBox, ref, doc) || this;
@@ -47485,14 +47540,14 @@ var PDFOptionList = (
       return new PDFOptionList2(acroListBox, ref, doc);
     };
     return PDFOptionList2;
-  }(PDFField_default)
+  })(PDFField_default)
 );
 var PDFOptionList_default = PDFOptionList;
 
 // node_modules/pdf-lib/es/api/form/PDFRadioGroup.js
 var PDFRadioGroup = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFRadioGroup2, _super);
     function PDFRadioGroup2(acroRadioButton, ref, doc) {
       var _this = _super.call(this, acroRadioButton, ref, doc) || this;
@@ -47636,14 +47691,14 @@ var PDFRadioGroup = (
       return new PDFRadioGroup2(acroRadioButton, ref, doc);
     };
     return PDFRadioGroup2;
-  }(PDFField_default)
+  })(PDFField_default)
 );
 var PDFRadioGroup_default = PDFRadioGroup;
 
 // node_modules/pdf-lib/es/api/form/PDFSignature.js
 var PDFSignature = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFSignature2, _super);
     function PDFSignature2(acroSignature, ref, doc) {
       var _this = _super.call(this, acroSignature, ref, doc) || this;
@@ -47660,14 +47715,14 @@ var PDFSignature = (
       return new PDFSignature2(acroSignature, ref, doc);
     };
     return PDFSignature2;
-  }(PDFField_default)
+  })(PDFField_default)
 );
 var PDFSignature_default = PDFSignature;
 
 // node_modules/pdf-lib/es/api/form/PDFTextField.js
 var PDFTextField = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFTextField2, _super);
     function PDFTextField2(acroText, ref, doc) {
       var _this = _super.call(this, acroText, ref, doc) || this;
@@ -47884,7 +47939,7 @@ var PDFTextField = (
       return new PDFTextField2(acroText, ref, doc);
     };
     return PDFTextField2;
-  }(PDFField_default)
+  })(PDFField_default)
 );
 var PDFTextField_default = PDFTextField;
 
@@ -47910,7 +47965,7 @@ var StandardFonts;
 // node_modules/pdf-lib/es/api/form/PDFForm.js
 var PDFForm = (
   /** @class */
-  function() {
+  (function() {
     function PDFForm2(acroForm, doc) {
       var _this = this;
       this.embedDefaultFont = function() {
@@ -48211,7 +48266,7 @@ var PDFForm = (
       return new PDFForm2(acroForm, doc);
     };
     return PDFForm2;
-  }()
+  })()
 );
 var PDFForm_default = PDFForm;
 var convertToPDFField = function(field, ref, doc) {
@@ -48330,7 +48385,7 @@ var ParseSpeeds;
 // node_modules/pdf-lib/es/api/PDFEmbeddedFile.js
 var PDFEmbeddedFile = (
   /** @class */
-  function() {
+  (function() {
     function PDFEmbeddedFile2(ref, doc, embedder) {
       this.alreadyEmbedded = false;
       this.ref = ref;
@@ -48381,14 +48436,14 @@ var PDFEmbeddedFile = (
       return new PDFEmbeddedFile2(ref, doc, embedder);
     };
     return PDFEmbeddedFile2;
-  }()
+  })()
 );
 var PDFEmbeddedFile_default = PDFEmbeddedFile;
 
 // node_modules/pdf-lib/es/api/PDFJavaScript.js
 var PDFJavaScript = (
   /** @class */
-  function() {
+  (function() {
     function PDFJavaScript2(ref, doc, embedder) {
       this.alreadyEmbedded = false;
       this.ref = ref;
@@ -48435,14 +48490,14 @@ var PDFJavaScript = (
       return new PDFJavaScript2(ref, doc, embedder);
     };
     return PDFJavaScript2;
-  }()
+  })()
 );
 var PDFJavaScript_default = PDFJavaScript;
 
 // node_modules/pdf-lib/es/core/embedders/JavaScriptEmbedder.js
 var JavaScriptEmbedder = (
   /** @class */
-  function() {
+  (function() {
     function JavaScriptEmbedder2(script, scriptName) {
       this.script = script;
       this.scriptName = scriptName;
@@ -48473,14 +48528,14 @@ var JavaScriptEmbedder = (
       });
     };
     return JavaScriptEmbedder2;
-  }()
+  })()
 );
 var JavaScriptEmbedder_default = JavaScriptEmbedder;
 
 // node_modules/pdf-lib/es/api/PDFDocument.js
 var PDFDocument = (
   /** @class */
-  function() {
+  (function() {
     function PDFDocument2(context, ignoreEncryption, updateMetadata) {
       var _this = this;
       this.defaultWordBreaks = [" "];
@@ -49154,7 +49209,7 @@ var PDFDocument = (
       return this.fontkit;
     };
     return PDFDocument2;
-  }()
+  })()
 );
 var PDFDocument_default = PDFDocument;
 function assertIsLiteralOrHexString(pdfObject) {
@@ -49183,7 +49238,7 @@ var BlendMode;
 // node_modules/pdf-lib/es/api/PDFPage.js
 var PDFPage = (
   /** @class */
-  function() {
+  (function() {
     function PDFPage2(leafNode, ref, doc) {
       this.fontSize = 24;
       this.fontColor = rgb(0, 0, 0);
@@ -49828,14 +49883,14 @@ var PDFPage = (
       return new PDFPage2(pageLeaf, pageRef, doc);
     };
     return PDFPage2;
-  }()
+  })()
 );
 var PDFPage_default = PDFPage;
 
 // node_modules/pdf-lib/es/api/form/PDFButton.js
 var PDFButton = (
   /** @class */
-  function(_super) {
+  (function(_super) {
     __extends(PDFButton2, _super);
     function PDFButton2(acroPushButton, ref, doc) {
       var _this = _super.call(this, acroPushButton, ref, doc) || this;
@@ -49922,7 +49977,7 @@ var PDFButton = (
       return new PDFButton2(acroPushButton, ref, doc);
     };
     return PDFButton2;
-  }(PDFField_default)
+  })(PDFField_default)
 );
 var PDFButton_default = PDFButton;
 
@@ -52793,9 +52848,1019 @@ creature: ${this.npcName}
 };
 
 // src/session/SessionPrepDashboardView.ts
-var import_obsidian47 = require("obsidian");
+var import_obsidian50 = require("obsidian");
 init_constants();
-var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_obsidian47.ItemView {
+
+// src/session/SessionCreationModal.ts
+var import_obsidian49 = require("obsidian");
+
+// src/campaign/CalendarDateInputModal.ts
+var import_obsidian47 = require("obsidian");
+var CalendarDateInputModal = class extends import_obsidian47.Modal {
+  constructor(app, calendarData, year, month, day, onSubmit) {
+    super(app);
+    this.dayDropdown = null;
+    this.calendarData = calendarData;
+    this.year = year || "1";
+    this.month = month || "1";
+    this.day = day || "1";
+    this.onSubmit = onSubmit;
+  }
+  onOpen() {
+    var _a, _b;
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: " Select Date" });
+    const monthData = ((_b = (_a = this.calendarData) == null ? void 0 : _a.static) == null ? void 0 : _b.months) || [];
+    const dateSetting = new import_obsidian47.Setting(contentEl).setName("Date").setDesc("Select year, month, and day");
+    dateSetting.addText((text) => {
+      text.setPlaceholder("Year").setValue(this.year).onChange((value) => {
+        this.year = value;
+      });
+      text.inputEl.style.width = "80px";
+    });
+    dateSetting.addDropdown((dropdown) => {
+      monthData.forEach((month, index) => {
+        const monthName = month.name || `Month ${index + 1}`;
+        dropdown.addOption((index + 1).toString(), monthName);
+      });
+      dropdown.setValue(this.month || "1").onChange((value) => {
+        this.month = value;
+        this.updateDayDropdown();
+      });
+    });
+    dateSetting.addDropdown((dropdown) => {
+      this.dayDropdown = dropdown;
+      this.updateDayDropdown();
+      dropdown.setValue(this.day || "1").onChange((value) => {
+        this.day = value;
+      });
+    });
+    const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
+    const cancelButton = buttonContainer.createEl("button", { text: "Cancel" });
+    cancelButton.addEventListener("click", () => {
+      this.close();
+    });
+    const selectButton = buttonContainer.createEl("button", {
+      text: "Select Date",
+      cls: "mod-cta"
+    });
+    selectButton.addEventListener("click", () => {
+      this.onSubmit(this.year, this.month, this.day);
+      this.close();
+    });
+  }
+  updateDayDropdown() {
+    var _a, _b, _c;
+    if (!this.dayDropdown) return;
+    const monthData = ((_b = (_a = this.calendarData) == null ? void 0 : _a.static) == null ? void 0 : _b.months) || [];
+    const monthIndex = parseInt(this.month || "1") - 1;
+    const daysInMonth = ((_c = monthData[monthIndex]) == null ? void 0 : _c.length) || 30;
+    this.dayDropdown.selectEl.empty();
+    for (let d = 1; d <= daysInMonth; d++) {
+      this.dayDropdown.addOption(d.toString(), d.toString());
+    }
+    if (parseInt(this.day) > daysInMonth) {
+      this.day = daysInMonth.toString();
+      this.dayDropdown.setValue(this.day);
+    }
+  }
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+};
+
+// src/session/SessionCreationModal.ts
+init_templates();
+init_YamlFrontmatter();
+
+// src/session/SessionBacklinks.ts
+function extractBacklinkPath(value) {
+  var _a;
+  if (typeof value === "object" && value !== null && "path" in value) {
+    return String(value.path || "").replace(/\.md$/i, "").trim();
+  }
+  const text = String(value || "").trim();
+  const path = ((_a = text.match(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/)) == null ? void 0 : _a[1]) || text;
+  return path.replace(/\.md$/i, "").trim();
+}
+function canonicalLink(path) {
+  return `[[${path.replace(/\.md$/i, "")}.md]]`;
+}
+function normalizeSessionBacklinks(raw) {
+  const values2 = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  const seen = /* @__PURE__ */ new Set();
+  const normalized = [];
+  for (const value of values2) {
+    const path = extractBacklinkPath(value);
+    if (!path || seen.has(path.toLowerCase())) continue;
+    seen.add(path.toLowerCase());
+    normalized.push(canonicalLink(path));
+  }
+  return normalized;
+}
+function addSessionBacklink(raw, sessionPath) {
+  const normalized = normalizeSessionBacklinks(raw);
+  const target = extractBacklinkPath(sessionPath).toLowerCase();
+  if (!normalized.some((value) => extractBacklinkPath(value).toLowerCase() === target)) {
+    normalized.push(canonicalLink(sessionPath));
+  }
+  return normalized;
+}
+function removeSessionBacklink(raw, sessionPath) {
+  const target = extractBacklinkPath(sessionPath).toLowerCase();
+  const basename = target.split("/").pop();
+  return normalizeSessionBacklinks(raw).filter((value) => {
+    const valuePath = extractBacklinkPath(value).toLowerCase();
+    return valuePath !== target && !(valuePath === basename && !valuePath.includes("/"));
+  });
+}
+function collectSessionRelationshipPaths(frontmatter) {
+  const fields = ["adventures", "adventure", "starting_scene", "ending_scene", "planned_scenes"];
+  const seen = /* @__PURE__ */ new Set();
+  const paths = [];
+  for (const field of fields) {
+    const raw = frontmatter[field];
+    const values2 = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    for (const value of values2) {
+      const path = extractBacklinkPath(value);
+      const key = path.toLowerCase();
+      if (!path || seen.has(key)) continue;
+      seen.add(key);
+      paths.push(path);
+    }
+  }
+  return paths;
+}
+
+// src/utils/UnsavedChangesGuard.ts
+var import_obsidian48 = require("obsidian");
+function serializeUnsavedState(value) {
+  if (value === void 0) return "undefined";
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(serializeUnsavedState).join(",")}]`;
+  const record = value;
+  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${serializeUnsavedState(record[key])}`).join(",")}}`;
+}
+var UnsavedChangesTracker = class {
+  constructor() {
+    this.initial = null;
+  }
+  capture(state) {
+    this.initial = serializeUnsavedState(state);
+  }
+  isDirty(state) {
+    return this.initial !== null && this.initial !== serializeUnsavedState(state);
+  }
+};
+var DiscardChangesModal = class extends import_obsidian48.Modal {
+  constructor(app, finish) {
+    super(app);
+    this.finish = finish;
+    this.settled = false;
+  }
+  onOpen() {
+    this.contentEl.createEl("h3", { text: "Discard unsaved changes?" });
+    this.contentEl.createEl("p", { text: "Your changes will be lost if you close this window." });
+    const buttons = this.contentEl.createDiv({ cls: "dnd-modal-buttons" });
+    buttons.createEl("button", { text: "Keep Editing" }).onclick = () => {
+      this.settle(false);
+      super.close();
+    };
+    buttons.createEl("button", { text: "Discard Changes", cls: "mod-warning" }).onclick = () => {
+      this.settle(true);
+      super.close();
+    };
+  }
+  settle(discard) {
+    if (this.settled) return;
+    this.settled = true;
+    this.finish(discard);
+  }
+  onClose() {
+    this.settle(false);
+    this.contentEl.empty();
+  }
+};
+var UnsavedChangesGuard = class {
+  constructor(app, getState) {
+    this.app = app;
+    this.getState = getState;
+    this.tracker = new UnsavedChangesTracker();
+    this.closeAllowed = false;
+    this.confirmationOpen = false;
+  }
+  captureInitialState() {
+    this.tracker.capture(this.getState());
+  }
+  allowClose() {
+    this.closeAllowed = true;
+  }
+  requestClose(closeNow) {
+    if (this.closeAllowed || !this.tracker.isDirty(this.getState())) {
+      closeNow();
+      return;
+    }
+    if (this.confirmationOpen) return;
+    this.confirmationOpen = true;
+    new DiscardChangesModal(this.app, (discard) => {
+      this.confirmationOpen = false;
+      if (discard) {
+        this.closeAllowed = true;
+        closeNow();
+      }
+    }).open();
+  }
+};
+
+// src/session/SessionCreationModal.ts
+var SessionCreationModal = class extends import_obsidian49.Modal {
+  constructor(app, plugin, adventurePath, campaignPath, sessionPath) {
+    super(app);
+    this.sessionTitle = "";
+    this.location = "";
+    this.adventurePath = "";
+    this.adventurePaths = [];
+    this.plannedScenePaths = [];
+    this.startingScenePath = "";
+    this.useCustomDate = false;
+    this.calendar = "";
+    this.startYear = "";
+    this.startMonth = "";
+    this.startDay = "";
+    this.endYear = "";
+    this.endMonth = "";
+    this.endDay = "";
+    this.selectedCalendarData = null;
+    this.endDayDropdown = null;
+    this.selectedPartyId = "";
+    this.selectedPartyName = "";
+    this.isEdit = false;
+    this.originalSessionPath = "";
+    this.originalAdventurePaths = [];
+    this.originalStartingScenePath = "";
+    this.unsavedGuard = new UnsavedChangesGuard(app, () => this.getUnsavedState());
+    this.plugin = plugin;
+    this.campaignPath = campaignPath || plugin.resolveCampaign();
+    this.sessionDate = (/* @__PURE__ */ new Date()).toISOString().split("T")[0] || "";
+    if (adventurePath) {
+      this.adventurePath = adventurePath;
+      this.adventurePaths = [adventurePath];
+    }
+    if (sessionPath) {
+      this.isEdit = true;
+      this.originalSessionPath = sessionPath;
+      const sessionFile = this.app.vault.getAbstractFileByPath(sessionPath);
+      if (sessionFile instanceof import_obsidian49.TFile && sessionFile.parent) this.campaignPath = sessionFile.parent.path;
+    }
+  }
+  getUnsavedState() {
+    return {
+      sessionTitle: this.sessionTitle,
+      sessionDate: this.sessionDate,
+      location: this.location,
+      adventurePath: this.adventurePath,
+      adventurePaths: this.adventurePaths,
+      plannedScenePaths: this.plannedScenePaths,
+      startingScenePath: this.startingScenePath,
+      useCustomDate: this.useCustomDate,
+      calendar: this.calendar,
+      startYear: this.startYear,
+      startMonth: this.startMonth,
+      startDay: this.startDay,
+      endYear: this.endYear,
+      endMonth: this.endMonth,
+      endDay: this.endDay,
+      selectedPartyId: this.selectedPartyId
+    };
+  }
+  close() {
+    this.unsavedGuard.requestClose(() => super.close());
+  }
+  parseFrontmatterLink(value) {
+    var _a, _b, _c;
+    if (!value) return "";
+    if (typeof value === "object" && value !== null && "path" in value) {
+      return String((_a = value.path) != null ? _a : "");
+    }
+    const text = String(value).trim();
+    return (_c = (_b = text.match(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/)) == null ? void 0 : _b[1]) != null ? _c : text;
+  }
+  async loadSessionData() {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t;
+    const file = this.app.vault.getAbstractFileByPath(this.originalSessionPath);
+    if (!(file instanceof import_obsidian49.TFile)) {
+      new import_obsidian49.Notice("Session file not found!");
+      return;
+    }
+    const fm = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter;
+    if (!fm) {
+      new import_obsidian49.Notice("Could not read session data!");
+      return;
+    }
+    const allAdventureValues = Array.isArray(fm.adventures) ? fm.adventures : [];
+    this.adventurePaths = allAdventureValues.map((value) => this.parseFrontmatterLink(value)).filter(Boolean);
+    this.adventurePath = this.parseFrontmatterLink(fm.adventure);
+    if (this.adventurePath && !this.adventurePaths.includes(this.adventurePath)) this.adventurePaths.unshift(this.adventurePath);
+    this.originalAdventurePaths = [...this.adventurePaths];
+    this.startingScenePath = this.parseFrontmatterLink(fm.starting_scene);
+    this.plannedScenePaths = (Array.isArray(fm.planned_scenes) ? fm.planned_scenes : []).map((value) => this.parseFrontmatterLink(value)).filter(Boolean).filter((path, index, paths) => paths.indexOf(path) === index);
+    this.originalStartingScenePath = this.startingScenePath;
+    this.location = String((_b = fm.location) != null ? _b : "");
+    this.sessionDate = String((_c = fm.date) != null ? _c : this.sessionDate);
+    this.calendar = String((_d = fm["fc-calendar"]) != null ? _d : this.calendar);
+    this.startYear = String((_f = (_e = fm["fc-date"]) == null ? void 0 : _e.year) != null ? _f : this.startYear);
+    this.startMonth = String((_h = (_g = fm["fc-date"]) == null ? void 0 : _g.month) != null ? _h : this.startMonth);
+    this.startDay = String((_j = (_i = fm["fc-date"]) == null ? void 0 : _i.day) != null ? _j : this.startDay);
+    this.endYear = String((_l = (_k = fm["fc-end"]) == null ? void 0 : _k.year) != null ? _l : this.endYear);
+    this.endMonth = String((_n = (_m = fm["fc-end"]) == null ? void 0 : _m.month) != null ? _n : this.endMonth);
+    this.endDay = String((_p = (_o = fm["fc-end"]) == null ? void 0 : _o.day) != null ? _p : this.endDay);
+    this.selectedPartyId = String((_q = fm.party_id) != null ? _q : "");
+    const content = await this.app.vault.read(file);
+    this.sessionTitle = (_t = (_s = (_r = content.match(/^# Session(?:\s+\d+)?(?:\s+-\s+(.+))?$/m)) == null ? void 0 : _r[1]) == null ? void 0 : _s.trim()) != null ? _t : "";
+  }
+  async getAllAdventures() {
+    const adventures = [];
+    const campaignPath = this.campaignPath;
+    const adventuresFolder = this.app.vault.getAbstractFileByPath(`${campaignPath}/Adventures`);
+    if (adventuresFolder instanceof import_obsidian49.TFolder) {
+      for (const item of adventuresFolder.children) {
+        if (item instanceof import_obsidian49.TFile && item.extension === "md") {
+          adventures.push({
+            path: item.path,
+            name: item.basename
+          });
+        } else if (item instanceof import_obsidian49.TFolder) {
+          const mainFile = this.app.vault.getAbstractFileByPath(`${item.path}/${item.name}.md`);
+          if (mainFile instanceof import_obsidian49.TFile) {
+            adventures.push({
+              path: mainFile.path,
+              name: item.name
+            });
+          }
+        }
+      }
+    }
+    return adventures;
+  }
+  /**
+   * Resolve an adventure reference to a TFile.
+   * Handles full paths, wikilink paths, and bare names (e.g. "My Adventure").
+   */
+  resolveAdventureFile(adventureRef) {
+    var _a;
+    const direct = this.app.vault.getAbstractFileByPath(adventureRef);
+    if (direct instanceof import_obsidian49.TFile) return direct;
+    const withMd = this.app.vault.getAbstractFileByPath(adventureRef + ".md");
+    if (withMd instanceof import_obsidian49.TFile) return withMd;
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (file.basename !== adventureRef) continue;
+      const cache = this.app.metadataCache.getFileCache(file);
+      if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) === "adventure") return file;
+    }
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (file.basename === adventureRef) return file;
+    }
+    return null;
+  }
+  async getAllScenesForAdventure(adventurePath) {
+    var _a, _b, _c;
+    if (!adventurePath) return [];
+    const advFile = this.resolveAdventureFile(adventurePath);
+    if (!(advFile instanceof import_obsidian49.TFile)) return [];
+    const advFolder = advFile.parent;
+    if (!advFolder) return [];
+    const candidatePrefixes = [];
+    if (advFolder.name === advFile.basename) {
+      candidatePrefixes.push(advFolder.path + "/");
+    }
+    candidatePrefixes.push(`${advFolder.path}/${advFile.basename} - Scenes/`);
+    candidatePrefixes.push(`${advFolder.path}/${advFile.basename}/`);
+    candidatePrefixes.push(advFolder.path + "/");
+    const seen = /* @__PURE__ */ new Set();
+    const scenes = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (seen.has(file.path)) continue;
+      const underAdventure = candidatePrefixes.some((prefix) => file.path.startsWith(prefix));
+      if (!underAdventure) continue;
+      const cache = this.app.metadataCache.getFileCache(file);
+      const fm = cache == null ? void 0 : cache.frontmatter;
+      if (!fm || fm.type !== "scene") continue;
+      seen.add(file.path);
+      const num2 = parseInt(
+        (_c = (_b = fm.scene_number) != null ? _b : (_a = file.name.match(/Scene\s+(\d+)/i)) == null ? void 0 : _a[1]) != null ? _c : "0"
+      ) || 0;
+      scenes.push({ path: file.path, name: file.basename, sceneNumber: num2, status: fm.status || "not-started" });
+    }
+    scenes.sort((a, b) => a.sceneNumber - b.sceneNumber);
+    return scenes;
+  }
+  async loadCalendarData() {
+    var _a, _b, _c;
+    const campaignPath = this.campaignPath;
+    const worldFile = this.app.vault.getAbstractFileByPath(`${campaignPath}/World.md`);
+    if (worldFile instanceof import_obsidian49.TFile) {
+      const worldContent = await this.app.vault.read(worldFile);
+      const calendarMatch = worldContent.match(/fc-calendar:\s*([^\r\n]\w*)$/m);
+      if (calendarMatch && calendarMatch[1]) {
+        this.calendar = calendarMatch[1].trim();
+        const calendariumPlugin = (_b = (_a = this.app.plugins) == null ? void 0 : _a.plugins) == null ? void 0 : _b.calendarium;
+        if (calendariumPlugin && ((_c = calendariumPlugin.data) == null ? void 0 : _c.calendars)) {
+          const calendars = calendariumPlugin.data.calendars;
+          for (const [id, calData] of Object.entries(calendars)) {
+            if (calData.name === this.calendar) {
+              this.selectedCalendarData = calData;
+              break;
+            }
+          }
+        }
+      }
+    }
+    const previousSession = await this.getPreviousSession();
+    if (previousSession) {
+      this.startYear = previousSession.endYear;
+      this.startMonth = previousSession.endMonth;
+      this.startDay = previousSession.endDay;
+    } else {
+      if (worldFile instanceof import_obsidian49.TFile) {
+        const worldContent = await this.app.vault.read(worldFile);
+        const yearMatch = worldContent.match(/fc-date:\s*\n\s*year:\s*([^\r\n]\w*)$/m);
+        const monthMatch = worldContent.match(/fc-date:\s*\n\s*year:.*\n\s*month:\s*([^\r\n]\w*)$/m);
+        const dayMatch = worldContent.match(/fc-date:\s*\n\s*year:.*\n\s*month:.*\n\s*day:\s*([^\r\n]\w*)$/m);
+        if (yearMatch && yearMatch[1]) this.startYear = yearMatch[1].trim();
+        if (monthMatch && monthMatch[1]) this.startMonth = monthMatch[1].trim();
+        if (dayMatch && dayMatch[1]) this.startDay = dayMatch[1].trim();
+      }
+    }
+    if (!this.startYear) this.startYear = "1";
+    if (!this.startMonth) this.startMonth = "1";
+    if (!this.startDay) this.startDay = "1";
+    this.endYear = this.startYear;
+    this.endMonth = this.startMonth;
+    this.endDay = this.startDay;
+  }
+  async getPreviousSession() {
+    const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
+    if (campaignFolder instanceof import_obsidian49.TFolder) {
+      const files = campaignFolder.children.filter(
+        (f) => f instanceof import_obsidian49.TFile && f.name.match(/^\d{3}_\d{8}\.md$/)
+      );
+      if (files.length === 0) return null;
+      const sortedFiles = files.sort((a, b) => {
+        const numA = parseInt(a.name.substring(0, 3));
+        const numB = parseInt(b.name.substring(0, 3));
+        return numB - numA;
+      });
+      const lastSession = sortedFiles[0];
+      const content = await this.app.vault.read(lastSession);
+      const endYearMatch = content.match(/fc-end:\s*\n\s*year:\s*(.+)/);
+      const endMonthMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:\s*(.+)/);
+      const endDayMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:.*\n\s*day:\s*(.+)/);
+      if ((endYearMatch == null ? void 0 : endYearMatch[1]) && (endMonthMatch == null ? void 0 : endMonthMatch[1]) && (endDayMatch == null ? void 0 : endDayMatch[1])) {
+        return {
+          endYear: endYearMatch[1].trim(),
+          endMonth: endMonthMatch[1].trim(),
+          endDay: endDayMatch[1].trim()
+        };
+      }
+    }
+    return null;
+  }
+  async onOpen() {
+    var _a, _b, _c;
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: this.isEdit ? "\u270F\uFE0F Edit Session" : "\u{1F4DC} Create New Session" });
+    await this.loadCalendarData();
+    if (this.isEdit) await this.loadSessionData();
+    const campaignPath = this.campaignPath;
+    const campaignName = (campaignPath == null ? void 0 : campaignPath.split("/").pop()) || "Unknown";
+    contentEl.createEl("p", {
+      text: `Campaign: ${campaignName}`,
+      cls: "setting-item-description"
+    });
+    const nextSessionNum = this.isEdit ? Number((_b = (_a = this.app.metadataCache.getFileCache(this.app.vault.getAbstractFileByPath(this.originalSessionPath))) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.sessionNum) || this.getNextSessionNumber() : this.getNextSessionNumber();
+    contentEl.createEl("p", {
+      text: `Session Number: ${nextSessionNum}`,
+      cls: "setting-item-description"
+    });
+    new import_obsidian49.Setting(contentEl).setName("Session Title").setDesc("Optional descriptive title for this session").addText((text) => {
+      text.setPlaceholder("e.g., The Goblin Ambush").setValue(this.sessionTitle).onChange((value) => {
+        this.sessionTitle = value;
+      });
+      if (!this.isEdit) text.inputEl.focus();
+    });
+    const adventures = await this.getAllAdventures();
+    const adventureSelectionContainer = contentEl.createDiv({ cls: "dnd-session-adventure-selection" });
+    const primaryAdventureContainer = contentEl.createDiv();
+    const scenePickerContainer = contentEl.createDiv();
+    const scenePlanContainer = contentEl.createDiv({ cls: "dnd-session-scene-plan" });
+    const renderScenePlan = async () => {
+      var _a2;
+      scenePlanContainer.empty();
+      scenePlanContainer.createEl("h3", { text: "Session Scene Plan" });
+      scenePlanContainer.createEl("p", { text: "Choose the scenes you expect to run. Selected scenes are used in this order by prep and live-session tools.", cls: "setting-item-description" });
+      const available = await Promise.all(this.adventurePaths.map(async (adventure) => ({ adventure, scenes: await this.getAllScenesForAdventure(adventure) })));
+      const valid = new Set(available.flatMap((group) => group.scenes.map((scene) => scene.path)));
+      this.plannedScenePaths = this.plannedScenePaths.filter((path) => valid.has(path));
+      for (const group of available) {
+        const adventure = adventures.find((item) => item.path === group.adventure);
+        scenePlanContainer.createEl("h4", { text: (_a2 = adventure == null ? void 0 : adventure.name) != null ? _a2 : group.adventure });
+        for (const scene of group.scenes) {
+          const setting = new import_obsidian49.Setting(scenePlanContainer).setName(scene.name).setDesc(scene.status);
+          const selectedIndex = this.plannedScenePaths.indexOf(scene.path);
+          if (selectedIndex >= 0) {
+            setting.addButton((button) => button.setIcon("arrow-up").setTooltip("Move earlier").setDisabled(selectedIndex === 0).onClick(() => {
+              [this.plannedScenePaths[selectedIndex - 1], this.plannedScenePaths[selectedIndex]] = [this.plannedScenePaths[selectedIndex], this.plannedScenePaths[selectedIndex - 1]];
+              void renderScenePlan();
+            }));
+            setting.addButton((button) => button.setIcon("arrow-down").setTooltip("Move later").setDisabled(selectedIndex === this.plannedScenePaths.length - 1).onClick(() => {
+              [this.plannedScenePaths[selectedIndex], this.plannedScenePaths[selectedIndex + 1]] = [this.plannedScenePaths[selectedIndex + 1], this.plannedScenePaths[selectedIndex]];
+              void renderScenePlan();
+            }));
+          }
+          setting.addToggle((toggle) => toggle.setValue(selectedIndex >= 0).onChange((value) => {
+            if (value && !this.plannedScenePaths.includes(scene.path)) this.plannedScenePaths.push(scene.path);
+            if (!value) this.plannedScenePaths = this.plannedScenePaths.filter((path) => path !== scene.path);
+            void renderScenePlan();
+          }));
+        }
+      }
+    };
+    const refreshScenePicker = async (_adventurePath) => {
+      var _a2, _b2, _c2, _d;
+      scenePickerContainer.empty();
+      if (this.adventurePaths.length === 0) return;
+      const scenes = (await Promise.all(this.adventurePaths.map((path) => this.getAllScenesForAdventure(path)))).flat().filter((scene, index, all) => all.findIndex((candidate) => candidate.path === scene.path) === index);
+      if (scenes.length === 0) return;
+      const preferred = (_c2 = (_b2 = (_a2 = scenes.find((s) => s.path === this.startingScenePath)) != null ? _a2 : scenes.find((s) => s.status === "in-progress")) != null ? _b2 : scenes.find((s) => s.status === "not-started")) != null ? _c2 : scenes[0];
+      this.startingScenePath = (_d = preferred == null ? void 0 : preferred.path) != null ? _d : "";
+      new import_obsidian49.Setting(scenePickerContainer).setName("Starting Scene").setDesc("Scene where this session begins, from any linked adventure").addDropdown((dd) => {
+        dd.addOption("", "-- None --");
+        for (const sc of scenes) {
+          const label = `${sc.name} [${sc.status}]`;
+          dd.addOption(sc.path, label);
+        }
+        dd.setValue(this.startingScenePath);
+        dd.onChange((value) => {
+          this.startingScenePath = value;
+        });
+      });
+    };
+    if (adventures.length > 0) {
+      const renderPrimaryAdventurePicker = () => {
+        var _a2;
+        primaryAdventureContainer.empty();
+        if (this.adventurePaths.length === 0) {
+          this.adventurePath = "";
+          this.startingScenePath = "";
+          scenePickerContainer.empty();
+          return;
+        }
+        if (!this.adventurePaths.includes(this.adventurePath)) {
+          this.adventurePath = (_a2 = this.adventurePaths[0]) != null ? _a2 : "";
+        }
+        new import_obsidian49.Setting(primaryAdventureContainer).setName("Primary Adventure").setDesc("Used to choose the starting scene for this session").addDropdown((dropdown) => {
+          for (const path of this.adventurePaths) {
+            const adventure = adventures.find((candidate) => candidate.path === path);
+            if (adventure) dropdown.addOption(adventure.path, adventure.name);
+          }
+          dropdown.setValue(this.adventurePath);
+          dropdown.onChange(async (value) => {
+            this.adventurePath = value;
+            this.startingScenePath = "";
+            await refreshScenePicker(value);
+          });
+        });
+        void refreshScenePicker(this.adventurePath);
+      };
+      adventureSelectionContainer.createEl("h3", { text: "Adventures" });
+      adventureSelectionContainer.createEl("p", {
+        text: "Link this session to one or more adventures.",
+        cls: "setting-item-description"
+      });
+      for (const adventure of adventures) {
+        new import_obsidian49.Setting(adventureSelectionContainer).setName(adventure.name).setDesc("Include this adventure in the session").addToggle((toggle) => toggle.setTooltip(`Link ${adventure.name}`).setValue(this.adventurePaths.includes(adventure.path)).onChange((value) => {
+          if (value && !this.adventurePaths.includes(adventure.path)) {
+            this.adventurePaths.push(adventure.path);
+          } else if (!value) {
+            this.adventurePaths = this.adventurePaths.filter((path) => path !== adventure.path);
+          }
+          renderPrimaryAdventurePicker();
+          void renderScenePlan();
+        }));
+      }
+      renderPrimaryAdventurePicker();
+      await refreshScenePicker(this.adventurePath);
+      await renderScenePlan();
+    }
+    const advancedDetails = contentEl.createEl("details", { cls: "dnd-advanced-section" });
+    advancedDetails.createEl("summary", { text: "Advanced session details" });
+    const advancedContainer = advancedDetails.createDiv({ cls: "dnd-advanced-section-body" });
+    new import_obsidian49.Setting(advancedContainer).setName("Session Date").setDesc("Date when this session was/will be played (real world)").addText(
+      (text) => text.setValue(this.sessionDate).onChange((value) => {
+        this.sessionDate = value;
+      })
+    ).addToggle(
+      (toggle) => toggle.setTooltip("Use custom date").setValue(this.useCustomDate).onChange((value) => {
+        this.useCustomDate = value;
+        if (!value) {
+          this.sessionDate = (/* @__PURE__ */ new Date()).toISOString().split("T")[0] || "";
+        }
+      })
+    );
+    if (this.calendar && this.selectedCalendarData) {
+      advancedContainer.createEl("h3", { text: `\u{1F4C5} In-Game Calendar: ${this.selectedCalendarData.name || this.calendar}` });
+      const monthData = ((_c = this.selectedCalendarData.static) == null ? void 0 : _c.months) || [];
+      new import_obsidian49.Setting(advancedContainer).setName("Start Date (In-Game)").setDesc(`Starts: ${this.getDateDisplay(this.startYear, this.startMonth, this.startDay, monthData)}`);
+      const endDateSetting = new import_obsidian49.Setting(advancedContainer).setName("End Date (In-Game)").setDesc("When does this session end in your world?");
+      const endDateDisplay = advancedContainer.createEl("div", {
+        cls: "dnd-date-display",
+        text: this.getDateDisplay(this.endYear, this.endMonth, this.endDay, monthData)
+      });
+      endDateSetting.addButton((button) => {
+        button.setButtonText("\u{1F4C5} Pick End Date").setCta().onClick(async () => {
+          await this.openSessionDatePicker(endDateDisplay, monthData);
+        });
+      });
+    }
+    new import_obsidian49.Setting(advancedContainer).setName("Location").setDesc("Where does this session take place in your world?").addText(
+      (text) => text.setPlaceholder("e.g., Phandalin").setValue(this.location).onChange((value) => {
+        this.location = value;
+      })
+    );
+    const partyContainer = advancedContainer.createDiv({ cls: "dnd-party-selection" });
+    const defaultParty = this.plugin.partyManager.resolveParty(void 0, campaignName);
+    if (defaultParty && !this.selectedPartyId) {
+      this.selectedPartyId = defaultParty.id;
+      this.selectedPartyName = defaultParty.name;
+    }
+    const parties = this.plugin.partyManager.getParties();
+    if (parties.length > 0) {
+      new import_obsidian49.Setting(partyContainer).setName("Party").setDesc("Which party is playing in this session?").addDropdown((dd) => {
+        for (const p of parties) {
+          dd.addOption(p.id, p.name);
+        }
+        if (this.selectedPartyId) dd.setValue(this.selectedPartyId);
+        dd.onChange((value) => {
+          this.selectedPartyId = value;
+          const match = parties.find((p) => p.id === value);
+          this.selectedPartyName = (match == null ? void 0 : match.name) || "";
+        });
+      });
+    }
+    const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
+    const cancelButton = buttonContainer.createEl("button", { text: "Cancel" });
+    cancelButton.addEventListener("click", () => {
+      this.close();
+    });
+    const createButton = buttonContainer.createEl("button", {
+      text: this.isEdit ? "Save Changes" : "Create Session",
+      cls: "mod-cta"
+    });
+    createButton.addEventListener("click", async () => {
+      this.unsavedGuard.allowClose();
+      this.close();
+      if (this.isEdit) await this.updateSessionFile();
+      else await this.createSessionFile();
+    });
+    this.unsavedGuard.captureInitialState();
+  }
+  async updateSessionFile() {
+    var _a, _b;
+    const file = this.app.vault.getAbstractFileByPath(this.originalSessionPath);
+    if (!(file instanceof import_obsidian49.TFile)) {
+      new import_obsidian49.Notice("\u274C Session file not found!");
+      return;
+    }
+    try {
+      const existing = await this.app.vault.read(file);
+      const fm = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter;
+      const sessionNumber = Number((_b = fm == null ? void 0 : fm.sessionNum) != null ? _b : fm == null ? void 0 : fm.session_number) || this.getSessionNumberFromFile(file);
+      const adventureLinks = this.adventurePaths.map((path) => `[[${path}]]`);
+      let updated = updateYamlFrontmatter(existing, (current) => ({
+        ...current,
+        adventure: this.adventurePath ? `[[${this.adventurePath}]]` : "",
+        adventures: adventureLinks,
+        planned_scenes: this.plannedScenePaths.map((path) => `[[${path}]]`),
+        starting_scene: this.startingScenePath ? `[[${this.startingScenePath}]]` : "",
+        party_id: this.selectedPartyId,
+        location: this.location,
+        date: this.sessionDate,
+        "fc-calendar": this.calendar,
+        "fc-date": { year: this.startYear, month: this.startMonth, day: this.startDay },
+        "fc-end": { year: this.endYear, month: this.endMonth, day: this.endDay }
+      }));
+      updated = updated.replace(
+        /^# Session.*$/m,
+        `# Session ${sessionNumber}${this.sessionTitle ? ` - ${this.sessionTitle}` : ""}`
+      );
+      await this.app.vault.modify(file, updated);
+      for (const path of this.adventurePaths) await this.linkSessionToAdventure(path, file.path);
+      for (const path of this.originalAdventurePaths.filter((oldPath) => !this.adventurePaths.includes(oldPath))) {
+        await this.unlinkSessionFromAdventure(path, file.path);
+      }
+      await this.reconcileStartingSceneBacklink(file.path);
+      new import_obsidian49.Notice(`\u2705 Session ${sessionNumber} updated!`);
+    } catch (error2) {
+      new import_obsidian49.Notice(`\u274C Error updating session: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      console.error("Session update error:", error2);
+    }
+  }
+  getSessionNumberFromFile(file) {
+    var _a, _b;
+    return Number((_b = (_a = file.basename.match(/^(\d{3})_/)) == null ? void 0 : _a[1]) != null ? _b : 0);
+  }
+  async unlinkSessionFromAdventure(adventurePath, sessionFilePath) {
+    var _a, _b;
+    const adventureFile = this.resolveAdventureFile(adventurePath);
+    if (!(adventureFile instanceof import_obsidian49.TFile)) return;
+    const content = await this.app.vault.read(adventureFile);
+    const raw = (_b = (_a = this.app.metadataCache.getFileCache(adventureFile)) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.sessions;
+    const updated = updateYamlFrontmatter(content, (fm) => ({
+      ...fm,
+      sessions: removeSessionBacklink(raw, sessionFilePath)
+    }));
+    await this.app.vault.modify(adventureFile, updated);
+  }
+  getNextSessionNumber() {
+    const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
+    let nextNumber = 1;
+    if (campaignFolder instanceof import_obsidian49.TFolder) {
+      const files = campaignFolder.children.filter(
+        (f) => f instanceof import_obsidian49.TFile && f.name.match(/^\d{3}_\d{8}\.md$/)
+      );
+      const numbers = files.map((f) => parseInt(f.name.substring(0, 3)));
+      if (numbers.length > 0) {
+        nextNumber = Math.max(...numbers) + 1;
+      }
+    }
+    return nextNumber;
+  }
+  getDateDisplay(year, month, day, monthData) {
+    var _a;
+    const monthIndex = parseInt(month) - 1;
+    const monthName = ((_a = monthData[monthIndex]) == null ? void 0 : _a.name) || `Month ${month}`;
+    return `${monthName} ${day}, Year ${year}`;
+  }
+  async openSessionDatePicker(displayElement, monthData) {
+    const modal = new CalendarDateInputModal(
+      this.app,
+      this.selectedCalendarData,
+      this.endYear,
+      this.endMonth,
+      this.endDay,
+      (year, month, day) => {
+        this.endYear = year;
+        this.endMonth = month;
+        this.endDay = day;
+        displayElement.setText(this.getDateDisplay(this.endYear, this.endMonth, this.endDay, monthData));
+      }
+    );
+    modal.open();
+  }
+  async createSessionFile() {
+    const campaignPath = this.campaignPath;
+    const campaignName = (campaignPath == null ? void 0 : campaignPath.split("/").pop()) || "Unknown";
+    const nextNumber = this.getNextSessionNumber();
+    new import_obsidian49.Notice(`Creating session ${nextNumber}...`);
+    try {
+      const worldFile = this.app.vault.getAbstractFileByPath(`${campaignPath}/World.md`);
+      let isGM = true;
+      if (worldFile instanceof import_obsidian49.TFile) {
+        const worldContent = await this.app.vault.read(worldFile);
+        const roleMatch = worldContent.match(/role:\s*(GM|player)/i);
+        if (roleMatch && roleMatch[1]) {
+          isGM = roleMatch[1].toLowerCase() === "gm";
+        }
+      }
+      let sessionContent = isGM ? SESSION_GM_TEMPLATE : SESSION_PLAYER_TEMPLATE;
+      const dateStr = this.sessionDate.replace(/-/g, "");
+      const fileName = `${nextNumber.toString().padStart(3, "0")}_${dateStr}.md`;
+      const filePath = `${campaignPath}/${fileName}`;
+      let recapContent = "";
+      if (nextNumber > 1) {
+        const prevNumber = nextNumber - 1;
+        const campaignFolder = this.app.vault.getAbstractFileByPath(campaignPath);
+        if (campaignFolder instanceof import_obsidian49.TFolder) {
+          const prevSessionFile = campaignFolder.children.find(
+            (f) => f instanceof import_obsidian49.TFile && f.name.match(new RegExp(`^${prevNumber.toString().padStart(3, "0")}_\\d{8}\\.md$`))
+          );
+          if (prevSessionFile instanceof import_obsidian49.TFile) {
+            const prevSessionName = prevSessionFile.basename;
+            recapContent = `
+![[${prevSessionName}#^summary]]
+`;
+          }
+        }
+      }
+      if (recapContent) {
+        sessionContent = sessionContent.replace(/## Recap\s*\n/m, `## Recap
+${recapContent}`);
+      }
+      const adventureLink = this.adventurePath ? `[[${this.adventurePath}]]` : "";
+      const adventureLinks = this.adventurePaths.map((path) => `[[${path}]]`);
+      const startingSceneLink = this.startingScenePath ? `[[${this.startingScenePath}]]` : "";
+      sessionContent = updateYamlFrontmatter(sessionContent, (fm) => ({
+        ...fm,
+        campaign: campaignName,
+        world: campaignName,
+        adventure: adventureLink,
+        adventures: adventureLinks,
+        planned_scenes: this.plannedScenePaths.map((path) => `[[${path}]]`),
+        starting_scene: startingSceneLink,
+        ending_scene: "",
+        party_id: this.selectedPartyId,
+        sessionNum: nextNumber,
+        status: "planned",
+        location: this.location,
+        date: this.sessionDate,
+        "fc-calendar": this.calendar,
+        "fc-date": {
+          year: this.startYear,
+          month: this.startMonth,
+          day: this.startDay
+        },
+        "fc-end": {
+          year: this.endYear,
+          month: this.endMonth,
+          day: this.endDay
+        }
+      }));
+      sessionContent = sessionContent.replace(
+        /^# Session.*$/m,
+        `# Session ${nextNumber}${this.sessionTitle ? " - " + this.sessionTitle : ""}`
+      );
+      await this.app.vault.create(filePath, sessionContent);
+      for (const adventurePath of this.adventurePaths) {
+        await this.linkSessionToAdventure(adventurePath, filePath);
+      }
+      if (this.startingScenePath) {
+        await this.handleStartingSceneUpdate(this.startingScenePath, filePath);
+      }
+      await this.app.workspace.openLinkText(filePath, "", true);
+      new import_obsidian49.Notice(`\u2705 Session ${nextNumber} created successfully!`);
+    } catch (error2) {
+      new import_obsidian49.Notice(`\u274C Error creating session: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      console.error("Session creation error:", error2);
+    }
+  }
+  /** Append this session's wikilink to the adventure's sessions[] frontmatter array. */
+  async linkSessionToAdventure(adventurePath, sessionFilePath) {
+    const advFile = this.resolveAdventureFile(adventurePath);
+    if (!(advFile instanceof import_obsidian49.TFile)) return;
+    try {
+      let content = await this.app.vault.read(advFile);
+      const cache = this.app.metadataCache.getFileCache(advFile);
+      content = updateYamlFrontmatter(content, (fm) => {
+        var _a;
+        return {
+          ...fm,
+          sessions: addSessionBacklink((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.sessions, sessionFilePath)
+        };
+      });
+      await this.app.vault.modify(advFile, content);
+    } catch (error2) {
+      console.error("Could not add session backlink to adventure:", error2);
+      throw error2;
+    }
+  }
+  /** Add session backlink to scene, then optionally update scene statuses. */
+  async handleStartingSceneUpdate(startingScenePath, sessionFilePath) {
+    await this.addSessionBacklinkToScene(startingScenePath, sessionFilePath);
+    const scenes = await this.getAllScenesForAdventure(this.adventurePath);
+    const startIdx = scenes.findIndex((s) => s.path === startingScenePath);
+    if (startIdx < 0) return;
+    const startingScene = scenes[startIdx];
+    if (!startingScene) return;
+    const scenesBeforeCount = startIdx;
+    if (scenesBeforeCount === 0 && startingScene.status === "in-progress") return;
+    const msgLines = [];
+    if (scenesBeforeCount > 0)
+      msgLines.push(`Mark ${scenesBeforeCount} scene(s) before "${startingScene.name}" as completed.`);
+    if (startingScene.status !== "in-progress")
+      msgLines.push(`Set "${startingScene.name}" to in-progress.`);
+    if (msgLines.length === 0) return;
+    const confirmed = await new Promise((resolve) => {
+      const modal = new ConfirmModal(this.app, "Update Scene Statuses?", msgLines.join("\n"), resolve);
+      modal.open();
+    });
+    if (confirmed) {
+      await this.updateSceneStatusesFromStartingScene(scenes, startIdx);
+    }
+  }
+  /** Append session wikilink to a scene's sessions[] frontmatter. */
+  async addSessionBacklinkToScene(scenePath, sessionFilePath) {
+    const sceneFile = this.resolveSceneFile(scenePath, sessionFilePath);
+    if (!(sceneFile instanceof import_obsidian49.TFile)) return;
+    try {
+      let content = await this.app.vault.read(sceneFile);
+      const cache = this.app.metadataCache.getFileCache(sceneFile);
+      content = updateYamlFrontmatter(content, (fm) => {
+        var _a;
+        return {
+          ...fm,
+          sessions: addSessionBacklink((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.sessions, sessionFilePath)
+        };
+      });
+      await this.app.vault.modify(sceneFile, content);
+    } catch (error2) {
+      console.error("Could not add session backlink to scene:", error2);
+      throw error2;
+    }
+  }
+  async removeSessionBacklinkFromScene(scenePath, sessionFilePath) {
+    var _a, _b;
+    const sceneFile = this.resolveSceneFile(scenePath, sessionFilePath);
+    if (!(sceneFile instanceof import_obsidian49.TFile)) return;
+    const content = await this.app.vault.read(sceneFile);
+    const raw = (_b = (_a = this.app.metadataCache.getFileCache(sceneFile)) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.sessions;
+    const updated = updateYamlFrontmatter(content, (fm) => ({
+      ...fm,
+      sessions: removeSessionBacklink(raw, sessionFilePath)
+    }));
+    await this.app.vault.modify(sceneFile, updated);
+  }
+  resolveSceneFile(scenePath, sourcePath) {
+    const direct = this.app.vault.getAbstractFileByPath(scenePath);
+    if (direct instanceof import_obsidian49.TFile) return direct;
+    const withExtension = this.app.vault.getAbstractFileByPath(`${scenePath}.md`);
+    if (withExtension instanceof import_obsidian49.TFile) return withExtension;
+    return this.app.metadataCache.getFirstLinkpathDest(scenePath.replace(/\.md$/i, ""), sourcePath);
+  }
+  async reconcileStartingSceneBacklink(sessionFilePath) {
+    if (this.startingScenePath) {
+      await this.addSessionBacklinkToScene(this.startingScenePath, sessionFilePath);
+    }
+    if (this.originalStartingScenePath && this.originalStartingScenePath !== this.startingScenePath) {
+      await this.removeSessionBacklinkFromScene(this.originalStartingScenePath, sessionFilePath);
+    }
+    this.originalStartingScenePath = this.startingScenePath;
+  }
+  /** Set scenes before startIdx to 'completed', scene at startIdx to 'in-progress'. */
+  async updateSceneStatusesFromStartingScene(scenes, startIdx) {
+    for (let i = 0; i < startIdx; i++) {
+      const scene = scenes[i];
+      if (!scene || scene.status === "completed") continue;
+      const file = this.app.vault.getAbstractFileByPath(scene.path);
+      if (!(file instanceof import_obsidian49.TFile)) continue;
+      try {
+        const c = await this.app.vault.read(file);
+        const updated = updateYamlFrontmatter(c, (fm) => ({
+          ...fm,
+          status: "completed"
+        }));
+        await this.app.vault.modify(file, updated);
+      } catch (_e) {
+      }
+    }
+    const startScene = scenes[startIdx];
+    if (startScene && startScene.status !== "in-progress") {
+      const file = this.app.vault.getAbstractFileByPath(startScene.path);
+      if (file instanceof import_obsidian49.TFile) {
+        try {
+          const c = await this.app.vault.read(file);
+          const updated = updateYamlFrontmatter(c, (fm) => ({
+            ...fm,
+            status: "in-progress"
+          }));
+          await this.app.vault.modify(file, updated);
+        } catch (_e) {
+        }
+      }
+    }
+  }
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+};
+
+// src/utils/ActionableEmptyState.ts
+function renderActionableEmptyState(container, title, description, actions = []) {
+  const empty = container.createEl("div", { cls: "actionable-empty-state dashboard-empty-state" });
+  empty.createEl("strong", { text: title });
+  empty.createEl("p", { text: description });
+  if (actions.length > 0) {
+    const actionRow = empty.createEl("div", { cls: "dashboard-empty-actions" });
+    for (const action of actions) {
+      const button = actionRow.createEl("button", {
+        text: action.label,
+        cls: action.cta ? "mod-cta" : ""
+      });
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void action.onClick();
+      });
+    }
+  }
+  return empty;
+}
+
+// src/session/SessionPrepDashboardView.ts
+var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_obsidian50.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.refreshInterval = null;
@@ -52807,6 +53872,7 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
     this.lastRenderedAt = 0;
     this.lastRefreshReason = "initial";
     this.sceneFilter = "session";
+    this.targetSessionPath = "";
     this.plugin = plugin;
     this.campaignPath = plugin.getActiveCampaignPath();
   }
@@ -52821,8 +53887,13 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
   }
   setCampaign(campaignPath) {
     this.campaignPath = campaignPath;
+    this.targetSessionPath = "";
     void this.plugin.setActiveCampaignPath(campaignPath);
     this.requestRefresh("campaign changed", 0);
+  }
+  setSession(sessionPath) {
+    this.targetSessionPath = sessionPath != null ? sessionPath : "";
+    this.requestRefresh("session changed", 0);
   }
   isPathInCampaign(path) {
     if (!path || !this.campaignPath) return false;
@@ -52903,7 +53974,7 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
     wrapper.createEl("p", { text: "Select a campaign to start preparing your session." });
     const campaigns = this.plugin.getAllCampaigns();
     if (campaigns.length === 0) {
-      this.renderEmptyState(
+      renderActionableEmptyState(
         wrapper,
         "No campaigns found",
         "Create a campaign to unlock prep, sessions, scenes, party tools, maps, and audio.",
@@ -52995,6 +54066,7 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
           cls: "dashboard-campaign-name"
         });
       }
+      await this.renderSessionPicker(headerTitle);
       const mainAction = container.createEl("button", {
         text: "\u{1F4DD} New Session",
         cls: "dashboard-main-action mod-cta"
@@ -53013,68 +54085,154 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
     }
   }
   getSessionFiles() {
-    var _a;
-    const sessionsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Sessions`);
+    var _a, _b;
     const sessionFiles = [];
-    if (sessionsFolder instanceof import_obsidian47.TFolder) {
-      for (const item of sessionsFolder.children) {
-        if (item instanceof import_obsidian47.TFile && item.extension === "md") {
-          sessionFiles.push(item);
-        }
-      }
-      return sessionFiles;
-    }
-    const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
-    if (!(campaignFolder instanceof import_obsidian47.TFolder)) return sessionFiles;
-    for (const item of campaignFolder.children) {
-      if (!(item instanceof import_obsidian47.TFile) || item.extension !== "md") continue;
-      const cache = this.app.metadataCache.getFileCache(item);
-      if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) === "session") {
-        sessionFiles.push(item);
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (!this.isPathInCampaign(file.path)) continue;
+      if (((_b = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.type) === "session") {
+        sessionFiles.push(file);
       }
     }
     return sessionFiles;
   }
+  getSessionStatus(file) {
+    var _a, _b;
+    return String(((_b = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.status) || "").toLowerCase();
+  }
+  getSessionNumber(file) {
+    var _a, _b, _c, _d, _e;
+    const fm = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter;
+    return Number((_e = (_d = (_b = fm == null ? void 0 : fm.sessionNum) != null ? _b : fm == null ? void 0 : fm.session_number) != null ? _d : (_c = file.basename.match(/^(\d+)/)) == null ? void 0 : _c[1]) != null ? _e : 0);
+  }
+  getOrderedSessions() {
+    return this.getSessionFiles().sort((a, b) => {
+      const archived = (file) => this.getSessionStatus(file) === "archived";
+      if (archived(a) !== archived(b)) return archived(a) ? 1 : -1;
+      const preferred = (file) => ["in-progress", "active", "planned", "planning"].indexOf(this.getSessionStatus(file));
+      const aRank = preferred(a);
+      const bRank = preferred(b);
+      if (aRank >= 0 || bRank >= 0) {
+        if (aRank < 0) return 1;
+        if (bRank < 0) return -1;
+        if (aRank !== bRank) return aRank - bRank;
+      }
+      return this.getSessionNumber(b) - this.getSessionNumber(a) || b.stat.mtime - a.stat.mtime;
+    });
+  }
+  getTargetSession() {
+    const sessions = this.getOrderedSessions();
+    const selected = sessions.find((file) => file.path === this.targetSessionPath);
+    const target = selected || sessions.find((file) => this.getSessionStatus(file) !== "archived") || null;
+    this.targetSessionPath = (target == null ? void 0 : target.path) || "";
+    return target;
+  }
+  async renderSessionPicker(container) {
+    const sessions = this.getOrderedSessions();
+    if (sessions.length === 0) {
+      container.createEl("span", { cls: "dashboard-session-name", text: "No session selected" });
+      return;
+    }
+    const target = this.getTargetSession();
+    const select = container.createEl("select", { cls: "dashboard-session-select" });
+    select.setAttribute("aria-label", "Session to prepare");
+    for (const session of sessions) {
+      const status = this.getSessionStatus(session);
+      const option = select.createEl("option", {
+        value: session.path,
+        text: `Prepare: ${session.basename}${status ? ` (${status})` : ""}`
+      });
+      option.selected = session.path === (target == null ? void 0 : target.path);
+    }
+    select.addEventListener("change", () => {
+      this.targetSessionPath = select.value;
+      this.requestRefresh("target session changed", 0);
+    });
+  }
+  extractLinkPath(raw) {
+    const match = String(raw || "").match(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/);
+    return ((match == null ? void 0 : match[1]) || String(raw || "")).replace(/\.md$/i, "").trim();
+  }
+  getTargetSessionAdventures() {
+    var _a, _b;
+    const session = this.getTargetSession();
+    if (!session) return [];
+    const fm = (_a = this.app.metadataCache.getFileCache(session)) == null ? void 0 : _a.frontmatter;
+    const rawValues = Array.isArray(fm == null ? void 0 : fm.adventures) && fm.adventures.length > 0 ? fm.adventures : (fm == null ? void 0 : fm.adventure) ? [fm.adventure] : [];
+    const seen = /* @__PURE__ */ new Set();
+    const adventures = [];
+    for (const raw of rawValues) {
+      const linkpath = this.extractLinkPath(raw);
+      const file = this.app.metadataCache.getFirstLinkpathDest(linkpath, session.path);
+      if (!(file instanceof import_obsidian50.TFile) || seen.has(file.path)) continue;
+      seen.add(file.path);
+      const adventureFm = (_b = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _b.frontmatter;
+      adventures.push({ path: file.path, name: file.basename, status: (adventureFm == null ? void 0 : adventureFm.status) || "planning" });
+    }
+    return adventures;
+  }
+  getTargetPlannedScenePaths() {
+    var _a, _b, _c;
+    const session = this.getTargetSession();
+    if (!session) return [];
+    const fm = (_a = this.app.metadataCache.getFileCache(session)) == null ? void 0 : _a.frontmatter;
+    if (!Array.isArray(fm == null ? void 0 : fm.planned_scenes)) return [];
+    const seen = /* @__PURE__ */ new Set();
+    const paths = [];
+    for (const raw of fm.planned_scenes) {
+      const ref = this.extractLinkPath(raw);
+      const file = this.app.metadataCache.getFirstLinkpathDest(ref, session.path);
+      if (!(file instanceof import_obsidian50.TFile) || seen.has(file.path)) continue;
+      if (((_c = (_b = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _b.frontmatter) == null ? void 0 : _c.type) !== "scene") continue;
+      seen.add(file.path);
+      paths.push(file.path);
+    }
+    return paths;
+  }
   getNpcCount() {
     const npcsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/NPCs`);
-    if (!(npcsFolder instanceof import_obsidian47.TFolder)) return 0;
-    return npcsFolder.children.filter((item) => item instanceof import_obsidian47.TFile && item.extension === "md").length;
+    if (!(npcsFolder instanceof import_obsidian50.TFolder)) return 0;
+    return npcsFolder.children.filter((item) => item instanceof import_obsidian50.TFile && item.extension === "md").length;
   }
   async getReadinessData() {
-    var _a, _b;
-    const adventures = await this.getActiveAdventures();
+    var _a, _b, _c, _d;
+    const targetSession = this.getTargetSession();
+    const adventures = this.getTargetSessionAdventures();
     const hasAdventure = adventures.length > 0;
     let nextSceneHasGoal = false;
+    let hasScenes = false;
     let nextScenePath = "";
-    const firstAdventure = adventures[0];
-    if (firstAdventure) {
-      const scenes = await this.getScenesForAdventure(firstAdventure.path);
-      const nextScene = scenes.find((s) => s.status !== "completed") || scenes[0];
-      nextScenePath = (nextScene == null ? void 0 : nextScene.path) || "";
-      nextSceneHasGoal = !!((_a = nextScene == null ? void 0 : nextScene.goal) == null ? void 0 : _a.trim());
+    let sessionScenes = (await Promise.all(adventures.map((adventure) => this.getScenesForAdventure(adventure.path)))).flat();
+    const plannedPaths = this.getTargetPlannedScenePaths();
+    if (plannedPaths.length > 0) {
+      const byPath = new Map(sessionScenes.map((scene) => [scene.path, scene]));
+      sessionScenes = plannedPaths.map((path) => byPath.get(path)).filter((scene) => Boolean(scene));
     }
+    hasScenes = sessionScenes.length > 0;
+    const nextScene = sessionScenes.find((s) => s.status !== "completed") || sessionScenes[0];
+    nextScenePath = (nextScene == null ? void 0 : nextScene.path) || "";
+    nextSceneHasGoal = !!((_a = nextScene == null ? void 0 : nextScene.goal) == null ? void 0 : _a.trim());
     const campaignName = ((_b = this.campaignPath) == null ? void 0 : _b.split("/").pop()) || "";
-    const party = this.plugin.partyManager.resolveParty(void 0, campaignName);
+    const sessionPartyId = targetSession ? String(((_d = (_c = this.app.metadataCache.getFileCache(targetSession)) == null ? void 0 : _c.frontmatter) == null ? void 0 : _d.party_id) || "") : "";
+    const party = this.plugin.partyManager.resolveParty(sessionPartyId || void 0, campaignName);
     let hasParty = false;
     if (party == null ? void 0 : party.id) {
       const members = await this.plugin.partyManager.resolveMembers(party.id);
       hasParty = members.some((m) => m.enabled && !m.absent);
     }
-    const hasSessions = this.getSessionFiles().length > 0;
-    const hasNpcs = this.getNpcCount() > 0;
+    const hasSession = !!targetSession;
     let score = 0;
-    if (hasAdventure) score += 30;
-    if (hasParty) score += 25;
-    if (hasSessions) score += 20;
-    if (hasNpcs) score += 10;
-    if (nextSceneHasGoal) score += 15;
-    const details = hasAdventure ? nextSceneHasGoal ? "Your next scene has a clear goal." : "Add a goal to your next scene for a smoother run." : "Create or activate an adventure to prepare your next session.";
+    if (hasSession) score += 15;
+    if (hasAdventure) score += 25;
+    if (hasScenes) score += 25;
+    if (hasParty) score += 15;
+    if (nextSceneHasGoal) score += 20;
+    const details = hasAdventure ? nextSceneHasGoal ? "The selected session has a clear next scene goal." : "Add a goal to the selected session's next scene for a smoother run." : hasSession ? "Link an adventure to this session to begin focused prep." : "Create a session to begin focused prep.";
     return {
       score,
       hasAdventure,
       hasParty,
-      hasSessions,
-      hasNpcs,
+      hasSession,
+      hasScenes,
       nextSceneHasGoal,
       nextScenePath,
       details
@@ -53083,26 +54241,6 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
   runCommand(commandId) {
     const commands = this.app.commands;
     commands == null ? void 0 : commands.executeCommandById(`dnd-campaign-hub:${commandId}`);
-  }
-  renderEmptyState(container, title, description, actions = []) {
-    const empty = container.createEl("div", { cls: "dashboard-empty-state" });
-    empty.createEl("strong", { text: title });
-    empty.createEl("p", { text: description });
-    if (actions.length > 0) {
-      const actionRow = empty.createEl("div", { cls: "dashboard-empty-actions" });
-      for (const action of actions) {
-        const button = actionRow.createEl("button", {
-          text: action.label,
-          cls: action.cta ? "mod-cta" : ""
-        });
-        button.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          void action.onClick();
-        });
-      }
-    }
-    return empty;
   }
   async renderReadinessCard(container) {
     const readiness = await this.getReadinessData();
@@ -53124,28 +54262,35 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
     const checklist = card.createEl("div", { cls: "dashboard-readiness-checklist" });
     const items = [
       {
-        ok: readiness.hasAdventure,
-        label: "Active adventure selected",
-        actionLabel: "Create",
-        runAction: () => this.runCommand("create-adventure")
-      },
-      {
-        ok: readiness.hasParty,
-        label: "Party members available",
-        actionLabel: "Manage",
-        runAction: () => this.runCommand("manage-parties")
-      },
-      {
-        ok: readiness.hasSessions,
-        label: "Previous session notes exist",
+        ok: readiness.hasSession,
+        label: "Session selected for prep",
         actionLabel: "Create",
         runAction: () => this.runCommand("create-session")
       },
       {
-        ok: readiness.hasNpcs,
-        label: "NPC roster available",
+        ok: readiness.hasAdventure,
+        label: "Adventure linked to this session",
+        actionLabel: readiness.hasSession ? "Edit Session" : "Create",
+        runAction: () => {
+          const session = this.getTargetSession();
+          if (session) {
+            new SessionCreationModal(this.app, this.plugin, void 0, this.campaignPath, session.path).open();
+            return;
+          }
+          this.runCommand("create-session");
+        }
+      },
+      {
+        ok: readiness.hasScenes,
+        label: "Linked adventure has scenes",
         actionLabel: "Create",
-        runAction: () => this.runCommand("create-npc")
+        runAction: () => this.runCommand("create-scene")
+      },
+      {
+        ok: readiness.hasParty,
+        label: "Session party members available",
+        actionLabel: "Manage",
+        runAction: () => this.runCommand("manage-parties")
       },
       {
         ok: readiness.nextSceneHasGoal,
@@ -53235,8 +54380,8 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
     content.style.display = isExpanded ? "block" : "none";
     toggle.textContent = isExpanded ? "\u25BC" : "\u25B6";
     const npcsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/NPCs`);
-    if (!(npcsFolder instanceof import_obsidian47.TFolder)) {
-      this.renderEmptyState(
+    if (!(npcsFolder instanceof import_obsidian50.TFolder)) {
+      renderActionableEmptyState(
         content,
         "No NPCs found",
         "NPCs give the prep dashboard quick access to recurring characters.",
@@ -53245,14 +54390,14 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
     } else {
       const npcFiles = [];
       for (const item of npcsFolder.children) {
-        if (item instanceof import_obsidian47.TFile && item.extension === "md") {
+        if (item instanceof import_obsidian50.TFile && item.extension === "md") {
           npcFiles.push(item);
         }
       }
       npcFiles.sort((a, b) => b.stat.mtime - a.stat.mtime);
       const recentNPCs = npcFiles.slice(0, 8);
       if (recentNPCs.length === 0) {
-        this.renderEmptyState(
+        renderActionableEmptyState(
           content,
           "No NPCs yet",
           "Create important NPCs here so they are easy to pull up while preparing.",
@@ -53306,15 +54451,15 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
       this.sceneFilter = "all";
       this.requestRefresh("scene filter changed", 0);
     });
-    const adventures = await this.getActiveAdventures();
+    const adventures = this.getTargetSessionAdventures();
     if (adventures.length === 0) {
-      this.renderEmptyState(
-        container,
-        "No active adventures found",
-        "Adventures organize scenes into a runnable sequence for session prep.",
+      renderActionableEmptyState(
+        section,
+        this.getTargetSession() ? "No adventures linked to this session" : "No session selected",
+        this.getTargetSession() ? "Edit the selected session and link the adventures you intend to run." : "Create a session note to focus readiness, adventures, and scenes on the game you are preparing.",
         [
-          { label: "Create Adventure", onClick: () => this.plugin.createAdventure(this.campaignPath), cta: true },
-          { label: "Create Content", onClick: () => this.plugin.openCreateContent(this.campaignPath) }
+          ...this.getTargetSession() ? [{ label: "Edit Session", onClick: () => new SessionCreationModal(this.app, this.plugin, void 0, this.campaignPath, this.getTargetSession().path).open(), cta: true }] : [{ label: "New Session", onClick: () => this.plugin.createSession(this.campaignPath), cta: true }],
+          { label: "Create Adventure", onClick: () => this.plugin.createAdventure(this.campaignPath) }
         ]
       );
       return;
@@ -53335,9 +54480,14 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
         cls: `status-badge status-${adventure.status}`,
         text: adventure.status
       });
-      const scenes = await this.getScenesForAdventure(adventure.path);
+      let scenes = await this.getScenesForAdventure(adventure.path);
+      const plannedPaths = this.getTargetPlannedScenePaths();
+      if (plannedPaths.length > 0) {
+        const order = new Map(plannedPaths.map((path, index) => [path, index]));
+        scenes = scenes.filter((scene) => order.has(scene.path)).sort((a, b) => order.get(a.path) - order.get(b.path));
+      }
       if (scenes.length === 0) {
-        this.renderEmptyState(
+        renderActionableEmptyState(
           adventureCard,
           "No scenes yet",
           "Scenes are the moments you can prepare, run, and connect to maps, music, and encounters.",
@@ -53463,13 +54613,13 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
   }
   async renderRecentNPCs(container) {
     const npcsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/NPCs`);
-    if (!(npcsFolder instanceof import_obsidian47.TFolder)) {
+    if (!(npcsFolder instanceof import_obsidian50.TFolder)) {
       container.createEl("p", { text: "No NPCs found" });
       return;
     }
     const npcFiles = [];
     for (const item of npcsFolder.children) {
-      if (item instanceof import_obsidian47.TFile && item.extension === "md") {
+      if (item instanceof import_obsidian50.TFile && item.extension === "md") {
         npcFiles.push(item);
       }
     }
@@ -53504,7 +54654,7 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
     const campaignName = ((_a = this.campaignPath) == null ? void 0 : _a.split("/").pop()) || "";
     const party = this.plugin.partyManager.resolveParty(void 0, campaignName);
     if (!party || party.members.length === 0) {
-      this.renderEmptyState(
+      renderActionableEmptyState(
         content,
         "No party members found",
         "Link a party to this campaign so encounters and session prep use the right characters.",
@@ -53514,7 +54664,7 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
       const resolved = await this.plugin.partyManager.resolveMembers(party.id);
       const presentMembers = resolved.filter((m) => m.enabled && !m.absent);
       if (presentMembers.length === 0) {
-        this.renderEmptyState(
+        renderActionableEmptyState(
           content,
           resolved.length === 0 ? "No PCs yet" : "No present PCs",
           resolved.length === 0 ? "Add PCs to the party before building encounters around them." : "Mark at least one party member present before using party readiness.",
@@ -53563,17 +54713,17 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
     container.createEl("h3", { text: "\u{1F4D3} Session Notes" });
     const sessionsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Sessions`);
     const sessionFiles = [];
-    if (sessionsFolder instanceof import_obsidian47.TFolder) {
+    if (sessionsFolder instanceof import_obsidian50.TFolder) {
       for (const item of sessionsFolder.children) {
-        if (item instanceof import_obsidian47.TFile && item.extension === "md") {
+        if (item instanceof import_obsidian50.TFile && item.extension === "md") {
           sessionFiles.push(item);
         }
       }
     } else {
       const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
-      if (campaignFolder instanceof import_obsidian47.TFolder) {
+      if (campaignFolder instanceof import_obsidian50.TFolder) {
         for (const item of campaignFolder.children) {
-          if (item instanceof import_obsidian47.TFile && item.extension === "md") {
+          if (item instanceof import_obsidian50.TFile && item.extension === "md") {
             const cache = this.app.metadataCache.getFileCache(item);
             if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) === "session") {
               sessionFiles.push(item);
@@ -53582,7 +54732,10 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
         }
       }
     }
-    sessionFiles.sort((a, b) => {
+    const visibleSessionFiles = sessionFiles.filter(
+      (file) => this.getSessionStatus(file) !== "archived" || file.path === this.targetSessionPath
+    );
+    visibleSessionFiles.sort((a, b) => {
       var _a2, _b;
       const cacheA = this.app.metadataCache.getFileCache(a);
       const cacheB = this.app.metadataCache.getFileCache(b);
@@ -53590,9 +54743,10 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
       const bNum = ((_b = cacheB == null ? void 0 : cacheB.frontmatter) == null ? void 0 : _b.sessionNum) || this.extractSessionNumber(b.basename);
       return bNum - aNum;
     });
-    const lastSession = sessionFiles[0];
+    const targeted = this.targetSessionPath ? this.app.vault.getAbstractFileByPath(this.targetSessionPath) : null;
+    const lastSession = targeted instanceof import_obsidian50.TFile ? targeted : visibleSessionFiles[0];
     if (!lastSession) {
-      this.renderEmptyState(
+      renderActionableEmptyState(
         container,
         "No sessions yet",
         "Create your first session note to track prep, recap, scenes, and follow-up.",
@@ -53602,7 +54756,7 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
     }
     const sessionCard = container.createEl("div", { cls: "session-card" });
     const sessionLink = sessionCard.createEl("a", { href: lastSession.path });
-    sessionLink.textContent = `Last Session: ${lastSession.basename}`;
+    sessionLink.textContent = this.targetSessionPath ? `Preparing: ${lastSession.basename}` : `Last Session: ${lastSession.basename}`;
     sessionLink.addEventListener("click", async (e) => {
       e.preventDefault();
       await this.app.workspace.openLinkText(lastSession.path, "", false);
@@ -53625,11 +54779,11 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
     var _a, _b;
     const adventures = [];
     const adventuresFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Adventures`);
-    if (!(adventuresFolder instanceof import_obsidian47.TFolder)) {
+    if (!(adventuresFolder instanceof import_obsidian50.TFolder)) {
       return adventures;
     }
     for (const item of adventuresFolder.children) {
-      if (item instanceof import_obsidian47.TFile && item.extension === "md") {
+      if (item instanceof import_obsidian50.TFile && item.extension === "md") {
         const cache = this.app.metadataCache.getFileCache(item);
         const status = ((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.status) || "planning";
         if (status === "active" || status === "in-progress" || status === "planning") {
@@ -53639,9 +54793,9 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
             status
           });
         }
-      } else if (item instanceof import_obsidian47.TFolder) {
+      } else if (item instanceof import_obsidian50.TFolder) {
         const adventureFile = this.app.vault.getAbstractFileByPath(`${item.path}/${item.name}.md`);
-        if (adventureFile instanceof import_obsidian47.TFile) {
+        if (adventureFile instanceof import_obsidian50.TFile) {
           const cache = this.app.metadataCache.getFileCache(adventureFile);
           const status = ((_b = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b.status) || "planning";
           if (status === "active" || status === "in-progress" || status === "planning") {
@@ -53660,7 +54814,7 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
     var _a, _b, _c;
     const scenes = [];
     const adventureFile = this.app.vault.getAbstractFileByPath(adventurePath);
-    if (!(adventureFile instanceof import_obsidian47.TFile)) return scenes;
+    if (!(adventureFile instanceof import_obsidian50.TFile)) return scenes;
     const adventureName = adventureFile.basename;
     for (const file of this.app.vault.getMarkdownFiles()) {
       const cache = this.app.metadataCache.getFileCache(file);
@@ -53709,9 +54863,9 @@ var _SessionPrepDashboardView = class _SessionPrepDashboardView extends import_o
     const content = section.createEl("div", { cls: "section-content" });
     content.style.display = isExpanded ? "block" : "none";
     toggle.textContent = isExpanded ? "\u25BC" : "\u25B6";
-    const sessionFiles = this.getSessionFiles();
+    const sessionFiles = this.getSessionFiles().filter((file) => this.getSessionStatus(file) !== "archived");
     if (sessionFiles.length === 0) {
-      this.renderEmptyState(
+      renderActionableEmptyState(
         content,
         "No previous sessions yet",
         "Create a session note now; future prep will show the latest recap here.",
@@ -53788,12 +54942,12 @@ _SessionPrepDashboardView.AUTO_REFRESH_MS = 3e4;
 var SessionPrepDashboardView = _SessionPrepDashboardView;
 
 // src/session/SessionRunDashboardView.ts
-var import_obsidian49 = require("obsidian");
+var import_obsidian52 = require("obsidian");
 init_constants();
 
 // src/session/TimerNameModal.ts
-var import_obsidian48 = require("obsidian");
-var TimerNameModal = class extends import_obsidian48.Modal {
+var import_obsidian51 = require("obsidian");
+var TimerNameModal = class extends import_obsidian51.Modal {
   constructor(app, defaultName, resolve) {
     super(app);
     this.defaultName = defaultName;
@@ -53841,7 +54995,65 @@ var TimerNameModal = class extends import_obsidian48.Modal {
 
 // src/session/SessionRunDashboardView.ts
 init_YamlFrontmatter();
-var SessionRunDashboardView = class extends import_obsidian49.ItemView {
+
+// src/session/sessionLifecycle.ts
+function normalizeSessionStatus(status) {
+  const normalized = String(status != null ? status : "").trim().toLowerCase();
+  return normalized === "planned" || normalized === "in-progress" || normalized === "completed" || normalized === "archived" ? normalized : null;
+}
+function selectCurrentSession(candidates) {
+  var _a, _b;
+  const rank = (status) => {
+    switch (normalizeSessionStatus(status)) {
+      case "in-progress":
+        return 0;
+      case "planned":
+        return 1;
+      case null:
+        return 2;
+      case "completed":
+        return 3;
+      case "archived":
+        return 4;
+    }
+  };
+  return (_b = (_a = [...candidates].filter((candidate) => normalizeSessionStatus(candidate.status) !== "archived").sort((a, b) => rank(a.status) - rank(b.status) || b.sessionNumber - a.sessionNumber)[0]) == null ? void 0 : _a.value) != null ? _b : null;
+}
+
+// src/session/quickNotes.ts
+var QUICK_NOTES_HEADING = "## Quick Notes (During Session)";
+function extractQuickNotes(content) {
+  const start = content.indexOf(QUICK_NOTES_HEADING);
+  if (start < 0) return "";
+  const bodyStart = start + QUICK_NOTES_HEADING.length;
+  const remainder = content.slice(bodyStart);
+  const nextHeading = remainder.search(/\r?\n##\s/);
+  return (nextHeading < 0 ? remainder : remainder.slice(0, nextHeading)).trim();
+}
+function updateQuickNotesSection(content, notes) {
+  const start = content.indexOf(QUICK_NOTES_HEADING);
+  const normalizedNotes = notes.trim();
+  if (start < 0) {
+    if (!normalizedNotes) return content;
+    return `${content.trimEnd()}
+
+${QUICK_NOTES_HEADING}
+
+${normalizedNotes}
+`;
+  }
+  const bodyStart = start + QUICK_NOTES_HEADING.length;
+  const remainder = content.slice(bodyStart);
+  const nextHeadingOffset = remainder.search(/\r?\n##\s/);
+  const sectionEnd = nextHeadingOffset < 0 ? content.length : bodyStart + nextHeadingOffset;
+  const suffix = content.slice(sectionEnd);
+  return `${content.slice(0, bodyStart)}
+
+${normalizedNotes}${normalizedNotes ? "\n" : ""}${suffix}`;
+}
+
+// src/session/SessionRunDashboardView.ts
+var SessionRunDashboardView = class extends import_obsidian52.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.currentSessionFile = null;
@@ -53851,6 +55063,8 @@ var SessionRunDashboardView = class extends import_obsidian49.ItemView {
     this.quickNotesContent = "";
     this.autoSaveInterval = null;
     this.timerUpdateInterval = null;
+    this.managedLeaves = /* @__PURE__ */ new Set();
+    this.priorLeafModes = /* @__PURE__ */ new Map();
     this.plugin = plugin;
     this.campaignPath = plugin.getActiveCampaignPath();
   }
@@ -53868,13 +55082,23 @@ var SessionRunDashboardView = class extends import_obsidian49.ItemView {
     this.campaignPath = campaignPath;
     void this.detectCurrentSession().then(() => this.loadQuickNotes()).then(() => this.render());
   }
+  async setSession(sessionPath) {
+    if (!sessionPath) {
+      await this.detectCurrentSession();
+    } else {
+      const file = this.app.vault.getAbstractFileByPath(sessionPath);
+      this.currentSessionFile = file instanceof import_obsidian52.TFile ? file : null;
+    }
+    await this.loadQuickNotes();
+    await this.render();
+  }
   renderCampaignPicker(container) {
     const wrapper = container.createEl("div", { cls: "dashboard-campaign-picker" });
     wrapper.createEl("h2", { text: "\u{1F3AE} Session Control" });
     wrapper.createEl("p", { text: "Select a campaign to run your session." });
     const campaigns = this.plugin.getAllCampaigns();
     if (campaigns.length === 0) {
-      this.renderEmptyState(
+      renderActionableEmptyState(
         wrapper,
         "No campaigns found",
         "Create a campaign before using the live session controls.",
@@ -53896,26 +55120,6 @@ var SessionRunDashboardView = class extends import_obsidian49.ItemView {
       this.render();
     });
   }
-  renderEmptyState(container, title, description, actions = []) {
-    const empty = container.createEl("div", { cls: "dashboard-empty-state" });
-    empty.createEl("strong", { text: title });
-    empty.createEl("p", { text: description });
-    if (actions.length > 0) {
-      const actionRow = empty.createEl("div", { cls: "dashboard-empty-actions" });
-      for (const action of actions) {
-        const button = actionRow.createEl("button", {
-          text: action.label,
-          cls: action.cta ? "mod-cta" : ""
-        });
-        button.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          void action.onClick();
-        });
-      }
-    }
-    return empty;
-  }
   async onOpen() {
     this.campaignPath = this.plugin.getActiveCampaignPath();
     await this.detectCurrentSession();
@@ -53932,17 +55136,17 @@ var SessionRunDashboardView = class extends import_obsidian49.ItemView {
     var _a;
     const sessionsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Sessions`);
     const sessionFiles = [];
-    if (sessionsFolder instanceof import_obsidian49.TFolder) {
+    if (sessionsFolder instanceof import_obsidian52.TFolder) {
       for (const item of sessionsFolder.children) {
-        if (item instanceof import_obsidian49.TFile && item.extension === "md") {
+        if (item instanceof import_obsidian52.TFile && item.extension === "md") {
           sessionFiles.push(item);
         }
       }
     } else {
       const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
-      if (campaignFolder instanceof import_obsidian49.TFolder) {
+      if (campaignFolder instanceof import_obsidian52.TFolder) {
         for (const item of campaignFolder.children) {
-          if (item instanceof import_obsidian49.TFile && item.extension === "md") {
+          if (item instanceof import_obsidian52.TFile && item.extension === "md") {
             const cache = this.app.metadataCache.getFileCache(item);
             if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) === "session") {
               sessionFiles.push(item);
@@ -53953,15 +55157,15 @@ var SessionRunDashboardView = class extends import_obsidian49.ItemView {
         }
       }
     }
-    sessionFiles.sort((a, b) => {
-      var _a2, _b;
-      const cacheA = this.app.metadataCache.getFileCache(a);
-      const cacheB = this.app.metadataCache.getFileCache(b);
-      const aNum = ((_a2 = cacheA == null ? void 0 : cacheA.frontmatter) == null ? void 0 : _a2.sessionNum) || this.extractSessionNumber(a.basename);
-      const bNum = ((_b = cacheB == null ? void 0 : cacheB.frontmatter) == null ? void 0 : _b.sessionNum) || this.extractSessionNumber(b.basename);
-      return bNum - aNum;
-    });
-    this.currentSessionFile = sessionFiles[0] || null;
+    this.currentSessionFile = selectCurrentSession(sessionFiles.map((file) => {
+      var _a2;
+      const fm = (_a2 = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a2.frontmatter;
+      return {
+        value: file,
+        status: fm == null ? void 0 : fm.status,
+        sessionNumber: Number(fm == null ? void 0 : fm.sessionNum) || this.extractSessionNumber(file.basename)
+      };
+    }));
   }
   extractSessionNumber(filename) {
     let match = filename.match(/Session\s+(\d+)/i);
@@ -53970,42 +55174,48 @@ var SessionRunDashboardView = class extends import_obsidian49.ItemView {
     if (match && match[1]) return parseInt(match[1]);
     return 0;
   }
-  /** Detect whether any open markdown leaves are currently in source/edit mode. */
+  /** Detect whether a dashboard-managed markdown leaf is currently editable. */
   detectActualEditMode() {
-    let anyEditable = false;
-    this.app.workspace.iterateAllLeaves((leaf) => {
+    for (const leaf of this.managedLeaves) {
       if (leaf.view.getViewType() === "markdown") {
         const view = leaf.view;
         if (typeof view.getMode === "function" && view.getMode() === "source") {
-          anyEditable = true;
+          return true;
         }
       }
-    });
-    return anyEditable;
+    }
+    return false;
+  }
+  manageLeaf(leaf) {
+    this.managedLeaves.add(leaf);
   }
   enableReadOnlyMode() {
     this.readOnlyMode = true;
-    this.app.workspace.iterateAllLeaves((leaf) => {
+    for (const leaf of this.managedLeaves) {
       if (leaf.view.getViewType() === "markdown") {
         const view = leaf.view;
-        if (typeof view.getMode === "function" && view.getMode() === "source") {
+        if (typeof view.getMode === "function") {
+          if (!this.priorLeafModes.has(leaf)) this.priorLeafModes.set(leaf, view.getMode());
+        }
+        if (typeof view.getMode === "function" && view.getMode() !== "preview") {
           const state = view.getState();
           view.setState({ ...state, mode: "preview" }, {});
         }
       }
-    });
+    }
   }
   disableReadOnlyMode() {
     this.readOnlyMode = false;
-    this.app.workspace.iterateAllLeaves((leaf) => {
+    for (const [leaf, priorMode] of this.priorLeafModes) {
       if (leaf.view.getViewType() === "markdown") {
         const view = leaf.view;
-        if (typeof view.getMode === "function" && view.getMode() === "preview") {
+        if (typeof view.getMode === "function" && view.getMode() !== priorMode) {
           const state = view.getState();
-          view.setState({ ...state, mode: "source" }, {});
+          view.setState({ ...state, mode: priorMode }, {});
         }
       }
-    });
+    }
+    this.priorLeafModes.clear();
   }
   startAutoSave() {
     if (this.autoSaveInterval) return;
@@ -54014,27 +55224,11 @@ var SessionRunDashboardView = class extends import_obsidian49.ItemView {
     }, 3e4);
   }
   async saveQuickNotes() {
-    if (!this.currentSessionFile || !this.quickNotesContent.trim()) return;
+    if (!this.currentSessionFile) return;
     try {
       const content = await this.app.vault.read(this.currentSessionFile);
-      const quickNotesMarker = "## Quick Notes (During Session)";
-      if (content.includes(quickNotesMarker)) {
-        const regex = /(## Quick Notes \(During Session\)\s*\n)[\s\S]*?(?=\n## |$)/;
-        const newContent = content.replace(
-          regex,
-          `## Quick Notes (During Session)
-
-${this.quickNotesContent}
-`
-        );
-        await this.app.vault.modify(this.currentSessionFile, newContent);
-      } else {
-        const newContent = content.trimEnd() + `
-
-${quickNotesMarker}
-
-${this.quickNotesContent}
-`;
+      const newContent = updateQuickNotesSection(content, this.quickNotesContent);
+      if (newContent !== content) {
         await this.app.vault.modify(this.currentSessionFile, newContent);
       }
     } catch (error2) {
@@ -54046,13 +55240,7 @@ ${this.quickNotesContent}
     if (!this.currentSessionFile) return;
     try {
       const content = await this.app.vault.read(this.currentSessionFile);
-      const marker = "## Quick Notes (During Session)";
-      const idx = content.indexOf(marker);
-      if (idx === -1) return;
-      const afterMarker = content.slice(idx + marker.length);
-      const nextHeading = afterMarker.search(/\n## /);
-      const section = nextHeading === -1 ? afterMarker : afterMarker.slice(0, nextHeading);
-      this.quickNotesContent = section.trim();
+      this.quickNotesContent = extractQuickNotes(content);
     } catch (error2) {
       console.error("Error loading quick notes:", error2);
     }
@@ -54188,39 +55376,56 @@ ${this.quickNotesContent}
     let mainLeaf = this.app.workspace.getLeaf(false);
     if (!mainLeaf) {
       console.error("\u274C No workspace leaf available");
-      new import_obsidian49.Notice("Could not set up layout - no workspace available");
+      new import_obsidian52.Notice("Could not set up layout - no workspace available");
       return;
     }
-    const adventures = await this.getActiveAdventures();
-    const adventure = adventures.length > 0 ? adventures[0] : null;
+    this.manageLeaf(mainLeaf);
+    const adventures = await this.getSessionAdventures();
+    let adventure = adventures.length > 0 ? adventures[0] : null;
+    const orderedScenes = [];
+    for (const candidate of adventures) {
+      const scenes = await this.getScenesForAdventure(candidate.path);
+      orderedScenes.push(...scenes.map((scene) => ({ scene, adventure: candidate })));
+    }
+    const planned = await this.getPlannedScenes();
+    if (planned.length > 0) {
+      const adventureByScene = new Map(orderedScenes.map((entry) => [entry.scene.path, entry.adventure]));
+      orderedScenes.splice(0, orderedScenes.length, ...planned.map((scene) => ({ scene, adventure: adventureByScene.get(scene.path) || adventure })));
+    }
+    const selected = orderedScenes.find((entry) => entry.scene.status === "in-progress") || orderedScenes.find((entry) => entry.scene.status === "not-started") || orderedScenes.find((entry) => entry.scene.status !== "completed");
+    const currentScene = selected == null ? void 0 : selected.scene;
+    if (selected) {
+      adventure = selected.adventure;
+    }
     if (adventure) {
-      const scenes = await this.getScenesForAdventure(adventure.path);
-      const currentScene = scenes.find((s) => s.status === "in-progress") || scenes.find((s) => s.status === "not-started");
       if (currentScene) {
         const sceneFile = this.app.vault.getAbstractFileByPath(currentScene.path);
-        if (sceneFile instanceof import_obsidian49.TFile) {
+        if (sceneFile instanceof import_obsidian52.TFile) {
           await mainLeaf.openFile(sceneFile);
           await this.collapseProperties(mainLeaf);
         }
         const adventureLeaf = this.app.workspace.getLeaf("split", "vertical");
+        this.manageLeaf(adventureLeaf);
         const adventureFile = this.app.vault.getAbstractFileByPath(adventure.path);
-        if (adventureFile instanceof import_obsidian49.TFile) {
+        if (adventureFile instanceof import_obsidian52.TFile) {
           await adventureLeaf.openFile(adventureFile);
           await this.collapseProperties(adventureLeaf);
         }
         if (this.currentSessionFile) {
           const sessionLeaf = this.app.workspace.getLeaf("split", "horizontal");
+          this.manageLeaf(sessionLeaf);
           await sessionLeaf.openFile(this.currentSessionFile);
           await this.collapseProperties(sessionLeaf);
         }
       } else {
         const adventureFile = this.app.vault.getAbstractFileByPath(adventure.path);
-        if (adventureFile instanceof import_obsidian49.TFile) {
+        if (adventureFile instanceof import_obsidian52.TFile) {
           await mainLeaf.openFile(adventureFile);
           await this.collapseProperties(mainLeaf);
         }
         if (this.currentSessionFile) {
           const sessionLeaf = this.app.workspace.getLeaf("split", "vertical");
+          this.manageLeaf(sessionLeaf);
           await sessionLeaf.openFile(this.currentSessionFile);
           await this.collapseProperties(sessionLeaf);
         }
@@ -54238,7 +55443,7 @@ ${this.quickNotesContent}
         this.enableReadOnlyMode();
       }
     }, 800);
-    new import_obsidian49.Notice("Session layout configured!");
+    new import_obsidian52.Notice("Session layout configured!");
   }
   /**
    * Collapse the properties (frontmatter) panel in a leaf
@@ -54351,7 +55556,7 @@ ${this.quickNotesContent}
     const section = container.createEl("div", { cls: "dashboard-section session-live-scene" });
     section.createEl("h3", { text: "\u{1F3AC} Live Scene" });
     if (!context.current) {
-      this.renderEmptyState(
+      renderActionableEmptyState(
         section,
         "No runnable scene found",
         "Create or prepare a scene to make the live dashboard useful during play.",
@@ -54430,10 +55635,13 @@ ${this.quickNotesContent}
     }
   }
   async getLiveSceneContext() {
-    const adventures = await this.getActiveAdventures();
-    const adventure = adventures[0];
-    if (!adventure) return { current: null, previous: null, next: null };
-    const scenes = await this.getScenesForAdventure(adventure.path);
+    const adventures = await this.getSessionAdventures();
+    const scenes = [];
+    for (const adventure of adventures) {
+      scenes.push(...await this.getScenesForAdventure(adventure.path));
+    }
+    const planned = await this.getPlannedScenes();
+    if (planned.length > 0) scenes.splice(0, scenes.length, ...planned);
     for (const scene of scenes) {
       await this.enrichRunScene(scene);
     }
@@ -54448,7 +55656,7 @@ ${this.quickNotesContent}
   }
   async enrichRunScene(scene) {
     const file = this.app.vault.getAbstractFileByPath(scene.path);
-    if (!(file instanceof import_obsidian49.TFile)) return;
+    if (!(file instanceof import_obsidian52.TFile)) return;
     const cache = this.app.metadataCache.getFileCache(file);
     const fm = (cache == null ? void 0 : cache.frontmatter) || {};
     scene.encounterName = fm.tracker_encounter || "";
@@ -54640,7 +55848,7 @@ ${this.quickNotesContent}
   }
   async updateSceneStatus(scenePath, status) {
     const file = this.app.vault.getAbstractFileByPath(scenePath);
-    if (!(file instanceof import_obsidian49.TFile)) return;
+    if (!(file instanceof import_obsidian52.TFile)) return;
     const content = await this.app.vault.read(file);
     const newContent = updateYamlFrontmatter(content, (fm) => ({
       ...fm,
@@ -54652,7 +55860,7 @@ ${this.quickNotesContent}
   async openLinkedEncounter(scene) {
     if (scene.encounterPath) {
       const encounterFile = this.app.metadataCache.getFirstLinkpathDest(scene.encounterPath, scene.path);
-      if (encounterFile instanceof import_obsidian49.TFile) {
+      if (encounterFile instanceof import_obsidian52.TFile) {
         await this.app.workspace.openLinkText(encounterFile.path, "", false);
       }
     }
@@ -54663,13 +55871,13 @@ ${this.quickNotesContent}
     const pm = this.plugin.projectionManager;
     if (!(spm == null ? void 0 : spm.isActive())) {
       this.plugin.openSessionProjectionHub();
-      new import_obsidian49.Notice("Start a projection session, then project the handout.");
+      new import_obsidian52.Notice("Start a projection session, then project the handout.");
       return;
     }
     const state = spm.getAllScreenStates()[0];
     if (!state) {
       this.plugin.openSessionProjectionHub();
-      new import_obsidian49.Notice("No projection screen is available for handouts.");
+      new import_obsidian52.Notice("No projection screen is available for handouts.");
       return;
     }
     await pm.projectHandout(handout.path, handout.contentType, state.screen);
@@ -54686,11 +55894,33 @@ ${this.quickNotesContent}
     });
   }
   extractLinkPath(raw) {
+    var _a;
+    if (raw && typeof raw === "object" && "path" in raw) {
+      return String((_a = raw.path) != null ? _a : "").trim();
+    }
     if (typeof raw !== "string") return "";
     const trimmed = raw.trim();
     const wiki = trimmed.match(/^\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]$/);
     if (wiki == null ? void 0 : wiki[1]) return wiki[1].trim();
     return trimmed.replace(/^["']|["']$/g, "");
+  }
+  async getPlannedScenes() {
+    var _a, _b;
+    if (!this.currentSessionFile) return [];
+    const fm = (_a = this.app.metadataCache.getFileCache(this.currentSessionFile)) == null ? void 0 : _a.frontmatter;
+    if (!Array.isArray(fm == null ? void 0 : fm.planned_scenes) || fm.planned_scenes.length === 0) return [];
+    const result = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const raw of fm.planned_scenes) {
+      const ref = this.extractLinkPath(raw);
+      const file = this.app.metadataCache.getFirstLinkpathDest(ref, this.currentSessionFile.path);
+      if (!(file instanceof import_obsidian52.TFile) || seen.has(file.path)) continue;
+      seen.add(file.path);
+      const sceneFm = ((_b = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _b.frontmatter) || {};
+      if (sceneFm.type !== "scene") continue;
+      result.push({ path: file.path, number: Number(sceneFm.scene_number) || 0, name: file.basename, type: sceneFm.scene_type || "", difficulty: sceneFm.difficulty || "", status: sceneFm.status || "not-started" });
+    }
+    return result;
   }
   async renderQuickNotes(container) {
     const section = container.createEl("div", { cls: "dashboard-section" });
@@ -54709,7 +55939,7 @@ ${this.quickNotesContent}
     });
     saveBtn.addEventListener("click", () => {
       this.saveQuickNotes();
-      new import_obsidian49.Notice("Quick notes saved to session!");
+      new import_obsidian52.Notice("Quick notes saved to session!");
     });
   }
   /**
@@ -54783,7 +56013,7 @@ ${this.quickNotesContent}
           } else {
             this.plugin.ensureMusicPlayerOpen();
             await this.plugin.musicPlayer.loadSceneMusic(config, config.autoPlay);
-            new import_obsidian49.Notice(`\u{1F3B5} Loaded scene music for "${sceneName}"`);
+            new import_obsidian52.Notice(`\u{1F3B5} Loaded scene music for "${sceneName}"`);
           }
         } finally {
           syncDashBtn();
@@ -54913,9 +56143,9 @@ ${this.quickNotesContent}
     ];
     for (const folder of srdFolders) {
       const srdFolder = this.app.vault.getAbstractFileByPath(folder.path);
-      if (!(srdFolder instanceof import_obsidian49.TFolder)) continue;
+      if (!(srdFolder instanceof import_obsidian52.TFolder)) continue;
       for (const file of srdFolder.children) {
-        if (!(file instanceof import_obsidian49.TFile) || file.extension !== "md") continue;
+        if (!(file instanceof import_obsidian52.TFile) || file.extension !== "md") continue;
         const fileName = file.basename.toLowerCase();
         let score = 0;
         if (fileName === query) {
@@ -55013,11 +56243,11 @@ ${this.quickNotesContent}
     var _a, _b;
     const adventures = [];
     const adventuresFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Adventures`);
-    if (!(adventuresFolder instanceof import_obsidian49.TFolder)) {
+    if (!(adventuresFolder instanceof import_obsidian52.TFolder)) {
       return adventures;
     }
     for (const item of adventuresFolder.children) {
-      if (item instanceof import_obsidian49.TFile && item.extension === "md") {
+      if (item instanceof import_obsidian52.TFile && item.extension === "md") {
         const cache = this.app.metadataCache.getFileCache(item);
         const status = ((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.status) || "planning";
         if (status === "active" || status === "in-progress" || status === "planning") {
@@ -55027,9 +56257,9 @@ ${this.quickNotesContent}
             status
           });
         }
-      } else if (item instanceof import_obsidian49.TFolder) {
+      } else if (item instanceof import_obsidian52.TFolder) {
         const adventureFile = this.app.vault.getAbstractFileByPath(`${item.path}/${item.name}.md`);
-        if (adventureFile instanceof import_obsidian49.TFile) {
+        if (adventureFile instanceof import_obsidian52.TFile) {
           const cache = this.app.metadataCache.getFileCache(adventureFile);
           const status = ((_b = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b.status) || "planning";
           if (status === "active" || status === "in-progress" || status === "planning") {
@@ -55044,11 +56274,46 @@ ${this.quickNotesContent}
     }
     return adventures;
   }
+  /** Resolve the current session's ordered adventures, deduplicated by vault path. */
+  async getSessionAdventures() {
+    var _a, _b, _c;
+    if (!this.currentSessionFile) return this.getActiveAdventures();
+    const fm = (_a = this.app.metadataCache.getFileCache(this.currentSessionFile)) == null ? void 0 : _a.frontmatter;
+    const raw = Array.isArray(fm == null ? void 0 : fm.adventures) && fm.adventures.length > 0 ? fm.adventures : [fm == null ? void 0 : fm.adventure];
+    const result = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const value of raw) {
+      const ref = this.extractLinkPath(value);
+      if (!ref) continue;
+      const file = this.resolveAdventureFile(ref);
+      if (!file || seen.has(file.path)) continue;
+      seen.add(file.path);
+      result.push({
+        path: file.path,
+        name: file.basename,
+        status: ((_c = (_b = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _b.frontmatter) == null ? void 0 : _c.status) || "planning"
+      });
+    }
+    return result.length > 0 ? result : this.getActiveAdventures();
+  }
+  resolveAdventureFile(ref) {
+    var _a;
+    const direct = this.app.vault.getAbstractFileByPath(ref);
+    if (direct instanceof import_obsidian52.TFile) return direct;
+    const withExtension = this.app.vault.getAbstractFileByPath(`${ref}.md`);
+    if (withExtension instanceof import_obsidian52.TFile) return withExtension;
+    const basename = ((_a = ref.split("/").pop()) == null ? void 0 : _a.replace(/\.md$/i, "")) || ref;
+    return this.app.vault.getMarkdownFiles().find((file) => {
+      var _a2, _b;
+      if (file.basename !== basename) return false;
+      return ((_b = (_a2 = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a2.frontmatter) == null ? void 0 : _b.type) === "adventure";
+    }) || null;
+  }
   async getScenesForAdventure(adventurePath) {
     var _a, _b, _c;
     const scenes = [];
     const adventureFile = this.app.vault.getAbstractFileByPath(adventurePath);
-    if (!(adventureFile instanceof import_obsidian49.TFile)) return scenes;
+    if (!(adventureFile instanceof import_obsidian52.TFile)) return scenes;
     const adventureName = adventureFile.basename;
     for (const file of this.app.vault.getMarkdownFiles()) {
       const cache = this.app.metadataCache.getFileCache(file);
@@ -55087,7 +56352,7 @@ ${this.quickNotesContent}
   }
   async markSceneComplete(scenePath) {
     const file = this.app.vault.getAbstractFileByPath(scenePath);
-    if (!(file instanceof import_obsidian49.TFile)) return;
+    if (!(file instanceof import_obsidian52.TFile)) return;
     try {
       const content = await this.app.vault.read(file);
       const newContent = updateYamlFrontmatter(content, (fm) => ({
@@ -55095,10 +56360,10 @@ ${this.quickNotesContent}
         status: "completed"
       }));
       await this.app.vault.modify(file, newContent);
-      new import_obsidian49.Notice("Scene marked as completed!");
+      new import_obsidian52.Notice("Scene marked as completed!");
     } catch (error2) {
       console.error("Error marking scene complete:", error2);
-      new import_obsidian49.Notice("Error updating scene status");
+      new import_obsidian52.Notice("Error updating scene status");
     }
   }
   async onClose() {
@@ -55111,782 +56376,15 @@ ${this.quickNotesContent}
       this.timerUpdateInterval = null;
     }
     await this.saveQuickNotes();
-    if (this.readOnlyMode) {
-      this.disableReadOnlyMode();
-    }
-  }
-};
-
-// src/session/SessionCreationModal.ts
-var import_obsidian51 = require("obsidian");
-
-// src/campaign/CalendarDateInputModal.ts
-var import_obsidian50 = require("obsidian");
-var CalendarDateInputModal = class extends import_obsidian50.Modal {
-  constructor(app, calendarData, year, month, day, onSubmit) {
-    super(app);
-    this.dayDropdown = null;
-    this.calendarData = calendarData;
-    this.year = year || "1";
-    this.month = month || "1";
-    this.day = day || "1";
-    this.onSubmit = onSubmit;
-  }
-  onOpen() {
-    var _a, _b;
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.createEl("h2", { text: " Select Date" });
-    const monthData = ((_b = (_a = this.calendarData) == null ? void 0 : _a.static) == null ? void 0 : _b.months) || [];
-    const dateSetting = new import_obsidian50.Setting(contentEl).setName("Date").setDesc("Select year, month, and day");
-    dateSetting.addText((text) => {
-      text.setPlaceholder("Year").setValue(this.year).onChange((value) => {
-        this.year = value;
-      });
-      text.inputEl.style.width = "80px";
-    });
-    dateSetting.addDropdown((dropdown) => {
-      monthData.forEach((month, index) => {
-        const monthName = month.name || `Month ${index + 1}`;
-        dropdown.addOption((index + 1).toString(), monthName);
-      });
-      dropdown.setValue(this.month || "1").onChange((value) => {
-        this.month = value;
-        this.updateDayDropdown();
-      });
-    });
-    dateSetting.addDropdown((dropdown) => {
-      this.dayDropdown = dropdown;
-      this.updateDayDropdown();
-      dropdown.setValue(this.day || "1").onChange((value) => {
-        this.day = value;
-      });
-    });
-    const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
-    const cancelButton = buttonContainer.createEl("button", { text: "Cancel" });
-    cancelButton.addEventListener("click", () => {
-      this.close();
-    });
-    const selectButton = buttonContainer.createEl("button", {
-      text: "Select Date",
-      cls: "mod-cta"
-    });
-    selectButton.addEventListener("click", () => {
-      this.onSubmit(this.year, this.month, this.day);
-      this.close();
-    });
-  }
-  updateDayDropdown() {
-    var _a, _b, _c;
-    if (!this.dayDropdown) return;
-    const monthData = ((_b = (_a = this.calendarData) == null ? void 0 : _a.static) == null ? void 0 : _b.months) || [];
-    const monthIndex = parseInt(this.month || "1") - 1;
-    const daysInMonth = ((_c = monthData[monthIndex]) == null ? void 0 : _c.length) || 30;
-    this.dayDropdown.selectEl.empty();
-    for (let d = 1; d <= daysInMonth; d++) {
-      this.dayDropdown.addOption(d.toString(), d.toString());
-    }
-    if (parseInt(this.day) > daysInMonth) {
-      this.day = daysInMonth.toString();
-      this.dayDropdown.setValue(this.day);
-    }
-  }
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
-  }
-};
-
-// src/session/SessionCreationModal.ts
-init_templates();
-init_YamlFrontmatter();
-var SessionCreationModal = class extends import_obsidian51.Modal {
-  constructor(app, plugin, adventurePath, campaignPath, sessionPath) {
-    super(app);
-    this.sessionTitle = "";
-    this.location = "";
-    this.adventurePath = "";
-    this.adventurePaths = [];
-    this.startingScenePath = "";
-    this.useCustomDate = false;
-    this.calendar = "";
-    this.startYear = "";
-    this.startMonth = "";
-    this.startDay = "";
-    this.endYear = "";
-    this.endMonth = "";
-    this.endDay = "";
-    this.selectedCalendarData = null;
-    this.endDayDropdown = null;
-    this.selectedPartyId = "";
-    this.selectedPartyName = "";
-    this.isEdit = false;
-    this.originalSessionPath = "";
-    this.originalAdventurePaths = [];
-    this.plugin = plugin;
-    this.campaignPath = campaignPath || plugin.resolveCampaign();
-    this.sessionDate = (/* @__PURE__ */ new Date()).toISOString().split("T")[0] || "";
-    if (adventurePath) {
-      this.adventurePath = adventurePath;
-      this.adventurePaths = [adventurePath];
-    }
-    if (sessionPath) {
-      this.isEdit = true;
-      this.originalSessionPath = sessionPath;
-      const sessionFile = this.app.vault.getAbstractFileByPath(sessionPath);
-      if (sessionFile instanceof import_obsidian51.TFile && sessionFile.parent) this.campaignPath = sessionFile.parent.path;
-    }
-  }
-  parseFrontmatterLink(value) {
-    var _a, _b, _c;
-    if (!value) return "";
-    if (typeof value === "object" && value !== null && "path" in value) {
-      return String((_a = value.path) != null ? _a : "");
-    }
-    const text = String(value).trim();
-    return (_c = (_b = text.match(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/)) == null ? void 0 : _b[1]) != null ? _c : text;
-  }
-  async loadSessionData() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t;
-    const file = this.app.vault.getAbstractFileByPath(this.originalSessionPath);
-    if (!(file instanceof import_obsidian51.TFile)) {
-      new import_obsidian51.Notice("Session file not found!");
-      return;
-    }
-    const fm = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter;
-    if (!fm) {
-      new import_obsidian51.Notice("Could not read session data!");
-      return;
-    }
-    const allAdventureValues = Array.isArray(fm.adventures) ? fm.adventures : [];
-    this.adventurePaths = allAdventureValues.map((value) => this.parseFrontmatterLink(value)).filter(Boolean);
-    this.adventurePath = this.parseFrontmatterLink(fm.adventure);
-    if (this.adventurePath && !this.adventurePaths.includes(this.adventurePath)) this.adventurePaths.unshift(this.adventurePath);
-    this.originalAdventurePaths = [...this.adventurePaths];
-    this.startingScenePath = this.parseFrontmatterLink(fm.starting_scene);
-    this.location = String((_b = fm.location) != null ? _b : "");
-    this.sessionDate = String((_c = fm.date) != null ? _c : this.sessionDate);
-    this.calendar = String((_d = fm["fc-calendar"]) != null ? _d : this.calendar);
-    this.startYear = String((_f = (_e = fm["fc-date"]) == null ? void 0 : _e.year) != null ? _f : this.startYear);
-    this.startMonth = String((_h = (_g = fm["fc-date"]) == null ? void 0 : _g.month) != null ? _h : this.startMonth);
-    this.startDay = String((_j = (_i = fm["fc-date"]) == null ? void 0 : _i.day) != null ? _j : this.startDay);
-    this.endYear = String((_l = (_k = fm["fc-end"]) == null ? void 0 : _k.year) != null ? _l : this.endYear);
-    this.endMonth = String((_n = (_m = fm["fc-end"]) == null ? void 0 : _m.month) != null ? _n : this.endMonth);
-    this.endDay = String((_p = (_o = fm["fc-end"]) == null ? void 0 : _o.day) != null ? _p : this.endDay);
-    this.selectedPartyId = String((_q = fm.party_id) != null ? _q : "");
-    const content = await this.app.vault.read(file);
-    this.sessionTitle = (_t = (_s = (_r = content.match(/^# Session(?:\s+\d+)?(?:\s+-\s+(.+))?$/m)) == null ? void 0 : _r[1]) == null ? void 0 : _s.trim()) != null ? _t : "";
-  }
-  async getAllAdventures() {
-    const adventures = [];
-    const campaignPath = this.campaignPath;
-    const adventuresFolder = this.app.vault.getAbstractFileByPath(`${campaignPath}/Adventures`);
-    if (adventuresFolder instanceof import_obsidian51.TFolder) {
-      for (const item of adventuresFolder.children) {
-        if (item instanceof import_obsidian51.TFile && item.extension === "md") {
-          adventures.push({
-            path: item.path,
-            name: item.basename
-          });
-        } else if (item instanceof import_obsidian51.TFolder) {
-          const mainFile = this.app.vault.getAbstractFileByPath(`${item.path}/${item.name}.md`);
-          if (mainFile instanceof import_obsidian51.TFile) {
-            adventures.push({
-              path: mainFile.path,
-              name: item.name
-            });
-          }
-        }
-      }
-    }
-    return adventures;
-  }
-  /**
-   * Resolve an adventure reference to a TFile.
-   * Handles full paths, wikilink paths, and bare names (e.g. "My Adventure").
-   */
-  resolveAdventureFile(adventureRef) {
-    var _a;
-    const direct = this.app.vault.getAbstractFileByPath(adventureRef);
-    if (direct instanceof import_obsidian51.TFile) return direct;
-    const withMd = this.app.vault.getAbstractFileByPath(adventureRef + ".md");
-    if (withMd instanceof import_obsidian51.TFile) return withMd;
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      if (file.basename !== adventureRef) continue;
-      const cache = this.app.metadataCache.getFileCache(file);
-      if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) === "adventure") return file;
-    }
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      if (file.basename === adventureRef) return file;
-    }
-    return null;
-  }
-  async getAllScenesForAdventure(adventurePath) {
-    var _a, _b, _c;
-    if (!adventurePath) return [];
-    const advFile = this.resolveAdventureFile(adventurePath);
-    if (!(advFile instanceof import_obsidian51.TFile)) return [];
-    const advFolder = advFile.parent;
-    if (!advFolder) return [];
-    const candidatePrefixes = [];
-    if (advFolder.name === advFile.basename) {
-      candidatePrefixes.push(advFolder.path + "/");
-    }
-    candidatePrefixes.push(`${advFolder.path}/${advFile.basename} - Scenes/`);
-    candidatePrefixes.push(`${advFolder.path}/${advFile.basename}/`);
-    candidatePrefixes.push(advFolder.path + "/");
-    const seen = /* @__PURE__ */ new Set();
-    const scenes = [];
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      if (seen.has(file.path)) continue;
-      const underAdventure = candidatePrefixes.some((prefix) => file.path.startsWith(prefix));
-      if (!underAdventure) continue;
-      const cache = this.app.metadataCache.getFileCache(file);
-      const fm = cache == null ? void 0 : cache.frontmatter;
-      if (!fm || fm.type !== "scene") continue;
-      seen.add(file.path);
-      const num2 = parseInt(
-        (_c = (_b = fm.scene_number) != null ? _b : (_a = file.name.match(/Scene\s+(\d+)/i)) == null ? void 0 : _a[1]) != null ? _c : "0"
-      ) || 0;
-      scenes.push({ path: file.path, name: file.basename, sceneNumber: num2, status: fm.status || "not-started" });
-    }
-    scenes.sort((a, b) => a.sceneNumber - b.sceneNumber);
-    return scenes;
-  }
-  async loadCalendarData() {
-    var _a, _b, _c;
-    const campaignPath = this.campaignPath;
-    const worldFile = this.app.vault.getAbstractFileByPath(`${campaignPath}/World.md`);
-    if (worldFile instanceof import_obsidian51.TFile) {
-      const worldContent = await this.app.vault.read(worldFile);
-      const calendarMatch = worldContent.match(/fc-calendar:\s*([^\r\n]\w*)$/m);
-      if (calendarMatch && calendarMatch[1]) {
-        this.calendar = calendarMatch[1].trim();
-        const calendariumPlugin = (_b = (_a = this.app.plugins) == null ? void 0 : _a.plugins) == null ? void 0 : _b.calendarium;
-        if (calendariumPlugin && ((_c = calendariumPlugin.data) == null ? void 0 : _c.calendars)) {
-          const calendars = calendariumPlugin.data.calendars;
-          for (const [id, calData] of Object.entries(calendars)) {
-            if (calData.name === this.calendar) {
-              this.selectedCalendarData = calData;
-              break;
-            }
-          }
-        }
-      }
-    }
-    const previousSession = await this.getPreviousSession();
-    if (previousSession) {
-      this.startYear = previousSession.endYear;
-      this.startMonth = previousSession.endMonth;
-      this.startDay = previousSession.endDay;
-    } else {
-      if (worldFile instanceof import_obsidian51.TFile) {
-        const worldContent = await this.app.vault.read(worldFile);
-        const yearMatch = worldContent.match(/fc-date:\s*\n\s*year:\s*([^\r\n]\w*)$/m);
-        const monthMatch = worldContent.match(/fc-date:\s*\n\s*year:.*\n\s*month:\s*([^\r\n]\w*)$/m);
-        const dayMatch = worldContent.match(/fc-date:\s*\n\s*year:.*\n\s*month:.*\n\s*day:\s*([^\r\n]\w*)$/m);
-        if (yearMatch && yearMatch[1]) this.startYear = yearMatch[1].trim();
-        if (monthMatch && monthMatch[1]) this.startMonth = monthMatch[1].trim();
-        if (dayMatch && dayMatch[1]) this.startDay = dayMatch[1].trim();
-      }
-    }
-    if (!this.startYear) this.startYear = "1";
-    if (!this.startMonth) this.startMonth = "1";
-    if (!this.startDay) this.startDay = "1";
-    this.endYear = this.startYear;
-    this.endMonth = this.startMonth;
-    this.endDay = this.startDay;
-  }
-  async getPreviousSession() {
-    const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
-    if (campaignFolder instanceof import_obsidian51.TFolder) {
-      const files = campaignFolder.children.filter(
-        (f) => f instanceof import_obsidian51.TFile && f.name.match(/^\d{3}_\d{8}\.md$/)
-      );
-      if (files.length === 0) return null;
-      const sortedFiles = files.sort((a, b) => {
-        const numA = parseInt(a.name.substring(0, 3));
-        const numB = parseInt(b.name.substring(0, 3));
-        return numB - numA;
-      });
-      const lastSession = sortedFiles[0];
-      const content = await this.app.vault.read(lastSession);
-      const endYearMatch = content.match(/fc-end:\s*\n\s*year:\s*(.+)/);
-      const endMonthMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:\s*(.+)/);
-      const endDayMatch = content.match(/fc-end:\s*\n\s*year:.*\n\s*month:.*\n\s*day:\s*(.+)/);
-      if ((endYearMatch == null ? void 0 : endYearMatch[1]) && (endMonthMatch == null ? void 0 : endMonthMatch[1]) && (endDayMatch == null ? void 0 : endDayMatch[1])) {
-        return {
-          endYear: endYearMatch[1].trim(),
-          endMonth: endMonthMatch[1].trim(),
-          endDay: endDayMatch[1].trim()
-        };
-      }
-    }
-    return null;
-  }
-  async onOpen() {
-    var _a, _b, _c;
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.createEl("h2", { text: this.isEdit ? "\u270F\uFE0F Edit Session" : "\u{1F4DC} Create New Session" });
-    await this.loadCalendarData();
-    if (this.isEdit) await this.loadSessionData();
-    const campaignPath = this.campaignPath;
-    const campaignName = (campaignPath == null ? void 0 : campaignPath.split("/").pop()) || "Unknown";
-    contentEl.createEl("p", {
-      text: `Campaign: ${campaignName}`,
-      cls: "setting-item-description"
-    });
-    const nextSessionNum = this.isEdit ? Number((_b = (_a = this.app.metadataCache.getFileCache(this.app.vault.getAbstractFileByPath(this.originalSessionPath))) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.sessionNum) || this.getNextSessionNumber() : this.getNextSessionNumber();
-    contentEl.createEl("p", {
-      text: `Session Number: ${nextSessionNum}`,
-      cls: "setting-item-description"
-    });
-    new import_obsidian51.Setting(contentEl).setName("Session Title").setDesc("Optional descriptive title for this session").addText((text) => {
-      text.setPlaceholder("e.g., The Goblin Ambush").setValue(this.sessionTitle).onChange((value) => {
-        this.sessionTitle = value;
-      });
-      if (!this.isEdit) text.inputEl.focus();
-    });
-    const adventures = await this.getAllAdventures();
-    const scenePickerContainer = contentEl.createDiv();
-    const refreshScenePicker = async (adventurePath) => {
-      var _a2, _b2, _c2, _d;
-      scenePickerContainer.empty();
-      if (!adventurePath) return;
-      const scenes = await this.getAllScenesForAdventure(adventurePath);
-      if (scenes.length === 0) return;
-      const preferred = (_c2 = (_b2 = (_a2 = scenes.find((s) => s.path === this.startingScenePath)) != null ? _a2 : scenes.find((s) => s.status === "in-progress")) != null ? _b2 : scenes.find((s) => s.status === "not-started")) != null ? _c2 : scenes[0];
-      this.startingScenePath = (_d = preferred == null ? void 0 : preferred.path) != null ? _d : "";
-      new import_obsidian51.Setting(scenePickerContainer).setName("Starting Scene").setDesc("Scene where this session begins (auto-populated from adventure progress)").addDropdown((dd) => {
-        dd.addOption("", "-- None --");
-        for (const sc of scenes) {
-          const label = `${sc.name} [${sc.status}]`;
-          dd.addOption(sc.path, label);
-        }
-        dd.setValue(this.startingScenePath);
-        dd.onChange((value) => {
-          this.startingScenePath = value;
-        });
-      });
-    };
-    if (adventures.length > 0) {
-      const primaryAdventureContainer = contentEl.createDiv();
-      const renderPrimaryAdventurePicker = () => {
-        var _a2;
-        primaryAdventureContainer.empty();
-        if (this.adventurePaths.length === 0) {
-          this.adventurePath = "";
-          this.startingScenePath = "";
-          scenePickerContainer.empty();
-          return;
-        }
-        if (!this.adventurePaths.includes(this.adventurePath)) {
-          this.adventurePath = (_a2 = this.adventurePaths[0]) != null ? _a2 : "";
-        }
-        new import_obsidian51.Setting(primaryAdventureContainer).setName("Primary Adventure").setDesc("Used to choose the starting scene for this session").addDropdown((dropdown) => {
-          for (const path of this.adventurePaths) {
-            const adventure = adventures.find((candidate) => candidate.path === path);
-            if (adventure) dropdown.addOption(adventure.path, adventure.name);
-          }
-          dropdown.setValue(this.adventurePath);
-          dropdown.onChange(async (value) => {
-            this.adventurePath = value;
-            this.startingScenePath = "";
-            await refreshScenePicker(value);
-          });
-        });
-        void refreshScenePicker(this.adventurePath);
-      };
-      const adventureSetting = new import_obsidian51.Setting(contentEl).setName("Adventures").setDesc("Link this session to one or more adventures (optional)");
-      for (const adventure of adventures) {
-        adventureSetting.addToggle((toggle) => toggle.setTooltip(adventure.name).setValue(this.adventurePaths.includes(adventure.path)).onChange((value) => {
-          if (value && !this.adventurePaths.includes(adventure.path)) {
-            this.adventurePaths.push(adventure.path);
-          } else if (!value) {
-            this.adventurePaths = this.adventurePaths.filter((path) => path !== adventure.path);
-          }
-          renderPrimaryAdventurePicker();
-        }));
-        adventureSetting.controlEl.createSpan({ text: adventure.name, cls: "setting-item-description" });
-      }
-      renderPrimaryAdventurePicker();
-      await refreshScenePicker(this.adventurePath);
-    }
-    const advancedDetails = contentEl.createEl("details", { cls: "dnd-advanced-section" });
-    advancedDetails.createEl("summary", { text: "Advanced session details" });
-    const advancedContainer = advancedDetails.createDiv({ cls: "dnd-advanced-section-body" });
-    new import_obsidian51.Setting(advancedContainer).setName("Session Date").setDesc("Date when this session was/will be played (real world)").addText(
-      (text) => text.setValue(this.sessionDate).onChange((value) => {
-        this.sessionDate = value;
-      })
-    ).addToggle(
-      (toggle) => toggle.setTooltip("Use custom date").setValue(this.useCustomDate).onChange((value) => {
-        this.useCustomDate = value;
-        if (!value) {
-          this.sessionDate = (/* @__PURE__ */ new Date()).toISOString().split("T")[0] || "";
-        }
-      })
-    );
-    if (this.calendar && this.selectedCalendarData) {
-      advancedContainer.createEl("h3", { text: `\u{1F4C5} In-Game Calendar: ${this.selectedCalendarData.name || this.calendar}` });
-      const monthData = ((_c = this.selectedCalendarData.static) == null ? void 0 : _c.months) || [];
-      new import_obsidian51.Setting(advancedContainer).setName("Start Date (In-Game)").setDesc(`Starts: ${this.getDateDisplay(this.startYear, this.startMonth, this.startDay, monthData)}`);
-      const endDateSetting = new import_obsidian51.Setting(advancedContainer).setName("End Date (In-Game)").setDesc("When does this session end in your world?");
-      const endDateDisplay = advancedContainer.createEl("div", {
-        cls: "dnd-date-display",
-        text: this.getDateDisplay(this.endYear, this.endMonth, this.endDay, monthData)
-      });
-      endDateSetting.addButton((button) => {
-        button.setButtonText("\u{1F4C5} Pick End Date").setCta().onClick(async () => {
-          await this.openSessionDatePicker(endDateDisplay, monthData);
-        });
-      });
-    }
-    new import_obsidian51.Setting(advancedContainer).setName("Location").setDesc("Where does this session take place in your world?").addText(
-      (text) => text.setPlaceholder("e.g., Phandalin").setValue(this.location).onChange((value) => {
-        this.location = value;
-      })
-    );
-    const partyContainer = advancedContainer.createDiv({ cls: "dnd-party-selection" });
-    const defaultParty = this.plugin.partyManager.resolveParty(void 0, campaignName);
-    if (defaultParty && !this.selectedPartyId) {
-      this.selectedPartyId = defaultParty.id;
-      this.selectedPartyName = defaultParty.name;
-    }
-    const parties = this.plugin.partyManager.getParties();
-    if (parties.length > 0) {
-      new import_obsidian51.Setting(partyContainer).setName("Party").setDesc("Which party is playing in this session?").addDropdown((dd) => {
-        for (const p of parties) {
-          dd.addOption(p.id, p.name);
-        }
-        if (this.selectedPartyId) dd.setValue(this.selectedPartyId);
-        dd.onChange((value) => {
-          this.selectedPartyId = value;
-          const match = parties.find((p) => p.id === value);
-          this.selectedPartyName = (match == null ? void 0 : match.name) || "";
-        });
-      });
-    }
-    const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
-    const cancelButton = buttonContainer.createEl("button", { text: "Cancel" });
-    cancelButton.addEventListener("click", () => {
-      this.close();
-    });
-    const createButton = buttonContainer.createEl("button", {
-      text: this.isEdit ? "Save Changes" : "Create Session",
-      cls: "mod-cta"
-    });
-    createButton.addEventListener("click", async () => {
-      this.close();
-      if (this.isEdit) await this.updateSessionFile();
-      else await this.createSessionFile();
-    });
-  }
-  async updateSessionFile() {
-    var _a, _b;
-    const file = this.app.vault.getAbstractFileByPath(this.originalSessionPath);
-    if (!(file instanceof import_obsidian51.TFile)) {
-      new import_obsidian51.Notice("\u274C Session file not found!");
-      return;
-    }
-    try {
-      const existing = await this.app.vault.read(file);
-      const fm = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter;
-      const sessionNumber = Number((_b = fm == null ? void 0 : fm.sessionNum) != null ? _b : fm == null ? void 0 : fm.session_number) || this.getSessionNumberFromFile(file);
-      const adventureLinks = this.adventurePaths.map((path) => `[[${path}]]`);
-      let updated = updateYamlFrontmatter(existing, (current) => ({
-        ...current,
-        adventure: this.adventurePath ? `[[${this.adventurePath}]]` : "",
-        adventures: adventureLinks,
-        starting_scene: this.startingScenePath ? `[[${this.startingScenePath}]]` : "",
-        party_id: this.selectedPartyId,
-        location: this.location,
-        date: this.sessionDate,
-        "fc-calendar": this.calendar,
-        "fc-date": { year: this.startYear, month: this.startMonth, day: this.startDay },
-        "fc-end": { year: this.endYear, month: this.endMonth, day: this.endDay }
-      }));
-      updated = updated.replace(
-        /^# Session.*$/m,
-        `# Session ${sessionNumber}${this.sessionTitle ? ` - ${this.sessionTitle}` : ""}`
-      );
-      await this.app.vault.modify(file, updated);
-      for (const path of this.adventurePaths) await this.linkSessionToAdventure(path, file.path);
-      for (const path of this.originalAdventurePaths.filter((oldPath) => !this.adventurePaths.includes(oldPath))) {
-        await this.unlinkSessionFromAdventure(path, file.path);
-      }
-      new import_obsidian51.Notice(`\u2705 Session ${sessionNumber} updated!`);
-    } catch (error2) {
-      new import_obsidian51.Notice(`\u274C Error updating session: ${error2 instanceof Error ? error2.message : String(error2)}`);
-      console.error("Session update error:", error2);
-    }
-  }
-  getSessionNumberFromFile(file) {
-    var _a, _b;
-    return Number((_b = (_a = file.basename.match(/^(\d{3})_/)) == null ? void 0 : _a[1]) != null ? _b : 0);
-  }
-  async unlinkSessionFromAdventure(adventurePath, sessionFilePath) {
-    var _a, _b;
-    const adventureFile = this.resolveAdventureFile(adventurePath);
-    if (!(adventureFile instanceof import_obsidian51.TFile)) return;
-    const content = await this.app.vault.read(adventureFile);
-    const raw = (_b = (_a = this.app.metadataCache.getFileCache(adventureFile)) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.sessions;
-    const sessions = (Array.isArray(raw) ? raw : raw ? [raw] : []).map((value) => String(value)).filter((value) => !value.includes(sessionFilePath));
-    const updated = updateYamlFrontmatter(content, (fm) => ({ ...fm, sessions }));
-    await this.app.vault.modify(adventureFile, updated);
-  }
-  getNextSessionNumber() {
-    const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
-    let nextNumber = 1;
-    if (campaignFolder instanceof import_obsidian51.TFolder) {
-      const files = campaignFolder.children.filter(
-        (f) => f instanceof import_obsidian51.TFile && f.name.match(/^\d{3}_\d{8}\.md$/)
-      );
-      const numbers = files.map((f) => parseInt(f.name.substring(0, 3)));
-      if (numbers.length > 0) {
-        nextNumber = Math.max(...numbers) + 1;
-      }
-    }
-    return nextNumber;
-  }
-  getDateDisplay(year, month, day, monthData) {
-    var _a;
-    const monthIndex = parseInt(month) - 1;
-    const monthName = ((_a = monthData[monthIndex]) == null ? void 0 : _a.name) || `Month ${month}`;
-    return `${monthName} ${day}, Year ${year}`;
-  }
-  async openSessionDatePicker(displayElement, monthData) {
-    const modal = new CalendarDateInputModal(
-      this.app,
-      this.selectedCalendarData,
-      this.endYear,
-      this.endMonth,
-      this.endDay,
-      (year, month, day) => {
-        this.endYear = year;
-        this.endMonth = month;
-        this.endDay = day;
-        displayElement.setText(this.getDateDisplay(this.endYear, this.endMonth, this.endDay, monthData));
-      }
-    );
-    modal.open();
-  }
-  async createSessionFile() {
-    const campaignPath = this.campaignPath;
-    const campaignName = (campaignPath == null ? void 0 : campaignPath.split("/").pop()) || "Unknown";
-    const nextNumber = this.getNextSessionNumber();
-    new import_obsidian51.Notice(`Creating session ${nextNumber}...`);
-    try {
-      const worldFile = this.app.vault.getAbstractFileByPath(`${campaignPath}/World.md`);
-      let isGM = true;
-      if (worldFile instanceof import_obsidian51.TFile) {
-        const worldContent = await this.app.vault.read(worldFile);
-        const roleMatch = worldContent.match(/role:\s*(GM|player)/i);
-        if (roleMatch && roleMatch[1]) {
-          isGM = roleMatch[1].toLowerCase() === "gm";
-        }
-      }
-      let sessionContent = isGM ? SESSION_GM_TEMPLATE : SESSION_PLAYER_TEMPLATE;
-      const dateStr = this.sessionDate.replace(/-/g, "");
-      const fileName = `${nextNumber.toString().padStart(3, "0")}_${dateStr}.md`;
-      const filePath = `${campaignPath}/${fileName}`;
-      let recapContent = "";
-      if (nextNumber > 1) {
-        const prevNumber = nextNumber - 1;
-        const campaignFolder = this.app.vault.getAbstractFileByPath(campaignPath);
-        if (campaignFolder instanceof import_obsidian51.TFolder) {
-          const prevSessionFile = campaignFolder.children.find(
-            (f) => f instanceof import_obsidian51.TFile && f.name.match(new RegExp(`^${prevNumber.toString().padStart(3, "0")}_\\d{8}\\.md$`))
-          );
-          if (prevSessionFile instanceof import_obsidian51.TFile) {
-            const prevSessionName = prevSessionFile.basename;
-            recapContent = `
-![[${prevSessionName}#^summary]]
-`;
-          }
-        }
-      }
-      if (recapContent) {
-        sessionContent = sessionContent.replace(/## Recap\s*\n/m, `## Recap
-${recapContent}`);
-      }
-      const adventureLink = this.adventurePath ? `[[${this.adventurePath}]]` : "";
-      const adventureLinks = this.adventurePaths.map((path) => `[[${path}]]`);
-      const startingSceneLink = this.startingScenePath ? `[[${this.startingScenePath}]]` : "";
-      sessionContent = updateYamlFrontmatter(sessionContent, (fm) => ({
-        ...fm,
-        campaign: campaignName,
-        world: campaignName,
-        adventure: adventureLink,
-        adventures: adventureLinks,
-        starting_scene: startingSceneLink,
-        ending_scene: "",
-        party_id: this.selectedPartyId,
-        sessionNum: nextNumber,
-        location: this.location,
-        date: this.sessionDate,
-        "fc-calendar": this.calendar,
-        "fc-date": {
-          year: this.startYear,
-          month: this.startMonth,
-          day: this.startDay
-        },
-        "fc-end": {
-          year: this.endYear,
-          month: this.endMonth,
-          day: this.endDay
-        }
-      }));
-      sessionContent = sessionContent.replace(
-        /^# Session.*$/m,
-        `# Session ${nextNumber}${this.sessionTitle ? " - " + this.sessionTitle : ""}`
-      );
-      await this.app.vault.create(filePath, sessionContent);
-      for (const adventurePath of this.adventurePaths) {
-        await this.linkSessionToAdventure(adventurePath, filePath);
-      }
-      if (this.startingScenePath) {
-        await this.handleStartingSceneUpdate(this.startingScenePath, filePath);
-      }
-      await this.app.workspace.openLinkText(filePath, "", true);
-      new import_obsidian51.Notice(`\u2705 Session ${nextNumber} created successfully!`);
-    } catch (error2) {
-      new import_obsidian51.Notice(`\u274C Error creating session: ${error2 instanceof Error ? error2.message : String(error2)}`);
-      console.error("Session creation error:", error2);
-    }
-  }
-  /** Append this session's wikilink to the adventure's sessions[] frontmatter array. */
-  async linkSessionToAdventure(adventurePath, sessionFilePath) {
-    var _a;
-    const advFile = this.app.vault.getAbstractFileByPath(adventurePath);
-    if (!(advFile instanceof import_obsidian51.TFile)) return;
-    try {
-      let content = await this.app.vault.read(advFile);
-      const cache = this.app.metadataCache.getFileCache(advFile);
-      const existingSessions = [];
-      if ((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.sessions) {
-        const raw = cache.frontmatter.sessions;
-        if (Array.isArray(raw)) {
-          for (const entry of raw) existingSessions.push(String(entry));
-        } else {
-          existingSessions.push(String(raw));
-        }
-      }
-      const linkStr = `[[${sessionFilePath}]]`;
-      if (!existingSessions.some((s) => s.includes(sessionFilePath))) {
-        existingSessions.push(linkStr);
-      }
-      const normalizedSessions = existingSessions.map(
-        (s) => s.startsWith("[[") ? s : `[[${s}]]`
-      );
-      content = updateYamlFrontmatter(content, (fm) => ({
-        ...fm,
-        sessions: normalizedSessions
-      }));
-      await this.app.vault.modify(advFile, content);
-    } catch (e) {
-    }
-  }
-  /** Add session backlink to scene, then optionally update scene statuses. */
-  async handleStartingSceneUpdate(startingScenePath, sessionFilePath) {
-    await this.addSessionBacklinkToScene(startingScenePath, sessionFilePath);
-    const scenes = await this.getAllScenesForAdventure(this.adventurePath);
-    const startIdx = scenes.findIndex((s) => s.path === startingScenePath);
-    if (startIdx < 0) return;
-    const startingScene = scenes[startIdx];
-    if (!startingScene) return;
-    const scenesBeforeCount = startIdx;
-    if (scenesBeforeCount === 0 && startingScene.status === "in-progress") return;
-    const msgLines = [];
-    if (scenesBeforeCount > 0)
-      msgLines.push(`Mark ${scenesBeforeCount} scene(s) before "${startingScene.name}" as completed.`);
-    if (startingScene.status !== "in-progress")
-      msgLines.push(`Set "${startingScene.name}" to in-progress.`);
-    if (msgLines.length === 0) return;
-    const confirmed = await new Promise((resolve) => {
-      const modal = new ConfirmModal(this.app, "Update Scene Statuses?", msgLines.join("\n"), resolve);
-      modal.open();
-    });
-    if (confirmed) {
-      await this.updateSceneStatusesFromStartingScene(scenes, startIdx);
-    }
-  }
-  /** Append session wikilink to a scene's sessions[] frontmatter. */
-  async addSessionBacklinkToScene(scenePath, sessionFilePath) {
-    var _a;
-    const sceneFile = this.app.vault.getAbstractFileByPath(scenePath);
-    if (!(sceneFile instanceof import_obsidian51.TFile)) return;
-    try {
-      let content = await this.app.vault.read(sceneFile);
-      const cache = this.app.metadataCache.getFileCache(sceneFile);
-      const existingSessions = [];
-      if ((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.sessions) {
-        const raw = cache.frontmatter.sessions;
-        if (Array.isArray(raw)) {
-          for (const entry of raw) existingSessions.push(String(entry));
-        } else {
-          existingSessions.push(String(raw));
-        }
-      }
-      const linkStr = `[[${sessionFilePath}]]`;
-      if (!existingSessions.some((s) => s.includes(sessionFilePath))) {
-        existingSessions.push(linkStr);
-      }
-      const normalizedSessions = existingSessions.map(
-        (s) => s.startsWith("[[") ? s : `[[${s}]]`
-      );
-      content = updateYamlFrontmatter(content, (fm) => ({
-        ...fm,
-        sessions: normalizedSessions
-      }));
-      await this.app.vault.modify(sceneFile, content);
-    } catch (e) {
-    }
-  }
-  /** Set scenes before startIdx to 'completed', scene at startIdx to 'in-progress'. */
-  async updateSceneStatusesFromStartingScene(scenes, startIdx) {
-    for (let i = 0; i < startIdx; i++) {
-      const scene = scenes[i];
-      if (!scene || scene.status === "completed") continue;
-      const file = this.app.vault.getAbstractFileByPath(scene.path);
-      if (!(file instanceof import_obsidian51.TFile)) continue;
-      try {
-        const c = await this.app.vault.read(file);
-        const updated = updateYamlFrontmatter(c, (fm) => ({
-          ...fm,
-          status: "completed"
-        }));
-        await this.app.vault.modify(file, updated);
-      } catch (_e) {
-      }
-    }
-    const startScene = scenes[startIdx];
-    if (startScene && startScene.status !== "in-progress") {
-      const file = this.app.vault.getAbstractFileByPath(startScene.path);
-      if (file instanceof import_obsidian51.TFile) {
-        try {
-          const c = await this.app.vault.read(file);
-          const updated = updateYamlFrontmatter(c, (fm) => ({
-            ...fm,
-            status: "in-progress"
-          }));
-          await this.app.vault.modify(file, updated);
-        } catch (_e) {
-        }
-      }
-    }
-  }
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
+    this.disableReadOnlyMode();
+    this.managedLeaves.clear();
   }
 };
 
 // src/session/EndSessionModal.ts
-var import_obsidian52 = require("obsidian");
+var import_obsidian53 = require("obsidian");
 init_YamlFrontmatter();
-var EndSessionModal = class extends import_obsidian52.Modal {
+var EndSessionModal = class extends import_obsidian53.Modal {
   constructor(app, plugin, sessionFile) {
     super(app);
     this.endingScenePath = "";
@@ -55911,25 +56409,39 @@ var EndSessionModal = class extends import_obsidian52.Modal {
     contentEl.createEl("h2", { text: "\u{1F3C1} End Session Here" });
     const cache = this.app.metadataCache.getFileCache(this.sessionFile);
     const fm = cache == null ? void 0 : cache.frontmatter;
-    const adventurePath = this.parseWikilink(fm == null ? void 0 : fm.adventure);
-    if (adventurePath) {
-      await this.buildScenePicker(contentEl, adventurePath);
+    const tmp = new SessionCreationModal(this.app, this.plugin);
+    const rawAdventures = Array.isArray(fm == null ? void 0 : fm.adventures) && fm.adventures.length > 0 ? fm.adventures : [fm == null ? void 0 : fm.adventure];
+    const linkedAdventures = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const value of rawAdventures) {
+      const ref = this.parseWikilink(value);
+      if (!ref) continue;
+      const file = tmp.resolveAdventureFile(ref);
+      if (!file || seen.has(file.path)) continue;
+      seen.add(file.path);
+      linkedAdventures.push({ path: file.path, name: file.basename });
+    }
+    if (linkedAdventures.length > 0) {
+      await this.buildScenePicker(contentEl, linkedAdventures);
     } else {
       contentEl.createEl("p", {
         text: "This session has no adventure linked. Pick one to find its scenes:",
         cls: "setting-item-description"
       });
       const campaignPath = (_b = (_a = this.sessionFile.parent) == null ? void 0 : _a.path) != null ? _b : "";
-      const tmp = new SessionCreationModal(this.app, this.plugin);
-      tmp.campaignPath = campaignPath;
-      const adventures = await tmp.getAllAdventures();
+      const tmp2 = new SessionCreationModal(this.app, this.plugin);
+      tmp2.campaignPath = campaignPath;
+      const adventures = await tmp2.getAllAdventures();
       if (adventures.length === 0) {
         contentEl.createEl("p", { text: "No adventures found." });
-        contentEl.createEl("button", { text: "Close" }).onclick = () => this.close();
+        contentEl.createEl("button", { text: "\u{1F3C1} Complete Session", cls: "mod-cta" }).onclick = async () => {
+          this.close();
+          await this.saveEndingScene("");
+        };
         return;
       }
       let pickedAdventurePath = (_d = (_c = adventures[0]) == null ? void 0 : _c.path) != null ? _d : "";
-      new import_obsidian52.Setting(contentEl).setName("Adventure").addDropdown((dd) => {
+      new import_obsidian53.Setting(contentEl).setName("Adventure").addDropdown((dd) => {
         adventures.forEach((a) => dd.addOption(a.path, a.name));
         dd.setValue(pickedAdventurePath);
         dd.onChange((v) => {
@@ -55940,30 +56452,51 @@ var EndSessionModal = class extends import_obsidian52.Modal {
       const loadBtn = contentEl.createEl("button", { text: "Load Scenes \u2192", cls: "mod-cta" });
       loadBtn.style.margin = "8px 0";
       loadBtn.onclick = async () => {
+        var _a2, _b2;
         loadBtn.remove();
         sceneArea.empty();
-        await this.buildScenePicker(sceneArea, pickedAdventurePath, pickedAdventurePath);
+        await this.buildScenePicker(sceneArea, [{
+          path: pickedAdventurePath,
+          name: (_b2 = (_a2 = adventures.find((a) => a.path === pickedAdventurePath)) == null ? void 0 : _a2.name) != null ? _b2 : pickedAdventurePath
+        }]);
       };
     }
   }
   /** Renders the scene picker and Save button into `container`. */
-  async buildScenePicker(container, adventurePath, overrideAdventurePath) {
+  async buildScenePicker(container, adventures) {
     var _a, _b;
     const modal = this;
     const tmp = new SessionCreationModal(this.app, this.plugin);
-    this.scenes = await tmp.getAllScenesForAdventure(adventurePath);
+    this.scenes = [];
+    const seenScenes = /* @__PURE__ */ new Set();
+    for (const adventure of adventures) {
+      const scenes = await tmp.getAllScenesForAdventure(adventure.path);
+      for (const scene of scenes) {
+        if (seenScenes.has(scene.path)) continue;
+        seenScenes.add(scene.path);
+        this.scenes.push({
+          ...scene,
+          adventurePath: adventure.path,
+          adventureName: adventure.name
+        });
+      }
+    }
     if (this.scenes.length === 0) {
       container.createEl("p", { text: `No scenes found for this adventure. Check that scene notes have type: scene in their frontmatter.` });
-      container.createEl("button", { text: "Close" }).onclick = () => this.close();
+      container.createEl("button", { text: "\u{1F3C1} Complete Session", cls: "mod-cta" }).onclick = async () => {
+        var _a2, _b2;
+        this.close();
+        await this.saveEndingScene((_b2 = (_a2 = adventures[0]) == null ? void 0 : _a2.path) != null ? _b2 : "");
+      };
       return;
     }
     const preferred = (_a = [...this.scenes].reverse().find((s) => s.status === "in-progress")) != null ? _a : this.scenes[this.scenes.length - 1];
     this.endingScenePath = (_b = preferred == null ? void 0 : preferred.path) != null ? _b : "";
     container.createEl("p", { text: "Record which scene the session ended at.", cls: "setting-item-description" });
-    new import_obsidian52.Setting(container).setName("Ending Scene").setDesc("Scene where the session stopped").addDropdown((dd) => {
+    new import_obsidian53.Setting(container).setName("Ending Scene").setDesc("Scene where the session stopped").addDropdown((dd) => {
       dd.addOption("", "-- None --");
       for (const sc of this.scenes) {
-        dd.addOption(sc.path, `${sc.name} [${sc.status}]`);
+        dd.addOption(sc.path, `${sc.adventureName} \u2014 ${sc.name} [${sc.status}]`);
       }
       dd.setValue(this.endingScenePath);
       dd.onChange((v) => {
@@ -55975,22 +56508,25 @@ var EndSessionModal = class extends import_obsidian52.Modal {
     cancel.onclick = () => this.close();
     const save = btns.createEl("button", { text: "\u{1F3C1} Save Ending Scene", cls: "mod-cta" });
     save.onclick = async () => {
+      var _a2, _b2, _c;
       this.close();
-      await modal.saveEndingScene(overrideAdventurePath != null ? overrideAdventurePath : adventurePath);
+      const selected = modal.scenes.find((scene) => scene.path === modal.endingScenePath);
+      await modal.saveEndingScene((_c = (_b2 = selected == null ? void 0 : selected.adventurePath) != null ? _b2 : (_a2 = adventures[0]) == null ? void 0 : _a2.path) != null ? _c : "");
     };
   }
   async saveEndingScene(resolvedAdventurePath) {
-    if (!this.endingScenePath) return;
+    var _a;
     try {
       let content = await this.app.vault.read(this.sessionFile);
-      const endingSceneWiki = `[[${this.endingScenePath}]]`;
+      const endingSceneWiki = this.endingScenePath ? `[[${this.endingScenePath}]]` : "";
       content = updateYamlFrontmatter(content, (fm) => {
-        var _a;
+        var _a2;
         const updated = {
           ...fm,
-          ending_scene: endingSceneWiki
+          ending_scene: endingSceneWiki,
+          status: "completed"
         };
-        const existingAdventure = String((_a = updated.adventure) != null ? _a : "").trim();
+        const existingAdventure = String((_a2 = updated.adventure) != null ? _a2 : "").trim();
         if (!existingAdventure.startsWith("[[") && resolvedAdventurePath) {
           updated.adventure = `[[${resolvedAdventurePath}]]`;
         }
@@ -55999,7 +56535,7 @@ var EndSessionModal = class extends import_obsidian52.Modal {
       await this.app.vault.modify(this.sessionFile, content);
       const tmp = new SessionCreationModal(this.app, this.plugin);
       tmp.adventurePath = resolvedAdventurePath;
-      await tmp.addSessionBacklinkToScene(this.endingScenePath, this.sessionFile.path);
+      if (this.endingScenePath) await tmp.addSessionBacklinkToScene(this.endingScenePath, this.sessionFile.path);
       const endIdx = this.scenes.findIndex((s) => s.path === this.endingScenePath);
       if (endIdx >= 0) {
         const endScene = this.scenes[endIdx];
@@ -56017,9 +56553,22 @@ var EndSessionModal = class extends import_obsidian52.Modal {
           }
         }
       }
-      new import_obsidian52.Notice("\u{1F3C1} Ending scene recorded!");
+      new import_obsidian53.Notice(this.endingScenePath ? "\u{1F3C1} Session completed and ending scene recorded!" : "\u{1F3C1} Session completed!");
+      const openPrep = await new Promise((resolve) => {
+        new ConfirmModal(
+          this.app,
+          "Prepare the next session?",
+          "This session is complete. Open the Prep Dashboard to review and prepare what comes next? No new notes will be created automatically.",
+          resolve
+        ).open();
+      });
+      if (openPrep) {
+        const parent = this.sessionFile.parent;
+        const campaignPath = (parent == null ? void 0 : parent.name) === "Sessions" ? (_a = parent.parent) == null ? void 0 : _a.path : parent == null ? void 0 : parent.path;
+        await this.plugin.openSessionPrepDashboard(campaignPath);
+      }
     } catch (e) {
-      new import_obsidian52.Notice(`\u274C Could not save ending scene: ${e instanceof Error ? e.message : String(e)}`);
+      new import_obsidian53.Notice(`\u274C Could not save ending scene: ${e instanceof Error ? e.message : String(e)}`);
       console.error("EndSessionModal.saveEndingScene error:", e);
     }
   }
@@ -56029,9 +56578,9 @@ var EndSessionModal = class extends import_obsidian52.Modal {
 };
 
 // src/dm-screen/DMScreenView.ts
-var import_obsidian53 = require("obsidian");
+var import_obsidian54 = require("obsidian");
 init_constants();
-var DMScreenView = class extends import_obsidian53.ItemView {
+var DMScreenView = class extends import_obsidian54.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.activeTab = "conditions";
@@ -56108,10 +56657,10 @@ var DMScreenView = class extends import_obsidian53.ItemView {
   async renderConditionsTab(container) {
     container.createEl("h4", { text: "Conditions" });
     const conditionsFolder = this.app.vault.getAbstractFileByPath("z_Conditions");
-    if (conditionsFolder instanceof import_obsidian53.TFolder && conditionsFolder.children.length > 0) {
+    if (conditionsFolder instanceof import_obsidian54.TFolder && conditionsFolder.children.length > 0) {
       const conditionsGrid = container.createEl("div", { cls: "dm-screen-conditions-grid" });
       for (const file of conditionsFolder.children) {
-        if (file instanceof import_obsidian53.TFile && file.extension === "md") {
+        if (file instanceof import_obsidian54.TFile && file.extension === "md") {
           const conditionCard = conditionsGrid.createEl("div", { cls: "dm-condition-card" });
           const conditionName = conditionCard.createEl("strong", { text: file.basename });
           conditionName.addClass("dm-condition-link");
@@ -56374,10 +56923,10 @@ var DMScreenView = class extends import_obsidian53.ItemView {
   async renderDamageTab(container) {
     container.createEl("h4", { text: "Damage Types" });
     const damageFolder = this.app.vault.getAbstractFileByPath("z_DamageTypes");
-    if (damageFolder instanceof import_obsidian53.TFolder && damageFolder.children.length > 0) {
+    if (damageFolder instanceof import_obsidian54.TFolder && damageFolder.children.length > 0) {
       const damageGrid = container.createEl("div", { cls: "dm-screen-damage-grid" });
       for (const file of damageFolder.children) {
-        if (file instanceof import_obsidian53.TFile && file.extension === "md") {
+        if (file instanceof import_obsidian54.TFile && file.extension === "md") {
           const card = damageGrid.createEl("div", { cls: "dm-damage-card" });
           const nameEl = card.createEl("strong", { text: file.basename });
           nameEl.addClass("dm-damage-link");
@@ -56496,7 +57045,7 @@ var DMScreenView = class extends import_obsidian53.ItemView {
 };
 
 // src/campaign/CampaignCreationModal.ts
-var import_obsidian54 = require("obsidian");
+var import_obsidian55 = require("obsidian");
 init_templates();
 init_migration();
 init_YamlFrontmatter();
@@ -56547,7 +57096,7 @@ function isHowToBeAHeroSystem(value) {
 }
 
 // src/campaign/CampaignCreationModal.ts
-var CampaignCreationModal = class extends import_obsidian54.Modal {
+var CampaignCreationModal = class extends import_obsidian55.Modal {
   constructor(app, plugin) {
     super(app);
     this.campaignName = "";
@@ -56567,19 +57116,19 @@ var CampaignCreationModal = class extends import_obsidian54.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.createEl("h2", { text: "\u{1F3B2} Create New Campaign" });
-    new import_obsidian54.Setting(contentEl).setName("Campaign Name").setDesc("The name of your campaign").addText((text) => {
+    new import_obsidian55.Setting(contentEl).setName("Campaign Name").setDesc("The name of your campaign").addText((text) => {
       text.setPlaceholder("e.g., Lost Mines of Phandelver").onChange((value) => {
         this.campaignName = value;
       });
       text.inputEl.focus();
     });
-    new import_obsidian54.Setting(contentEl).setName("Your Role").setDesc("Are you the GM/DM or a player?").addDropdown((dropdown) => {
-      dropdown.addOption("GM", "Game Master / DM").addOption("player", "Player").setValue(this.role).onChange((value) => {
+    new import_obsidian55.Setting(contentEl).setName("Your Role").setDesc("Are you the game facilitator or a player?").addDropdown((dropdown) => {
+      dropdown.addOption("GM", "Game Facilitator / GM").addOption("player", "Player").setValue(this.role).onChange((value) => {
         this.role = value;
         this.updateDMField();
       });
     });
-    const dmSetting = new import_obsidian54.Setting(contentEl).setName("DM Name").setDesc("Name of the Dungeon Master").addText(
+    const dmSetting = new import_obsidian55.Setting(contentEl).setName("Game Facilitator Name").setDesc("Name of the person running the game").addText(
       (text) => text.setPlaceholder("e.g., John Smith").onChange((value) => {
         this.dmName = value;
       })
@@ -56587,7 +57136,7 @@ var CampaignCreationModal = class extends import_obsidian54.Modal {
     if (this.role === "GM") {
       dmSetting.settingEl.style.display = "none";
     }
-    new import_obsidian54.Setting(contentEl).setName("Game System").setDesc("Which RPG system are you using?").addDropdown((dropdown) => {
+    new import_obsidian55.Setting(contentEl).setName("Game System").setDesc("Which RPG system are you using?").addDropdown((dropdown) => {
       CAMPAIGN_SYSTEM_OPTIONS.forEach((option) => dropdown.addOption(option.id, option.label));
       dropdown.setValue(this.system).onChange((value) => {
         this.system = value;
@@ -56595,7 +57144,7 @@ var CampaignCreationModal = class extends import_obsidian54.Modal {
     });
     contentEl.createEl("h3", { text: "\u{1F4C5} Calendar Settings" });
     const calendars = this.getAvailableCalendars();
-    new import_obsidian54.Setting(contentEl).setName("Fantasy Calendar").setDesc("Select an existing calendar or create a new one").addDropdown((dropdown) => {
+    new import_obsidian55.Setting(contentEl).setName("Fantasy Calendar").setDesc("Select an existing calendar or create a new one").addDropdown((dropdown) => {
       dropdown.addOption("", "None");
       dropdown.addOption("__CREATE_NEW__", "\u2795 Create New Calendar");
       calendars.forEach((cal) => {
@@ -56627,7 +57176,7 @@ var CampaignCreationModal = class extends import_obsidian54.Modal {
     });
     createButton.addEventListener("click", async () => {
       if (!this.campaignName.trim()) {
-        new import_obsidian54.Notice("Please enter a campaign name!");
+        new import_obsidian55.Notice("Please enter a campaign name!");
         return;
       }
       this.close();
@@ -56650,7 +57199,7 @@ var CampaignCreationModal = class extends import_obsidian54.Modal {
     if (!this.startYear) this.startYear = "1";
     if (!this.startMonth) this.startMonth = "1";
     if (!this.startDay) this.startDay = "1";
-    const dateSetting = new import_obsidian54.Setting(this.calendarContainer).setName("Campaign Start Date").setDesc("When does the campaign begin in your world?");
+    const dateSetting = new import_obsidian55.Setting(this.calendarContainer).setName("Campaign Start Date").setDesc("When does the campaign begin in your world?");
     const dateDisplay = this.calendarContainer.createEl("div", {
       cls: "dnd-date-display"
     });
@@ -56729,7 +57278,7 @@ var CampaignCreationModal = class extends import_obsidian54.Modal {
     var _a, _b;
     const calendariumPlugin = (_b = (_a = this.app.plugins) == null ? void 0 : _a.plugins) == null ? void 0 : _b.calendarium;
     if (!calendariumPlugin) {
-      new import_obsidian54.Notice("Calendarium plugin not found!");
+      new import_obsidian55.Notice("Calendarium plugin not found!");
       return;
     }
     this.close();
@@ -56748,7 +57297,7 @@ var CampaignCreationModal = class extends import_obsidian54.Modal {
       var _a2;
       (_a2 = this.app.commands) == null ? void 0 : _a2.executeCommandById(commandId);
     }, 100);
-    new import_obsidian54.Notice("After creating your calendar, use 'Create Campaign' again to select it.");
+    new import_obsidian55.Notice("After creating your calendar, use 'Create Campaign' again to select it.");
   }
   getAvailableCalendars() {
     var _a, _b, _c;
@@ -56776,7 +57325,7 @@ var CampaignCreationModal = class extends import_obsidian54.Modal {
   async createCampaignStructure() {
     const campaignName = this.campaignName.trim();
     const campaignPath = `ttrpgs/${campaignName}`;
-    new import_obsidian54.Notice(`Creating campaign "${campaignName}"...`);
+    new import_obsidian55.Notice(`Creating campaign "${campaignName}"...`);
     try {
       const campaignFolders = [
         campaignPath,
@@ -56840,9 +57389,9 @@ campaign: ${campaignName}
       }
       await this.plugin.partyManager.getOrCreateCampaignParty(campaignName, campaignPath);
       await this.app.workspace.openLinkText(worldFilePath, "", true);
-      new import_obsidian54.Notice(`\u2705 Campaign "${campaignName}" created successfully!`);
+      new import_obsidian55.Notice(`\u2705 Campaign "${campaignName}" created successfully!`);
     } catch (error2) {
-      new import_obsidian54.Notice(`\u274C Error creating campaign: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      new import_obsidian55.Notice(`\u274C Error creating campaign: ${error2 instanceof Error ? error2.message : String(error2)}`);
       console.error("Campaign creation error:", error2);
     }
   }
@@ -56853,9 +57402,9 @@ campaign: ${campaignName}
 };
 
 // src/campaign/CampaignSystemModal.ts
-var import_obsidian55 = require("obsidian");
+var import_obsidian56 = require("obsidian");
 init_YamlFrontmatter();
-var CampaignSystemModal = class extends import_obsidian55.Modal {
+var CampaignSystemModal = class extends import_obsidian56.Modal {
   constructor(app, plugin, campaignPath) {
     super(app);
     this.plugin = plugin;
@@ -56871,13 +57420,13 @@ var CampaignSystemModal = class extends import_obsidian55.Modal {
       text: `Campaign: ${campaignName}`,
       cls: "setting-item-description"
     });
-    new import_obsidian55.Setting(contentEl).setName("Game System").setDesc("Future system-specific tools will use this value to decide which campaign features are available.").addDropdown((dropdown) => {
+    new import_obsidian56.Setting(contentEl).setName("Game System").setDesc("Future system-specific tools will use this value to decide which campaign features are available.").addDropdown((dropdown) => {
       CAMPAIGN_SYSTEM_OPTIONS.forEach((option) => dropdown.addOption(option.id, option.label));
       dropdown.setValue(this.system).onChange((value) => {
         this.system = value;
       });
     });
-    new import_obsidian55.Setting(contentEl).addButton(
+    new import_obsidian56.Setting(contentEl).addButton(
       (button) => button.setButtonText("Save").setCta().onClick(async () => {
         await this.save();
       })
@@ -56888,7 +57437,7 @@ var CampaignSystemModal = class extends import_obsidian55.Modal {
   async save() {
     const targets = this.getCampaignSystemFiles();
     if (targets.length === 0) {
-      new import_obsidian55.Notice("No campaign files found to update.");
+      new import_obsidian56.Notice("No campaign files found to update.");
       return;
     }
     for (const file of targets) {
@@ -56903,7 +57452,7 @@ var CampaignSystemModal = class extends import_obsidian55.Modal {
       await this.plugin.ensureFolderExists(`${this.campaignPath}/Evidences`);
     }
     this.close();
-    new import_obsidian55.Notice(`Campaign system set to ${getCampaignSystemLabel(this.system)}.`);
+    new import_obsidian56.Notice(`Campaign system set to ${getCampaignSystemLabel(this.system)}.`);
   }
   getCampaignSystemFiles() {
     var _a, _b;
@@ -56911,7 +57460,7 @@ var CampaignSystemModal = class extends import_obsidian55.Modal {
     const files = [];
     const add = (path) => {
       const file = this.app.vault.getAbstractFileByPath(path);
-      if (file instanceof import_obsidian55.TFile && !seen.has(file.path)) {
+      if (file instanceof import_obsidian56.TFile && !seen.has(file.path)) {
         seen.add(file.path);
         files.push(file);
       }
@@ -56932,8 +57481,8 @@ var CampaignSystemModal = class extends import_obsidian55.Modal {
 };
 
 // src/campaign/EvidenceCreationModal.ts
-var import_obsidian56 = require("obsidian");
-var EvidenceCreationModal = class extends import_obsidian56.Modal {
+var import_obsidian57 = require("obsidian");
+var EvidenceCreationModal = class extends import_obsidian57.Modal {
   constructor(app, plugin, evidencePath, campaignPath) {
     super(app);
     this.plugin = plugin;
@@ -56966,38 +57515,38 @@ var EvidenceCreationModal = class extends import_obsidian56.Modal {
       await this.loadEvidenceData();
     }
     contentEl.createEl("h2", { text: this.isEdit ? "Edit Evidence" : "Create Evidence" });
-    new import_obsidian56.Setting(contentEl).setName("Evidence Title").setDesc("Short name shown in searches and evidence lists.").addText((text) => {
+    new import_obsidian57.Setting(contentEl).setName("Evidence Title").setDesc("Short name shown in searches and evidence lists.").addText((text) => {
       text.setPlaceholder("Bloody receipt, witness statement, strange symbol...").setValue(this.evidenceName).onChange((value) => {
         this.evidenceName = value;
       });
       if (!this.isEdit) text.inputEl.focus();
     });
-    new import_obsidian56.Setting(contentEl).setName("Category").addDropdown(
+    new import_obsidian57.Setting(contentEl).setName("Category").addDropdown(
       (dropdown) => dropdown.addOption("clue", "Clue").addOption("document", "Document").addOption("testimony", "Testimony").addOption("object", "Object").addOption("location", "Location").addOption("digital", "Digital").addOption("other", "Other").setValue(this.category).onChange((value) => {
         this.category = value;
       })
     );
-    new import_obsidian56.Setting(contentEl).setName("Status").addDropdown(
+    new import_obsidian57.Setting(contentEl).setName("Status").addDropdown(
       (dropdown) => dropdown.addOption("new", "New").addOption("reviewed", "Reviewed").addOption("verified", "Verified").addOption("disputed", "Disputed").addOption("resolved", "Resolved").setValue(this.status).onChange((value) => {
         this.status = value;
       })
     );
-    new import_obsidian56.Setting(contentEl).setName("Source").setDesc("Who or what provided this evidence?").addText(
+    new import_obsidian57.Setting(contentEl).setName("Source").setDesc("Who or what provided this evidence?").addText(
       (text) => text.setPlaceholder("Witness, archive, crime scene...").setValue(this.source).onChange((value) => {
         this.source = value;
       })
     );
-    new import_obsidian56.Setting(contentEl).setName("Location Found").addText(
+    new import_obsidian57.Setting(contentEl).setName("Location Found").addText(
       (text) => text.setPlaceholder("Where it was discovered").setValue(this.locationFound).onChange((value) => {
         this.locationFound = value;
       })
     );
-    new import_obsidian56.Setting(contentEl).setName("Discovered Date").addText(
+    new import_obsidian57.Setting(contentEl).setName("Discovered Date").addText(
       (text) => text.setPlaceholder("In-game or real date").setValue(this.discoveredDate).onChange((value) => {
         this.discoveredDate = value;
       })
     );
-    new import_obsidian56.Setting(contentEl).setName("Related").setDesc("People, places, scenes, or other clues. Markdown links are fine.").addText((text) => {
+    new import_obsidian57.Setting(contentEl).setName("Related").setDesc("People, places, scenes, or other clues. Markdown links are fine.").addText((text) => {
       text.setPlaceholder("[[NPC]], [[Scene]], case thread...").setValue(this.related).onChange((value) => {
         this.related = value;
       });
@@ -57028,21 +57577,21 @@ var EvidenceCreationModal = class extends import_obsidian56.Modal {
     let selectedCampaign = initialCampaign;
     this.campaignPath = selectedCampaign;
     contentEl.createEl("h3", { text: "Save Location" });
-    new import_obsidian56.Setting(contentEl).setName("Campaign").setDesc("Evidences are only available for How to be a Hero campaigns.").addDropdown((dropdown) => {
+    new import_obsidian57.Setting(contentEl).setName("Campaign").setDesc("Evidences are only available for How to be a Hero campaigns.").addDropdown((dropdown) => {
       campaigns.forEach((campaign) => dropdown.addOption(campaign.path, campaign.name));
       dropdown.setValue(selectedCampaign).onChange((value) => {
         selectedCampaign = value;
         this.campaignPath = value;
       });
     });
-    new import_obsidian56.Setting(contentEl).addButton(
+    new import_obsidian57.Setting(contentEl).addButton(
       (button) => button.setButtonText(this.isEdit ? "Update Evidence" : "Create Evidence").setCta().onClick(async () => {
         await this.saveEvidence(selectedCampaign);
       })
     );
   }
   addTextArea(container, name, desc, value, onChange, rows) {
-    new import_obsidian56.Setting(container).setName(name).setDesc(desc).addTextArea((text) => {
+    new import_obsidian57.Setting(container).setName(name).setDesc(desc).addTextArea((text) => {
       text.setValue(value).onChange(onChange);
       text.inputEl.rows = rows;
       text.inputEl.style.width = "100%";
@@ -57051,8 +57600,8 @@ var EvidenceCreationModal = class extends import_obsidian56.Modal {
   async loadEvidenceData() {
     var _a;
     const file = this.app.vault.getAbstractFileByPath(this.originalPath);
-    if (!(file instanceof import_obsidian56.TFile)) {
-      new import_obsidian56.Notice("Evidence file not found.");
+    if (!(file instanceof import_obsidian57.TFile)) {
+      new import_obsidian57.Notice("Evidence file not found.");
       return;
     }
     const fm = ((_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter) || {};
@@ -57082,11 +57631,11 @@ var EvidenceCreationModal = class extends import_obsidian56.Modal {
   }
   async saveEvidence(campaignPath) {
     if (!this.evidenceName.trim()) {
-      new import_obsidian56.Notice("Please enter an evidence title.");
+      new import_obsidian57.Notice("Please enter an evidence title.");
       return;
     }
     if (!this.plugin.isHowToBeAHeroCampaign(campaignPath)) {
-      new import_obsidian56.Notice("Evidences can only be created in How to be a Hero campaigns.");
+      new import_obsidian57.Notice("Evidences can only be created in How to be a Hero campaigns.");
       return;
     }
     await this.ensureEvidenceFolder(campaignPath);
@@ -57095,14 +57644,14 @@ var EvidenceCreationModal = class extends import_obsidian56.Modal {
     if (this.isEdit) {
       file = this.app.vault.getAbstractFileByPath(this.originalPath);
       if (!file) {
-        new import_obsidian56.Notice("Original evidence file not found.");
+        new import_obsidian57.Notice("Original evidence file not found.");
         return;
       }
       if (this.evidenceName !== this.originalName) {
         const folder = path.substring(0, path.lastIndexOf("/"));
         const newPath = `${folder}/${this.evidenceName}.md`;
         if (await this.app.vault.adapter.exists(newPath)) {
-          new import_obsidian56.Notice(`Evidence named "${this.evidenceName}" already exists.`);
+          new import_obsidian57.Notice(`Evidence named "${this.evidenceName}" already exists.`);
           return;
         }
         await this.app.fileManager.renameFile(file, newPath);
@@ -57112,17 +57661,17 @@ var EvidenceCreationModal = class extends import_obsidian56.Modal {
     } else {
       path = `${campaignPath}/Evidences/${this.evidenceName}.md`;
       if (await this.app.vault.adapter.exists(path)) {
-        new import_obsidian56.Notice(`Evidence named "${this.evidenceName}" already exists.`);
+        new import_obsidian57.Notice(`Evidence named "${this.evidenceName}" already exists.`);
         return;
       }
     }
     const content = this.createEvidenceContent(campaignPath);
     if (this.isEdit && file) {
       await this.app.vault.modify(file, content);
-      new import_obsidian56.Notice(`Evidence "${this.evidenceName}" updated.`);
+      new import_obsidian57.Notice(`Evidence "${this.evidenceName}" updated.`);
     } else {
       file = await this.app.vault.create(path, content);
-      new import_obsidian56.Notice(`Evidence "${this.evidenceName}" created.`);
+      new import_obsidian57.Notice(`Evidence "${this.evidenceName}" created.`);
     }
     this.close();
     await this.app.workspace.openLinkText(file.path, "", false);
@@ -57130,7 +57679,7 @@ var EvidenceCreationModal = class extends import_obsidian56.Modal {
   async ensureEvidenceFolder(campaignPath) {
     const folderPath = `${campaignPath}/Evidences`;
     const folder = this.app.vault.getAbstractFileByPath(folderPath);
-    if (!(folder instanceof import_obsidian56.TFolder)) {
+    if (!(folder instanceof import_obsidian57.TFolder)) {
       await this.plugin.ensureFolderExists(folderPath);
     }
   }
@@ -57179,7 +57728,7 @@ ${this.followUp}
     this.contentEl.empty();
   }
 };
-var EvidenceRelatedSuggest = class extends import_obsidian56.AbstractInputSuggest {
+var EvidenceRelatedSuggest = class extends import_obsidian57.AbstractInputSuggest {
   constructor(app, inputEl, getCampaignPath) {
     super(app, inputEl);
     this.inputEl = inputEl;
@@ -57223,13 +57772,13 @@ var EvidenceRelatedSuggest = class extends import_obsidian56.AbstractInputSugges
 };
 
 // src/rendering/TableRenderer.ts
-var import_obsidian57 = require("obsidian");
+var import_obsidian58 = require("obsidian");
 function getFilesInFolder(app, folderPath) {
   const folder = app.vault.getAbstractFileByPath(folderPath);
-  if (!(folder instanceof import_obsidian57.TFolder)) return [];
+  if (!(folder instanceof import_obsidian58.TFolder)) return [];
   const files = [];
   for (const child of folder.children) {
-    if (child instanceof import_obsidian57.TFile && child.extension === "md") {
+    if (child instanceof import_obsidian58.TFile && child.extension === "md") {
       files.push(child);
     }
   }
@@ -57237,13 +57786,13 @@ function getFilesInFolder(app, folderPath) {
 }
 function getFilesRecursive(app, folderPath) {
   const folder = app.vault.getAbstractFileByPath(folderPath);
-  if (!(folder instanceof import_obsidian57.TFolder)) return [];
+  if (!(folder instanceof import_obsidian58.TFolder)) return [];
   const files = [];
   const walk = (f) => {
     for (const child of f.children) {
-      if (child instanceof import_obsidian57.TFile && child.extension === "md") {
+      if (child instanceof import_obsidian58.TFile && child.extension === "md") {
         files.push(child);
-      } else if (child instanceof import_obsidian57.TFolder) {
+      } else if (child instanceof import_obsidian58.TFolder) {
         walk(child);
       }
     }
@@ -57497,17 +58046,17 @@ function renderEntityTable(source, el, app) {
 }
 
 // src/rendering/ViewRenderer.ts
-var import_obsidian58 = require("obsidian");
+var import_obsidian59 = require("obsidian");
 init_YamlFrontmatter();
 function getFilesRecursive2(app, folderPath) {
   const folder = app.vault.getAbstractFileByPath(folderPath);
-  if (!(folder instanceof import_obsidian58.TFolder)) return [];
+  if (!(folder instanceof import_obsidian59.TFolder)) return [];
   const files = [];
   const walk = (f) => {
     for (const child of f.children) {
-      if (child instanceof import_obsidian58.TFile && child.extension === "md") {
+      if (child instanceof import_obsidian59.TFile && child.extension === "md") {
         files.push(child);
-      } else if (child instanceof import_obsidian58.TFolder) {
+      } else if (child instanceof import_obsidian59.TFolder) {
         walk(child);
       }
     }
@@ -57520,7 +58069,7 @@ function openNote(app, path) {
 }
 function openNoteInNewTab(app, path) {
   const file = app.vault.getAbstractFileByPath(path);
-  if (file instanceof import_obsidian58.TFile) void app.workspace.getLeaf("tab").openFile(file);
+  if (file instanceof import_obsidian59.TFile) void app.workspace.getLeaf("tab").openFile(file);
 }
 function parseLink(val2) {
   if (!val2 || val2 === '""' || val2 === "") return null;
@@ -57559,7 +58108,7 @@ function renderView(source, el, app, sourcePath) {
 function renderSceneNavigator(el, app, sourcePath) {
   var _a, _b;
   const file = app.vault.getAbstractFileByPath(sourcePath);
-  if (!(file instanceof import_obsidian58.TFile)) return;
+  if (!(file instanceof import_obsidian59.TFile)) return;
   const cache = app.metadataCache.getFileCache(file);
   const fm = cache == null ? void 0 : cache.frontmatter;
   if (!fm) return;
@@ -57571,6 +58120,7 @@ function renderSceneNavigator(el, app, sourcePath) {
   }
   const startPath = parseLink(fm.starting_scene);
   const endPath2 = parseLink(fm.ending_scene);
+  const plannedLinks = (Array.isArray(fm.planned_scenes) ? fm.planned_scenes : []).map((value) => parseLink(value)).filter((value) => Boolean(value));
   if (adventureLinks.length === 0) {
     el.createEl("p", { text: "No adventure linked to this session.", cls: "dnd-hub-empty" });
     const createBtn = el.createEl("button", { text: "\u{1F5FA}\uFE0F Create Adventure", cls: "mod-cta" });
@@ -57599,7 +58149,29 @@ function renderSceneNavigator(el, app, sourcePath) {
       scenes: collectScenes(app, ((_b = adventureFile.parent) == null ? void 0 : _b.path) || "", (adventureFm == null ? void 0 : adventureFm.campaign) || "", adventureName)
     });
   }
-  const allScenes = adventureGroups.flatMap((group) => group.scenes);
+  let allScenes = adventureGroups.flatMap((group) => group.scenes);
+  if (plannedLinks.length > 0) {
+    const byPath = /* @__PURE__ */ new Map();
+    for (const scene of allScenes) {
+      byPath.set(scene.file.path, scene);
+      byPath.set(scene.file.basename, scene);
+      byPath.set(scene.file.path.replace(/\.md$/i, ""), scene);
+    }
+    const plannedScenes = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const link of plannedLinks) {
+      const resolved = resolveFile(app, link);
+      const scene = resolved && byPath.get(resolved.path) || byPath.get(link) || byPath.get(link.replace(/\.md$/i, ""));
+      if (scene && !seen.has(scene.file.path)) {
+        seen.add(scene.file.path);
+        plannedScenes.push(scene);
+      }
+    }
+    if (plannedScenes.length > 0) {
+      adventureGroups.splice(0, adventureGroups.length, { name: "Planned Scenes", scenes: plannedScenes });
+      allScenes = plannedScenes;
+    }
+  }
   if (allScenes.length === 0) {
     el.createEl("p", { text: "No scenes found for the linked adventures. Create scenes from the adventure notes.", cls: "dnd-hub-empty" });
     return;
@@ -57655,7 +58227,7 @@ function renderSceneNavigator(el, app, sourcePath) {
       togBtn.addEventListener("click", async () => {
         const newStatus = STATUS_NEXT[currentStatus] || "not-started";
         const f = app.vault.getAbstractFileByPath(scene.file.path);
-        if (f instanceof import_obsidian58.TFile) {
+        if (f instanceof import_obsidian59.TFile) {
           const c = await app.vault.read(f);
           const updated = updateYamlFrontmatter(c, (fm2) => ({
             ...fm2,
@@ -57683,7 +58255,7 @@ function renderSceneNavigator(el, app, sourcePath) {
 function renderAdventureScenes(el, app, sourcePath) {
   var _a;
   const file = app.vault.getAbstractFileByPath(sourcePath);
-  if (!(file instanceof import_obsidian58.TFile)) return;
+  if (!(file instanceof import_obsidian59.TFile)) return;
   const cache = app.metadataCache.getFileCache(file);
   const fm = cache == null ? void 0 : cache.frontmatter;
   if (!fm) return;
@@ -57730,7 +58302,7 @@ function renderSceneItems(container, app, scenes) {
     statusBtn.addEventListener("click", async () => {
       const newStatus = STATUS_NEXT[currentStatus] || "not-started";
       const f = app.vault.getAbstractFileByPath(scene.file.path);
-      if (f instanceof import_obsidian58.TFile) {
+      if (f instanceof import_obsidian59.TFile) {
         const content = await app.vault.read(f);
         const updated = updateYamlFrontmatter(content, (fm) => ({
           ...fm,
@@ -57752,7 +58324,7 @@ function renderSceneItems(container, app, scenes) {
 }
 function renderTrapElements(el, app, sourcePath) {
   const file = app.vault.getAbstractFileByPath(sourcePath);
-  if (!(file instanceof import_obsidian58.TFile)) return;
+  if (!(file instanceof import_obsidian59.TFile)) return;
   const cache = app.metadataCache.getFileCache(file);
   const fm = cache == null ? void 0 : cache.frontmatter;
   if (!fm) return;
@@ -57821,7 +58393,7 @@ function renderTrapElements(el, app, sourcePath) {
 }
 function renderTrapCountermeasures(el, app, sourcePath) {
   const file = app.vault.getAbstractFileByPath(sourcePath);
-  if (!(file instanceof import_obsidian58.TFile)) return;
+  if (!(file instanceof import_obsidian59.TFile)) return;
   const cache = app.metadataCache.getFileCache(file);
   const fm = cache == null ? void 0 : cache.frontmatter;
   if (!fm) return;
@@ -57843,7 +58415,7 @@ function renderTrapCountermeasures(el, app, sourcePath) {
 }
 function renderEncounterDifficulty(el, app, sourcePath) {
   const file = app.vault.getAbstractFileByPath(sourcePath);
-  if (!(file instanceof import_obsidian58.TFile)) return;
+  if (!(file instanceof import_obsidian59.TFile)) return;
   const cache = app.metadataCache.getFileCache(file);
   const fm = cache == null ? void 0 : cache.frontmatter;
   if (!fm) return;
@@ -57917,7 +58489,7 @@ function renderEncounterDifficulty(el, app, sourcePath) {
 }
 function renderEncounterCreatures(el, app, sourcePath) {
   const file = app.vault.getAbstractFileByPath(sourcePath);
-  if (!(file instanceof import_obsidian58.TFile)) return;
+  if (!(file instanceof import_obsidian59.TFile)) return;
   const cache = app.metadataCache.getFileCache(file);
   const fm = cache == null ? void 0 : cache.frontmatter;
   if (!fm) return;
@@ -57945,7 +58517,7 @@ function renderEncounterCreatures(el, app, sourcePath) {
 function renderPcQuickStats(el, app, sourcePath) {
   var _a, _b, _c, _d, _e, _f, _g, _h, _i;
   const file = app.vault.getAbstractFileByPath(sourcePath);
-  if (!(file instanceof import_obsidian58.TFile)) return;
+  if (!(file instanceof import_obsidian59.TFile)) return;
   const cache = app.metadataCache.getFileCache(file);
   const fm = cache == null ? void 0 : cache.frontmatter;
   if (!fm) return;
@@ -58016,19 +58588,19 @@ function collectScenes(app, adventureFolder, campaignFolder, adventureName) {
 }
 function resolveFile(app, linkTarget) {
   let file = app.vault.getAbstractFileByPath(linkTarget);
-  if (file instanceof import_obsidian58.TFile) return file;
+  if (file instanceof import_obsidian59.TFile) return file;
   file = app.vault.getAbstractFileByPath(linkTarget + ".md");
-  if (file instanceof import_obsidian58.TFile) return file;
+  if (file instanceof import_obsidian59.TFile) return file;
   const allFiles = app.vault.getMarkdownFiles();
   return allFiles.find((f) => f.basename === linkTarget || f.path === linkTarget) || null;
 }
 
 // src/adventure/AdventureCreationModal.ts
-var import_obsidian59 = require("obsidian");
+var import_obsidian60 = require("obsidian");
 init_templates();
 init_migration();
 init_YamlFrontmatter();
-var AdventureCreationModal = class extends import_obsidian59.Modal {
+var AdventureCreationModal = class extends import_obsidian60.Modal {
   constructor(app, plugin, adventurePath, campaignPath) {
     super(app);
     this.adventureName = "";
@@ -58042,6 +58614,7 @@ var AdventureCreationModal = class extends import_obsidian59.Modal {
     this.isEdit = false;
     this.originalPath = "";
     this.originalStatus = "planning";
+    this.unsavedGuard = new UnsavedChangesGuard(app, () => this.getUnsavedState());
     this.plugin = plugin;
     this.campaign = campaignPath || plugin.resolveCampaign();
     if (adventurePath) {
@@ -58049,17 +58622,30 @@ var AdventureCreationModal = class extends import_obsidian59.Modal {
       this.originalPath = adventurePath;
     }
   }
+  getUnsavedState() {
+    return {
+      adventureName: this.adventureName,
+      campaign: this.campaign,
+      theProblem: this.theProblem,
+      levelFrom: this.levelFrom,
+      levelTo: this.levelTo,
+      expectedSessions: this.expectedSessions
+    };
+  }
+  close() {
+    this.unsavedGuard.requestClose(() => super.close());
+  }
   async loadAdventureData() {
     try {
       const file = this.app.vault.getAbstractFileByPath(this.originalPath);
-      if (!(file instanceof import_obsidian59.TFile)) {
-        new import_obsidian59.Notice("Adventure file not found!");
+      if (!(file instanceof import_obsidian60.TFile)) {
+        new import_obsidian60.Notice("Adventure file not found!");
         return;
       }
       const cache = this.app.metadataCache.getFileCache(file);
       const frontmatter = cache == null ? void 0 : cache.frontmatter;
       if (!frontmatter) {
-        new import_obsidian59.Notice("Could not read adventure data!");
+        new import_obsidian60.Notice("Could not read adventure data!");
         return;
       }
       this.adventureName = frontmatter.name || file.basename;
@@ -58082,7 +58668,7 @@ var AdventureCreationModal = class extends import_obsidian59.Modal {
       }
     } catch (error2) {
       console.error("Error loading adventure data:", error2);
-      new import_obsidian59.Notice("Error loading adventure data");
+      new import_obsidian60.Notice("Error loading adventure data");
     }
   }
   async onOpen() {
@@ -58100,6 +58686,7 @@ var AdventureCreationModal = class extends import_obsidian59.Modal {
       });
       const closeBtn = contentEl.createEl("button", { text: "Close" });
       closeBtn.addEventListener("click", () => this.close());
+      this.unsavedGuard.captureInitialState();
       return;
     }
     if (!allCampaigns.some((campaign) => campaign.path === this.campaign) && allCampaigns.length > 0 && allCampaigns[0]) {
@@ -58112,13 +58699,13 @@ var AdventureCreationModal = class extends import_obsidian59.Modal {
       text: "Plan a compelling multi-session adventure with a 3-act structure.",
       cls: "setting-item-description"
     });
-    new import_obsidian59.Setting(contentEl).setName("Adventure Name").setDesc("What is this adventure called?").addText((text) => {
+    new import_obsidian60.Setting(contentEl).setName("Adventure Name").setDesc("What is this adventure called?").addText((text) => {
       text.setPlaceholder("e.g., The Sunless Citadel, Murder in Baldur's Gate").setValue(this.adventureName).onChange((value) => {
         this.adventureName = value;
       });
       if (!this.isEdit) text.inputEl.focus();
     });
-    new import_obsidian59.Setting(contentEl).setName("Campaign").setDesc("Which campaign does this adventure belong to?").addDropdown((dropdown) => {
+    new import_obsidian60.Setting(contentEl).setName("Campaign").setDesc("Which campaign does this adventure belong to?").addDropdown((dropdown) => {
       allCampaigns.forEach((campaign) => {
         dropdown.addOption(campaign.path, campaign.name);
       });
@@ -58127,14 +58714,14 @@ var AdventureCreationModal = class extends import_obsidian59.Modal {
       });
     });
     contentEl.createEl("h3", { text: "\u{1F4D6} Core Adventure" });
-    new import_obsidian59.Setting(contentEl).setName("The Problem").setDesc("What urgent situation demands heroes? (2-3 sentences)").addTextArea((text) => {
+    new import_obsidian60.Setting(contentEl).setName("The Problem").setDesc("What urgent situation demands heroes? (2-3 sentences)").addTextArea((text) => {
       text.setPlaceholder("e.g., A kobold tribe has taken over an ancient citadel and is terrorizing nearby settlements. The mayor desperately needs heroes to stop the raids before the town is abandoned.").setValue(this.theProblem).onChange((value) => {
         this.theProblem = value;
       });
       text.inputEl.rows = 4;
     });
     contentEl.createEl("h3", { text: "\u2699\uFE0F Adventure Parameters" });
-    const levelSetting = new import_obsidian59.Setting(contentEl).setName("Target Level Range").setDesc("What character levels is this adventure designed for?");
+    const levelSetting = new import_obsidian60.Setting(contentEl).setName("Target Level Range").setDesc("What character levels is this adventure designed for?");
     levelSetting.addText((text) => {
       text.setPlaceholder("1").setValue(this.levelFrom).onChange((value) => {
         this.levelFrom = value;
@@ -58150,7 +58737,7 @@ var AdventureCreationModal = class extends import_obsidian59.Modal {
       text.inputEl.type = "number";
       text.inputEl.style.width = "60px";
     });
-    new import_obsidian59.Setting(contentEl).setName("Expected Sessions").setDesc("How many sessions do you expect this adventure to take?").addText((text) => {
+    new import_obsidian60.Setting(contentEl).setName("Expected Sessions").setDesc("How many sessions do you expect this adventure to take?").addText((text) => {
       text.setPlaceholder("3").setValue(this.expectedSessions).onChange((value) => {
         this.expectedSessions = value;
       });
@@ -58160,6 +58747,7 @@ var AdventureCreationModal = class extends import_obsidian59.Modal {
     const buttonContainer = contentEl.createDiv({ cls: "dnd-modal-buttons" });
     const cancelButton = buttonContainer.createEl("button", { text: "Cancel" });
     cancelButton.addEventListener("click", () => {
+      this.unsavedGuard.allowClose();
       this.close();
     });
     const createButton = buttonContainer.createEl("button", {
@@ -58168,7 +58756,7 @@ var AdventureCreationModal = class extends import_obsidian59.Modal {
     });
     createButton.addEventListener("click", async () => {
       if (!this.adventureName.trim()) {
-        new import_obsidian59.Notice("Please enter an adventure name!");
+        new import_obsidian60.Notice("Please enter an adventure name!");
         return;
       }
       this.close();
@@ -58178,21 +58766,22 @@ var AdventureCreationModal = class extends import_obsidian59.Modal {
         await this.createAdventureFile();
       }
     });
+    this.unsavedGuard.captureInitialState();
   }
   async updateAdventureFile() {
     var _a, _b;
     try {
       const originalFile = this.app.vault.getAbstractFileByPath(this.originalPath);
-      if (!(originalFile instanceof import_obsidian59.TFile)) {
-        new import_obsidian59.Notice("\u274C Adventure file not found!");
+      if (!(originalFile instanceof import_obsidian60.TFile)) {
+        new import_obsidian60.Notice("\u274C Adventure file not found!");
         return;
       }
-      new import_obsidian59.Notice(`Updating adventure "${this.adventureName}"...`);
+      new import_obsidian60.Notice(`Updating adventure "${this.adventureName}"...`);
       const existingContent = await this.app.vault.read(originalFile);
       const campaignName = this.campaign.split("/").pop() || "Unknown";
       const worldFile = this.app.vault.getAbstractFileByPath(`${this.campaign}/World.md`);
       let worldName = campaignName;
-      if (worldFile instanceof import_obsidian59.TFile) {
+      if (worldFile instanceof import_obsidian60.TFile) {
         const worldContent = await this.app.vault.read(worldFile);
         const worldMatch = worldContent.match(/^world:\s*([^\r\n]+)$/m);
         if (worldMatch && ((_a = worldMatch[1]) == null ? void 0 : _a.trim())) {
@@ -58258,7 +58847,7 @@ ${problemText}
           await this.app.vault.modify(originalFile, updatedContent);
           await this.app.fileManager.renameFile(parentFolder, newFolderPath);
           const movedFile = this.app.vault.getAbstractFileByPath(`${newFolderPath}/${originalName}.md`);
-          if (movedFile instanceof import_obsidian59.TFile) {
+          if (movedFile instanceof import_obsidian60.TFile) {
             await this.app.fileManager.renameFile(movedFile, `${newFolderPath}/${this.adventureName}.md`);
           }
         } else {
@@ -58270,20 +58859,20 @@ ${problemText}
       } else {
         await this.app.vault.modify(originalFile, updatedContent);
       }
-      new import_obsidian59.Notice(`\u2705 Adventure "${this.adventureName}" updated!`);
+      new import_obsidian60.Notice(`\u2705 Adventure "${this.adventureName}" updated!`);
     } catch (error2) {
-      new import_obsidian59.Notice(`\u274C Error updating adventure: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      new import_obsidian60.Notice(`\u274C Error updating adventure: ${error2 instanceof Error ? error2.message : String(error2)}`);
       console.error("Adventure update error:", error2);
     }
   }
   async getAllGMCampaigns() {
     const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
     const gmCampaigns = [];
-    if (ttrpgsFolder instanceof import_obsidian59.TFolder) {
+    if (ttrpgsFolder instanceof import_obsidian60.TFolder) {
       for (const child of ttrpgsFolder.children) {
-        if (child instanceof import_obsidian59.TFolder) {
+        if (child instanceof import_obsidian60.TFolder) {
           const worldFile = this.app.vault.getAbstractFileByPath(`${child.path}/World.md`);
-          if (worldFile instanceof import_obsidian59.TFile) {
+          if (worldFile instanceof import_obsidian60.TFile) {
             const worldContent = await this.app.vault.read(worldFile);
             const roleMatch = worldContent.match(/^role:\s*([^\r\n]\w*)$/m);
             if (roleMatch && roleMatch[1] && roleMatch[1].toLowerCase() === "gm") {
@@ -58301,12 +58890,12 @@ ${problemText}
   async createAdventureFile() {
     const campaignName = this.campaign.split("/").pop() || "Unknown";
     const baseAdventurePath = `${this.campaign}/Adventures`;
-    new import_obsidian59.Notice(`Creating Adventure "${this.adventureName}"...`);
+    new import_obsidian60.Notice(`Creating Adventure "${this.adventureName}"...`);
     try {
       await this.plugin.ensureFolderExists(baseAdventurePath);
       const worldFile = this.app.vault.getAbstractFileByPath(`${this.campaign}/World.md`);
       let worldName = campaignName;
-      if (worldFile instanceof import_obsidian59.TFile) {
+      if (worldFile instanceof import_obsidian60.TFile) {
         const worldContent = await this.app.vault.read(worldFile);
         const worldMatch = worldContent.match(/^world:\s*([^\r\n]+)$/m);
         if (worldMatch && worldMatch[1] && worldMatch[1].trim()) {
@@ -58323,9 +58912,9 @@ ${problemText}
       const safeCampaignName = campaignName || "Unknown";
       await this.createMainAdventureNote(mainNotePath, safeCampaignName, safeWorldName, currentDate);
       await this.app.workspace.openLinkText(mainNotePath, "", true);
-      new import_obsidian59.Notice(`\u2705 Adventure "${this.adventureName}" created!`);
+      new import_obsidian60.Notice(`\u2705 Adventure "${this.adventureName}" created!`);
     } catch (error2) {
-      new import_obsidian59.Notice(`\u274C Error creating Adventure: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      new import_obsidian60.Notice(`\u274C Error creating Adventure: ${error2 instanceof Error ? error2.message : String(error2)}`);
       console.error("Adventure creation error:", error2);
     }
   }
@@ -58356,10 +58945,10 @@ ${problemText}
 };
 
 // src/scene/SceneCreationModal.ts
-var import_obsidian60 = require("obsidian");
+var import_obsidian61 = require("obsidian");
 init_templates();
 init_YamlFrontmatter();
-var SceneCreationModal = class extends import_obsidian60.Modal {
+var SceneCreationModal = class extends import_obsidian61.Modal {
   constructor(app, plugin, adventurePath, scenePath, campaignPath) {
     super(app);
     this.adventurePath = "";
@@ -58392,6 +58981,7 @@ var SceneCreationModal = class extends import_obsidian60.Modal {
     // For editing existing scenes
     this.isEdit = false;
     this.originalScenePath = "";
+    this.unsavedGuard = new UnsavedChangesGuard(app, () => this.getUnsavedState());
     this.plugin = plugin;
     this.encounterBuilder = new EncounterBuilder(app, plugin);
     this.campaignPath = campaignPath || "";
@@ -58403,18 +58993,39 @@ var SceneCreationModal = class extends import_obsidian60.Modal {
       this.originalScenePath = scenePath;
     }
   }
+  getUnsavedState() {
+    return {
+      adventurePath: this.adventurePath,
+      sceneName: this.sceneName,
+      act: this.act,
+      sceneNumber: this.sceneNumber,
+      duration: this.duration,
+      type: this.type,
+      difficulty: this.difficulty,
+      createEncounter: this.createEncounter,
+      encounterName: this.encounterName,
+      useColorNames: this.useColorNames,
+      includeParty: this.includeParty,
+      selectedPartyMembers: this.selectedPartyMembers,
+      selectedPartyId: this.selectedPartyId,
+      creatures: this.creatures
+    };
+  }
+  close() {
+    this.unsavedGuard.requestClose(() => super.close());
+  }
   async loadSceneData() {
     var _a;
     try {
       const sceneFile = this.app.vault.getAbstractFileByPath(this.originalScenePath);
-      if (!(sceneFile instanceof import_obsidian60.TFile)) {
-        new import_obsidian60.Notice("Scene file not found!");
+      if (!(sceneFile instanceof import_obsidian61.TFile)) {
+        new import_obsidian61.Notice("Scene file not found!");
         return;
       }
       const cache = this.app.metadataCache.getFileCache(sceneFile);
       const frontmatter = cache == null ? void 0 : cache.frontmatter;
       if (!frontmatter) {
-        new import_obsidian60.Notice("Could not read scene data!");
+        new import_obsidian61.Notice("Could not read scene data!");
         return;
       }
       let extractedName = sceneFile.basename;
@@ -58449,7 +59060,7 @@ var SceneCreationModal = class extends import_obsidian60.Modal {
             if (creature.isTrap && c.trap_path) {
               try {
                 const trapFile = this.app.vault.getAbstractFileByPath(c.trap_path);
-                if (trapFile instanceof import_obsidian60.TFile) {
+                if (trapFile instanceof import_obsidian61.TFile) {
                   const trapContent = await this.app.vault.read(trapFile);
                   const trapCache = this.app.metadataCache.getFileCache(trapFile);
                   if (trapCache == null ? void 0 : trapCache.frontmatter) {
@@ -58489,7 +59100,7 @@ var SceneCreationModal = class extends import_obsidian60.Modal {
         ];
         for (const path of possiblePaths) {
           const file = this.app.vault.getAbstractFileByPath(path);
-          if (file instanceof import_obsidian60.TFile) {
+          if (file instanceof import_obsidian61.TFile) {
             this.adventurePath = path;
             try {
               const adventureContent = await this.app.vault.read(file);
@@ -58505,7 +59116,7 @@ var SceneCreationModal = class extends import_obsidian60.Modal {
       }
     } catch (error2) {
       console.error("Error loading scene data:", error2);
-      new import_obsidian60.Notice("Error loading scene data");
+      new import_obsidian61.Notice("Error loading scene data");
     }
   }
   async onOpen() {
@@ -58523,6 +59134,7 @@ var SceneCreationModal = class extends import_obsidian60.Modal {
       });
       const closeBtn = contentEl.createEl("button", { text: "Close" });
       closeBtn.addEventListener("click", () => this.close());
+      this.unsavedGuard.captureInitialState();
       return;
     }
     if (!this.adventurePath && allAdventures.length > 0 && allAdventures[0]) {
@@ -58532,7 +59144,7 @@ var SceneCreationModal = class extends import_obsidian60.Modal {
       text: "Add a new scene to your adventure. The scene will be inserted at the specified number.",
       cls: "setting-item-description"
     });
-    new import_obsidian60.Setting(contentEl).setName("Adventure").setDesc("Select the adventure to add this scene to").addDropdown((dropdown) => {
+    new import_obsidian61.Setting(contentEl).setName("Adventure").setDesc("Select the adventure to add this scene to").addDropdown((dropdown) => {
       allAdventures.forEach((adv) => {
         dropdown.addOption(adv.path, adv.name);
       });
@@ -58542,29 +59154,31 @@ var SceneCreationModal = class extends import_obsidian60.Modal {
         this.updateSceneNumberSuggestion();
       });
     });
-    new import_obsidian60.Setting(contentEl).setName("Scene Name").setDesc("Give this scene a descriptive name").addText((text) => text.setPlaceholder("e.g., Tavern Ambush").setValue(this.sceneName).onChange((value) => this.sceneName = value));
+    new import_obsidian61.Setting(contentEl).setName("Scene Name").setDesc("Give this scene a descriptive name").addText((text) => text.setPlaceholder("e.g., Tavern Ambush").setValue(this.sceneName).onChange((value) => this.sceneName = value));
     const advancedDetails = contentEl.createEl("details", { cls: "dnd-advanced-section" });
     if (this.isEdit) advancedDetails.open = true;
     advancedDetails.createEl("summary", { text: "Advanced scene details" });
     const advancedContainer = advancedDetails.createDiv({ cls: "dnd-advanced-section-body" });
-    new import_obsidian60.Setting(advancedContainer).setName("Act").setDesc("Which act does this scene belong to?").addDropdown((dropdown) => dropdown.addOption("1", "Act 1 - Setup").addOption("2", "Act 2 - Rising Action").addOption("3", "Act 3 - Climax").setValue(this.act).onChange((value) => this.act = value));
-    const sceneNumberSetting = new import_obsidian60.Setting(advancedContainer).setName("Scene Number").setDesc("Position in the adventure (existing scenes will be renumbered if needed)").addText((text) => text.setPlaceholder("e.g., 5").setValue(this.sceneNumber).onChange((value) => this.sceneNumber = value));
-    new import_obsidian60.Setting(advancedContainer).setName("Duration").setDesc("Estimated scene duration").addDropdown((dropdown) => dropdown.addOption("15min", "15 minutes").addOption("20min", "20 minutes").addOption("30min", "30 minutes").addOption("40min", "40 minutes").addOption("45min", "45 minutes").addOption("60min", "60 minutes").setValue(this.duration).onChange((value) => this.duration = value));
-    new import_obsidian60.Setting(contentEl).setName("Type").setDesc("Primary scene type").addDropdown((dropdown) => dropdown.addOption("social", "\u{1F5E3}\uFE0F Social - NPC interactions").addOption("combat", "\u2694\uFE0F Combat - Fighting enemies").addOption("exploration", "\u{1F50D} Exploration - Discovery & investigation").addOption("puzzle", "\u{1F9E9} Puzzle - Riddles & challenges").addOption("montage", "\u{1F3AC} Montage - Skill challenge").setValue(this.type).onChange((value) => {
+    new import_obsidian61.Setting(advancedContainer).setName("Act").setDesc("Which act does this scene belong to?").addDropdown((dropdown) => dropdown.addOption("1", "Act 1 - Setup").addOption("2", "Act 2 - Rising Action").addOption("3", "Act 3 - Climax").setValue(this.act).onChange((value) => this.act = value));
+    const sceneNumberSetting = new import_obsidian61.Setting(advancedContainer).setName("Scene Number").setDesc("Position in the adventure (existing scenes will be renumbered if needed)").addText((text) => text.setPlaceholder("e.g., 5").setValue(this.sceneNumber).onChange((value) => this.sceneNumber = value));
+    new import_obsidian61.Setting(advancedContainer).setName("Duration").setDesc("Estimated scene duration").addDropdown((dropdown) => dropdown.addOption("15min", "15 minutes").addOption("20min", "20 minutes").addOption("30min", "30 minutes").addOption("40min", "40 minutes").addOption("45min", "45 minutes").addOption("60min", "60 minutes").setValue(this.duration).onChange((value) => this.duration = value));
+    new import_obsidian61.Setting(contentEl).setName("Type").setDesc("Primary scene type").addDropdown((dropdown) => dropdown.addOption("social", "\u{1F5E3}\uFE0F Social - NPC interactions").addOption("combat", "\u2694\uFE0F Combat - Fighting enemies").addOption("exploration", "\u{1F50D} Exploration - Discovery & investigation").addOption("puzzle", "\u{1F9E9} Puzzle - Riddles & challenges").addOption("montage", "\u{1F3AC} Montage - Skill challenge").setValue(this.type).onChange((value) => {
       this.type = value;
       this.showEncounterBuilderIfCombat();
     }));
-    new import_obsidian60.Setting(advancedContainer).setName("Difficulty").setDesc("Challenge level").addDropdown((dropdown) => dropdown.addOption("easy", "Easy").addOption("medium", "Medium").addOption("hard", "Hard").addOption("deadly", "Deadly").setValue(this.difficulty).onChange((value) => this.difficulty = value));
+    new import_obsidian61.Setting(advancedContainer).setName("Difficulty").setDesc("Challenge level").addDropdown((dropdown) => dropdown.addOption("easy", "Easy").addOption("medium", "Medium").addOption("hard", "Hard").addOption("deadly", "Deadly").setValue(this.difficulty).onChange((value) => this.difficulty = value));
     this.encounterSection = contentEl.createDiv({ cls: "dnd-encounter-section" });
     this.showEncounterBuilderIfCombat();
-    new import_obsidian60.Setting(contentEl).addButton((btn) => btn.setButtonText(this.isEdit ? "Save Changes" : "Create Scene").setCta().onClick(async () => {
+    new import_obsidian61.Setting(contentEl).addButton((btn) => btn.setButtonText(this.isEdit ? "Save Changes" : "Create Scene").setCta().onClick(async () => {
       if (!this.sceneName) {
-        new import_obsidian60.Notice("Please enter a scene name!");
+        new import_obsidian61.Notice("Please enter a scene name!");
         return;
       }
+      this.unsavedGuard.allowClose();
       this.close();
       await this.createSceneFile();
     }));
+    this.unsavedGuard.captureInitialState();
   }
   async updateSceneNumberSuggestion() {
     const existingScenes = await this.getExistingScenes(this.adventurePath);
@@ -58576,16 +59190,16 @@ var SceneCreationModal = class extends import_obsidian60.Modal {
     const gmCampaigns = await this.getAllGMCampaigns();
     for (const campaign of gmCampaigns) {
       const adventuresFolder = this.app.vault.getAbstractFileByPath(`${campaign.path}/Adventures`);
-      if (adventuresFolder instanceof import_obsidian60.TFolder) {
+      if (adventuresFolder instanceof import_obsidian61.TFolder) {
         for (const item of adventuresFolder.children) {
-          if (item instanceof import_obsidian60.TFile && item.extension === "md") {
+          if (item instanceof import_obsidian61.TFile && item.extension === "md") {
             adventures.push({
               path: item.path,
               name: item.basename
             });
-          } else if (item instanceof import_obsidian60.TFolder) {
+          } else if (item instanceof import_obsidian61.TFolder) {
             const mainFile = this.app.vault.getAbstractFileByPath(`${item.path}/${item.name}.md`);
-            if (mainFile instanceof import_obsidian60.TFile) {
+            if (mainFile instanceof import_obsidian61.TFile) {
               adventures.push({
                 path: mainFile.path,
                 name: item.name
@@ -58600,17 +59214,17 @@ var SceneCreationModal = class extends import_obsidian60.Modal {
   async getAllGMCampaigns() {
     if (this.campaignPath) {
       const folder = this.app.vault.getAbstractFileByPath(this.campaignPath);
-      if (folder instanceof import_obsidian60.TFolder) {
+      if (folder instanceof import_obsidian61.TFolder) {
         return [{ path: folder.path, name: folder.name }];
       }
     }
     const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
     const gmCampaigns = [];
-    if (ttrpgsFolder instanceof import_obsidian60.TFolder) {
+    if (ttrpgsFolder instanceof import_obsidian61.TFolder) {
       for (const child of ttrpgsFolder.children) {
-        if (child instanceof import_obsidian60.TFolder) {
+        if (child instanceof import_obsidian61.TFolder) {
           const worldFile = this.app.vault.getAbstractFileByPath(`${child.path}/World.md`);
-          if (worldFile instanceof import_obsidian60.TFile) {
+          if (worldFile instanceof import_obsidian61.TFile) {
             const worldContent = await this.app.vault.read(worldFile);
             const roleMatch = worldContent.match(/^role:\s*([^\r\n]\w*)$/m);
             if (roleMatch && roleMatch[1] && roleMatch[1].toLowerCase() === "gm") {
@@ -58628,18 +59242,18 @@ var SceneCreationModal = class extends import_obsidian60.Modal {
   async getExistingScenes(adventurePath) {
     const scenes = [];
     const adventureFile = this.app.vault.getAbstractFileByPath(adventurePath);
-    if (!(adventureFile instanceof import_obsidian60.TFile)) return scenes;
+    if (!(adventureFile instanceof import_obsidian61.TFile)) return scenes;
     const adventureFolder = adventureFile.parent;
     if (!adventureFolder) return scenes;
     let sceneFolders = [];
     const isFolderStructure = adventureFolder.name === adventureFile.basename;
     if (isFolderStructure) {
       const scenesFolder = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Scenes`);
-      if (scenesFolder instanceof import_obsidian60.TFolder) {
+      if (scenesFolder instanceof import_obsidian61.TFolder) {
         sceneFolders.push(scenesFolder);
       }
       for (const child of adventureFolder.children) {
-        if (child instanceof import_obsidian60.TFolder && child.name.startsWith("Act ")) {
+        if (child instanceof import_obsidian61.TFolder && child.name.startsWith("Act ")) {
           sceneFolders.push(child);
         }
       }
@@ -58650,13 +59264,13 @@ var SceneCreationModal = class extends import_obsidian60.Modal {
       const flatScenesFolder = this.app.vault.getAbstractFileByPath(
         `${adventureFolder.path}/${adventureFile.basename} - Scenes`
       );
-      if (flatScenesFolder instanceof import_obsidian60.TFolder) {
+      if (flatScenesFolder instanceof import_obsidian61.TFolder) {
         sceneFolders.push(flatScenesFolder);
       }
     }
     for (const folder of sceneFolders) {
       for (const item of folder.children) {
-        if (item instanceof import_obsidian60.TFile && item.extension === "md") {
+        if (item instanceof import_obsidian61.TFile && item.extension === "md") {
           const match = item.basename.match(/^Scene\s+(\d+)\s+-\s+(.+)$/);
           if (match && match[1] && match[2]) {
             scenes.push({
@@ -58676,12 +59290,12 @@ var SceneCreationModal = class extends import_obsidian60.Modal {
     try {
       const sceneNum2 = parseInt(this.sceneNumber);
       if (isNaN(sceneNum2) || sceneNum2 < 1) {
-        new import_obsidian60.Notice("Scene number must be a positive number!");
+        new import_obsidian61.Notice("Scene number must be a positive number!");
         return;
       }
       const adventureFile = this.app.vault.getAbstractFileByPath(this.adventurePath);
-      if (!(adventureFile instanceof import_obsidian60.TFile)) {
-        new import_obsidian60.Notice("\u274C Adventure file not found!");
+      if (!(adventureFile instanceof import_obsidian61.TFile)) {
+        new import_obsidian61.Notice("\u274C Adventure file not found!");
         return;
       }
       const adventureContent = await this.app.vault.read(adventureFile);
@@ -58691,10 +59305,10 @@ var SceneCreationModal = class extends import_obsidian60.Modal {
       const worldName = (((_b = worldMatch == null ? void 0 : worldMatch[1]) == null ? void 0 : _b.trim()) || campaignName).replace(/^["']|["']$/g, "");
       this.campaignPath = `ttrpgs/${campaignName}`;
       if (this.isEdit && this.originalScenePath) {
-        new import_obsidian60.Notice(`Updating scene "${this.sceneName}"...`);
+        new import_obsidian61.Notice(`Updating scene "${this.sceneName}"...`);
         const originalFile = this.app.vault.getAbstractFileByPath(this.originalScenePath);
-        if (!(originalFile instanceof import_obsidian60.TFile)) {
-          new import_obsidian60.Notice("\u274C Original scene file not found!");
+        if (!(originalFile instanceof import_obsidian61.TFile)) {
+          new import_obsidian61.Notice("\u274C Original scene file not found!");
           return;
         }
         const originalBasename = originalFile.basename;
@@ -58703,7 +59317,7 @@ var SceneCreationModal = class extends import_obsidian60.Modal {
         const numberChanged = originalSceneNum !== sceneNum2;
         const adventureFolder2 = adventureFile.parent;
         if (!adventureFolder2) {
-          new import_obsidian60.Notice("\u274C Adventure folder not found!");
+          new import_obsidian61.Notice("\u274C Adventure folder not found!");
           return;
         }
         let targetPath;
@@ -58814,13 +59428,13 @@ date: ${currentDate2}
           await this.saveEncounterData(targetPath);
         }
         await this.app.workspace.openLinkText(targetPath, "", true);
-        new import_obsidian60.Notice(`\u2705 Scene "${this.sceneName}" updated!`);
+        new import_obsidian61.Notice(`\u2705 Scene "${this.sceneName}" updated!`);
         return;
       }
-      new import_obsidian60.Notice(`Creating scene "${this.sceneName}"...`);
+      new import_obsidian61.Notice(`Creating scene "${this.sceneName}"...`);
       const adventureFolder = adventureFile.parent;
       if (!adventureFolder) {
-        new import_obsidian60.Notice("\u274C Adventure folder not found!");
+        new import_obsidian61.Notice("\u274C Adventure folder not found!");
         return;
       }
       const isFolderStructure = adventureFolder.name === adventureFile.basename;
@@ -58828,13 +59442,13 @@ date: ${currentDate2}
       let scenesFolder;
       if (isFolderStructure) {
         const newScenesFolder = `${adventureFolder.path}/Scenes`;
-        const newScenesExists = this.app.vault.getAbstractFileByPath(newScenesFolder) instanceof import_obsidian60.TFolder;
+        const newScenesExists = this.app.vault.getAbstractFileByPath(newScenesFolder) instanceof import_obsidian61.TFolder;
         if (newScenesExists) {
           scenesFolder = newScenesFolder;
         } else {
-          const act1Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 1 - Setup`) instanceof import_obsidian60.TFolder;
-          const act2Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 2 - Rising Action`) instanceof import_obsidian60.TFolder;
-          const act3Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 3 - Climax`) instanceof import_obsidian60.TFolder;
+          const act1Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 1 - Setup`) instanceof import_obsidian61.TFolder;
+          const act2Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 2 - Rising Action`) instanceof import_obsidian61.TFolder;
+          const act3Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 3 - Climax`) instanceof import_obsidian61.TFolder;
           if (act1Exists || act2Exists || act3Exists) {
             scenesFolder = newScenesFolder;
             await this.plugin.ensureFolderExists(scenesFolder);
@@ -58846,7 +59460,7 @@ date: ${currentDate2}
         scenePath = `${scenesFolder}/Scene ${sceneNum2} - ${this.sceneName}.md`;
       } else {
         const flatScenesFolder = `${adventureFolder.path}/${adventureFile.basename} - Scenes`;
-        const flatExists = this.app.vault.getAbstractFileByPath(flatScenesFolder) instanceof import_obsidian60.TFolder;
+        const flatExists = this.app.vault.getAbstractFileByPath(flatScenesFolder) instanceof import_obsidian61.TFolder;
         if (flatExists) {
           scenesFolder = flatScenesFolder;
         } else {
@@ -58885,9 +59499,9 @@ date: ${currentDate2}
         await this.saveEncounterData(scenePath);
       }
       await this.app.workspace.openLinkText(scenePath, "", true);
-      new import_obsidian60.Notice(`\u2705 Scene "${this.sceneName}" created!`);
+      new import_obsidian61.Notice(`\u2705 Scene "${this.sceneName}" created!`);
     } catch (error2) {
-      new import_obsidian60.Notice(`\u274C Error creating scene: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      new import_obsidian61.Notice(`\u274C Error creating scene: ${error2 instanceof Error ? error2.message : String(error2)}`);
       console.error("Scene creation error:", error2);
     }
   }
@@ -58896,7 +59510,7 @@ date: ${currentDate2}
     const sorted = [...scenes].sort((a, b) => b.number - a.number);
     for (const scene of sorted) {
       const oldFile = this.app.vault.getAbstractFileByPath(scene.path);
-      if (!(oldFile instanceof import_obsidian60.TFile)) continue;
+      if (!(oldFile instanceof import_obsidian61.TFile)) continue;
       const newNumber = scene.number + 1;
       const oldFilename = oldFile.basename;
       const sceneNameMatch = oldFilename.match(/^Scene\s+\d+\s+-\s+(.+)$/);
@@ -58921,7 +59535,7 @@ date: ${currentDate2}
         await this.app.vault.delete(oldFile);
       } catch (error2) {
         console.error(`Error renumbering scene ${oldFile.path}:`, error2);
-        new import_obsidian60.Notice(`\u26A0\uFE0F Could not renumber ${oldFilename}`);
+        new import_obsidian61.Notice(`\u26A0\uFE0F Could not renumber ${oldFilename}`);
       }
     }
   }
@@ -58969,15 +59583,15 @@ date: ${currentDate2}
     }
     this.encounterSection.style.display = "block";
     this.encounterSection.createEl("h3", { text: "\u2694\uFE0F Combat Encounter" });
-    new import_obsidian60.Setting(this.encounterSection).setName("Create Initiative Tracker Encounter").setDesc("Build an encounter that will be ready to use in Initiative Tracker").addToggle((toggle) => toggle.setValue(this.createEncounter).onChange((value) => {
+    new import_obsidian61.Setting(this.encounterSection).setName("Create Initiative Tracker Encounter").setDesc("Build an encounter that will be ready to use in Initiative Tracker").addToggle((toggle) => toggle.setValue(this.createEncounter).onChange((value) => {
       this.createEncounter = value;
       this.showEncounterBuilderIfCombat();
     }));
     if (this.createEncounter) {
-      new import_obsidian60.Setting(this.encounterSection).setName("Use Color Names").setDesc("Name duplicate creatures with colors (Red Goblin, Blue Goblin) instead of numbers (Goblin 1, Goblin 2)").addToggle((toggle) => toggle.setValue(this.useColorNames).onChange((value) => {
+      new import_obsidian61.Setting(this.encounterSection).setName("Use Color Names").setDesc("Name duplicate creatures with colors (Red Goblin, Blue Goblin) instead of numbers (Goblin 1, Goblin 2)").addToggle((toggle) => toggle.setValue(this.useColorNames).onChange((value) => {
         this.useColorNames = value;
       }));
-      new import_obsidian60.Setting(this.encounterSection).setName("Include Party Members").setDesc("Add party members to this encounter for difficulty calculation").addToggle((toggle) => toggle.setValue(this.includeParty).onChange(async (value) => {
+      new import_obsidian61.Setting(this.encounterSection).setName("Include Party Members").setDesc("Add party members to this encounter for difficulty calculation").addToggle((toggle) => toggle.setValue(this.includeParty).onChange(async (value) => {
         this.includeParty = value;
         await this.renderPartySelection();
         await this.renderPartyMemberList();
@@ -59004,7 +59618,7 @@ date: ${currentDate2}
     if (!this.encounterName && this.sceneName) {
       this.encounterName = `${this.sceneName} - Encounter`;
     }
-    new import_obsidian60.Setting(builderContainer).setName("Encounter Name").setDesc("Name for this encounter in Initiative Tracker").addText((text) => text.setPlaceholder("e.g., Goblin Ambush").setValue(this.encounterName).onChange((value) => this.encounterName = value));
+    new import_obsidian61.Setting(builderContainer).setName("Encounter Name").setDesc("Name for this encounter in Initiative Tracker").addText((text) => text.setPlaceholder("e.g., Goblin Ambush").setValue(this.encounterName).onChange((value) => this.encounterName = value));
     builderContainer.createEl("h4", { text: "Creatures" });
     this.creatureListContainer = builderContainer.createDiv({ cls: "dnd-creature-list" });
     this.renderCreatureList();
@@ -59015,7 +59629,7 @@ date: ${currentDate2}
     this.syncEncounterBuilder();
     const vaultCreatures = await this.encounterBuilder.loadAllCreatures();
     if (vaultCreatures.length > 0) {
-      const vaultCreatureSetting = new import_obsidian60.Setting(vaultCreatureSection).setName("Add from Vault").setDesc(`Search and select creatures from your vault (${vaultCreatures.length} available)`);
+      const vaultCreatureSetting = new import_obsidian61.Setting(vaultCreatureSection).setName("Add from Vault").setDesc(`Search and select creatures from your vault (${vaultCreatures.length} available)`);
       const searchContainer = vaultCreatureSetting.controlEl.createDiv({ cls: "dnd-creature-search-container" });
       const searchInput = searchContainer.createEl("input", {
         type: "text",
@@ -59101,7 +59715,7 @@ date: ${currentDate2}
       });
       vaultCreatureSetting.addButton((btn) => btn.setButtonText("Add").setCta().onClick(() => {
         if (!selectedCreature) {
-          new import_obsidian60.Notice("Please search and select a creature first!");
+          new import_obsidian61.Notice("Please search and select a creature first!");
           return;
         }
         this.addCreature({
@@ -59114,7 +59728,7 @@ date: ${currentDate2}
           path: selectedCreature.path
           // Include path for statblock plugin
         });
-        new import_obsidian60.Notice(`Added ${vaultCreatureCount}x ${selectedCreature.name}`);
+        new import_obsidian61.Notice(`Added ${vaultCreatureCount}x ${selectedCreature.name}`);
         searchInput.value = "";
         selectedCreature = null;
       }));
@@ -59130,7 +59744,7 @@ date: ${currentDate2}
     let newCreatureHP = "";
     let newCreatureAC = "";
     let newCreatureCR = "";
-    const addCreatureSetting = new import_obsidian60.Setting(addCreatureSection).setName("Add Custom Creature").setDesc("Enter creature details manually for custom or homebrew enemies");
+    const addCreatureSetting = new import_obsidian61.Setting(addCreatureSection).setName("Add Custom Creature").setDesc("Enter creature details manually for custom or homebrew enemies");
     addCreatureSetting.addText((text) => {
       text.setPlaceholder("Name (e.g., Goblin)").onChange((value) => newCreatureName = value);
       text.inputEl.style.width = "120px";
@@ -59156,7 +59770,7 @@ date: ${currentDate2}
     });
     addCreatureSetting.addButton((btn) => btn.setButtonText("Add").setCta().onClick(() => {
       if (!newCreatureName.trim()) {
-        new import_obsidian60.Notice("Please enter a creature name!");
+        new import_obsidian61.Notice("Please enter a creature name!");
         return;
       }
       this.addCreature({
@@ -59167,7 +59781,7 @@ date: ${currentDate2}
         cr: newCreatureCR || void 0,
         source: "manual"
       });
-      new import_obsidian60.Notice(`Added ${newCreatureCount}x ${newCreatureName}`);
+      new import_obsidian61.Notice(`Added ${newCreatureCount}x ${newCreatureName}`);
       newCreatureName = "";
       newCreatureCount = "1";
       newCreatureHP = "";
@@ -59210,16 +59824,16 @@ date: ${currentDate2}
         const possiblePaths = ["z_Beastiarity", "My Vault/z_Beastiarity"];
         let beastiaryPath = "z_Beastiarity";
         for (const p of possiblePaths) {
-          if (this.app.vault.getAbstractFileByPath(p) instanceof import_obsidian60.TFolder) {
+          if (this.app.vault.getAbstractFileByPath(p) instanceof import_obsidian61.TFolder) {
             beastiaryPath = p;
             break;
           }
         }
         const newFilePath = `${beastiaryPath}/${newName}.md`;
         if (await this.app.vault.adapter.exists(newFilePath)) {
-          new import_obsidian60.Notice(`A creature named "${newName}" already exists! Using existing file.`);
+          new import_obsidian61.Notice(`A creature named "${newName}" already exists! Using existing file.`);
           const existingFile = this.app.vault.getAbstractFileByPath(newFilePath);
-          if (existingFile instanceof import_obsidian60.TFile) {
+          if (existingFile instanceof import_obsidian61.TFile) {
             const cache = this.app.metadataCache.getFileCache(existingFile);
             creature.name = newName;
             creature.path = newFilePath;
@@ -59237,7 +59851,7 @@ date: ${currentDate2}
         let sourceTokenId;
         if (creature.path && creature.path !== "[SRD]") {
           const originalFile = this.app.vault.getAbstractFileByPath(creature.path);
-          if (originalFile instanceof import_obsidian60.TFile) {
+          if (originalFile instanceof import_obsidian61.TFile) {
             const fileContent = await this.app.vault.read(originalFile);
             const cache = this.app.metadataCache.getFileCache(originalFile);
             sourceTokenId = (_b = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b.token_id;
@@ -59319,7 +59933,7 @@ token_id: ${newTokenId}
         creature.path = newFilePath;
         creature.source = "vault";
         const createdFile = this.app.vault.getAbstractFileByPath(newFilePath);
-        if (createdFile instanceof import_obsidian60.TFile) {
+        if (createdFile instanceof import_obsidian61.TFile) {
           await new Promise((resolve) => setTimeout(resolve, 200));
           const cache = this.app.metadataCache.getFileCache(createdFile);
           if (cache == null ? void 0 : cache.frontmatter) {
@@ -59330,10 +59944,10 @@ token_id: ${newTokenId}
           }
         }
         this.renderCreatureList();
-        new import_obsidian60.Notice(`\u2705 Renamed "${originalName}" \u2192 "${newName}" \u2014 creature note and map token created.`);
+        new import_obsidian61.Notice(`\u2705 Renamed "${originalName}" \u2192 "${newName}" \u2014 creature note and map token created.`);
       } catch (error2) {
         console.error("[Rename] Error renaming creature:", error2);
-        new import_obsidian60.Notice(`\u274C Failed to rename creature: ${error2}`);
+        new import_obsidian61.Notice(`\u274C Failed to rename creature: ${error2}`);
       }
     });
     modal.open();
@@ -59998,7 +60612,7 @@ creature: ${newName}
     }
     if (!this.campaignPath) {
       console.error("[SceneCreation - saveEncounterFile] No campaignPath set!");
-      new import_obsidian60.Notice("\u26A0\uFE0F Cannot save encounter: campaign path not found");
+      new import_obsidian61.Notice("\u26A0\uFE0F Cannot save encounter: campaign path not found");
       return null;
     }
     try {
@@ -60013,17 +60627,17 @@ creature: ${newName}
       const fileName = `${this.encounterName}.md`;
       const encounterPath = `${encounterFolder}/${fileName}`;
       const existingFile = this.app.vault.getAbstractFileByPath(encounterPath);
-      if (existingFile instanceof import_obsidian60.TFile) {
+      if (existingFile instanceof import_obsidian61.TFile) {
         await this.app.vault.modify(existingFile, encounterContent);
       } else {
         await this.app.vault.create(encounterPath, encounterContent);
       }
-      new import_obsidian60.Notice(`\u2705 Encounter "${this.encounterName}" saved to z_Encounters`);
+      new import_obsidian61.Notice(`\u2705 Encounter "${this.encounterName}" saved to z_Encounters`);
       return encounterPath;
     } catch (error2) {
       console.error("[SceneCreation - saveEncounterFile] ERROR:", error2);
       const errorMsg = error2 instanceof Error ? error2.message : String(error2);
-      new import_obsidian60.Notice(`\u26A0\uFE0F Could not save encounter file: ${errorMsg}`);
+      new import_obsidian61.Notice(`\u26A0\uFE0F Could not save encounter file: ${errorMsg}`);
       return null;
     }
   }
@@ -60163,11 +60777,11 @@ _Add notes about tactics, environment, or special conditions here._
 };
 
 // src/trap/TrapCreationModal.ts
-var import_obsidian61 = require("obsidian");
+var import_obsidian62 = require("obsidian");
 init_templates();
 init_migration();
 init_YamlFrontmatter();
-var TrapCreationModal = class extends import_obsidian61.Modal {
+var TrapCreationModal = class extends import_obsidian62.Modal {
   constructor(app, plugin, adventurePath, scenePath, trapPath, campaignPath) {
     super(app);
     this.trapName = "";
@@ -60207,23 +60821,23 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
       await this.loadTrapData();
     }
     contentEl.createEl("h2", { text: this.isEdit ? "\u270F\uFE0F Edit Trap" : "Create New Trap" });
-    new import_obsidian61.Setting(contentEl).setName("Trap Name").setDesc("Name of the trap").addText(
+    new import_obsidian62.Setting(contentEl).setName("Trap Name").setDesc("Name of the trap").addText(
       (text) => text.setPlaceholder("Thundering Squall").setValue(this.trapName).onChange((value) => {
         this.trapName = value;
       })
     );
-    new import_obsidian61.Setting(contentEl).setName("Trap Type").setDesc("Simple traps have basic effects. Complex traps have multiple initiatives and elements.").addDropdown(
+    new import_obsidian62.Setting(contentEl).setName("Trap Type").setDesc("Simple traps have basic effects. Complex traps have multiple initiatives and elements.").addDropdown(
       (dropdown) => dropdown.addOption("simple", "Simple").addOption("complex", "Complex").setValue(this.trapType).onChange((value) => {
         this.trapType = value;
         this.refreshUI();
       })
     );
-    new import_obsidian61.Setting(contentEl).setName("Threat Level").setDesc("How dangerous is this trap?").addDropdown(
+    new import_obsidian62.Setting(contentEl).setName("Threat Level").setDesc("How dangerous is this trap?").addDropdown(
       (dropdown) => dropdown.addOption("setback", "Setback").addOption("dangerous", "Dangerous").addOption("deadly", "Deadly").setValue(this.threatLevel).onChange((value) => {
         this.threatLevel = value;
       })
     );
-    new import_obsidian61.Setting(contentEl).setName("Level Range").setDesc("Minimum and maximum character levels for this trap").addText(
+    new import_obsidian62.Setting(contentEl).setName("Level Range").setDesc("Minimum and maximum character levels for this trap").addText(
       (text) => text.setPlaceholder("1").setValue(this.minLevel.toString()).onChange((value) => {
         const num2 = parseInt(value);
         if (!isNaN(num2) && num2 >= 1 && num2 <= 20) {
@@ -60238,14 +60852,14 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
         }
       })
     );
-    new import_obsidian61.Setting(contentEl).setName("Trigger").setDesc("What activates this trap?").addTextArea((text) => {
+    new import_obsidian62.Setting(contentEl).setName("Trigger").setDesc("What activates this trap?").addTextArea((text) => {
       text.setPlaceholder("A creature enters the area without the cult insignia...").setValue(this.trigger).onChange((value) => {
         this.trigger = value;
       });
       text.inputEl.rows = 3;
       text.inputEl.style.width = "100%";
     });
-    new import_obsidian61.Setting(contentEl).setName("Initiative Count").setDesc("Fixed initiative count used when this trap is loaded into the combat tracker.").addText(
+    new import_obsidian62.Setting(contentEl).setName("Initiative Count").setDesc("Fixed initiative count used when this trap is loaded into the combat tracker.").addText(
       (text) => text.setPlaceholder("20").setValue(this.trapInitiative.toString()).onChange((value) => {
         const num2 = parseInt(value, 10);
         if (!isNaN(num2) && num2 >= 1 && num2 <= 30) {
@@ -60256,7 +60870,7 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
     contentEl.createEl("h3", { text: "Trap Elements" });
     this.elementsContainer = contentEl.createDiv();
     this.renderElements();
-    new import_obsidian61.Setting(contentEl).addButton(
+    new import_obsidian62.Setting(contentEl).addButton(
       (button) => button.setButtonText("+ Add Element").onClick(() => {
         this.addElement();
       })
@@ -60264,7 +60878,7 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
     contentEl.createEl("h3", { text: "Countermeasures" });
     this.countermeasuresContainer = contentEl.createDiv();
     this.renderCountermeasures();
-    new import_obsidian61.Setting(contentEl).addButton(
+    new import_obsidian62.Setting(contentEl).addButton(
       (button) => button.setButtonText("+ Add Countermeasure").onClick(() => {
         this.addCountermeasure();
       })
@@ -60275,7 +60889,7 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
       text: `Adventure: ${adventureDisplay} | Scene: ${sceneDisplay}`,
       attr: { style: "margin-top: 1em; font-size: 0.9em; color: var(--text-muted);" }
     });
-    new import_obsidian61.Setting(contentEl).addButton(
+    new import_obsidian62.Setting(contentEl).addButton(
       (button) => button.setButtonText(this.isEdit ? "Update Trap" : "Create Trap").setCta().onClick(() => {
         this.createTrap();
       })
@@ -60324,20 +60938,20 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
       removeBtn.style.padding = "2px 8px";
       removeBtn.style.fontSize = "0.8em";
       removeBtn.onclick = () => this.removeElement(index);
-      new import_obsidian61.Setting(elementContainer).setName("Name").addText(
+      new import_obsidian62.Setting(elementContainer).setName("Name").addText(
         (text) => text.setPlaceholder("Thunderous Slam").setValue(element.name).onChange((value) => {
           element.name = value;
         })
       );
       if (this.trapType === "complex") {
-        new import_obsidian61.Setting(elementContainer).setName("Element Type").addDropdown(
+        new import_obsidian62.Setting(elementContainer).setName("Element Type").addDropdown(
           (dropdown) => dropdown.addOption("active", "Active (on initiative)").addOption("dynamic", "Dynamic (conditional)").addOption("constant", "Constant (ongoing)").setValue(element.element_type).onChange((value) => {
             element.element_type = value;
             this.renderElements();
           })
         );
         if (element.element_type === "active") {
-          new import_obsidian61.Setting(elementContainer).setName("Initiative").addText(
+          new import_obsidian62.Setting(elementContainer).setName("Initiative").addText(
             (text) => {
               var _a;
               return text.setPlaceholder("20").setValue(((_a = element.initiative) == null ? void 0 : _a.toString()) || "").onChange((value) => {
@@ -60350,7 +60964,7 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
           );
         }
         if (element.element_type === "dynamic") {
-          new import_obsidian61.Setting(elementContainer).setName("Condition").addTextArea((text) => {
+          new import_obsidian62.Setting(elementContainer).setName("Condition").addTextArea((text) => {
             text.setPlaceholder("On each initiative count 10...").setValue(element.condition || "").onChange((value) => {
               element.condition = value;
             });
@@ -60359,7 +60973,7 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
           });
         }
       }
-      new import_obsidian61.Setting(elementContainer).setName("Attack Bonus (optional)").addText(
+      new import_obsidian62.Setting(elementContainer).setName("Attack Bonus (optional)").addText(
         (text) => {
           var _a;
           return text.setPlaceholder("+8").setValue(((_a = element.attack_bonus) == null ? void 0 : _a.toString()) || "").onChange((value) => {
@@ -60372,12 +60986,12 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
           });
         }
       );
-      new import_obsidian61.Setting(elementContainer).setName("Range (optional)").addText(
+      new import_obsidian62.Setting(elementContainer).setName("Range (optional)").addText(
         (text) => text.setPlaceholder("60 ft. or Touch or Melee").setValue(element.range || "").onChange((value) => {
           element.range = value || void 0;
         })
       );
-      new import_obsidian61.Setting(elementContainer).setName("Save DC (optional)").addText(
+      new import_obsidian62.Setting(elementContainer).setName("Save DC (optional)").addText(
         (text) => {
           var _a;
           return text.setPlaceholder("15").setValue(((_a = element.save_dc) == null ? void 0 : _a.toString()) || "").onChange((value) => {
@@ -60394,25 +61008,25 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
           element.save_ability = value;
         })
       );
-      new import_obsidian61.Setting(elementContainer).setName("Damage (optional)").addText(
+      new import_obsidian62.Setting(elementContainer).setName("Damage (optional)").addText(
         (text) => text.setPlaceholder("4d10 thunder").setValue(element.damage || "").onChange((value) => {
           element.damage = value || void 0;
         })
       );
-      new import_obsidian61.Setting(elementContainer).setName("Additional Damage (optional)").addText(
+      new import_obsidian62.Setting(elementContainer).setName("Additional Damage (optional)").addText(
         (text) => text.setPlaceholder("2d6 fire (ongoing)").setValue(element.additional_damage || "").onChange((value) => {
           element.additional_damage = value || void 0;
         })
       );
       if (element.save_dc) {
-        new import_obsidian61.Setting(elementContainer).setName("On Successful Save").addTextArea((text) => {
+        new import_obsidian62.Setting(elementContainer).setName("On Successful Save").addTextArea((text) => {
           text.setPlaceholder("Takes half damage...").setValue(element.on_success || "").onChange((value) => {
             element.on_success = value || void 0;
           });
           text.inputEl.rows = 2;
           text.inputEl.style.width = "100%";
         });
-        new import_obsidian61.Setting(elementContainer).setName("On Failed Save").addTextArea((text) => {
+        new import_obsidian62.Setting(elementContainer).setName("On Failed Save").addTextArea((text) => {
           text.setPlaceholder("Takes full damage and is knocked prone...").setValue(element.on_failure || "").onChange((value) => {
             element.on_failure = value || void 0;
           });
@@ -60420,7 +61034,7 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
           text.inputEl.style.width = "100%";
         });
       }
-      new import_obsidian61.Setting(elementContainer).setName("Effect").addTextArea((text) => {
+      new import_obsidian62.Setting(elementContainer).setName("Effect").addTextArea((text) => {
         text.setPlaceholder("The target is pushed 10 feet and knocked prone...").setValue(element.effect || "").onChange((value) => {
           element.effect = value;
         });
@@ -60468,12 +61082,12 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
       removeBtn.style.padding = "2px 8px";
       removeBtn.style.fontSize = "0.8em";
       removeBtn.onclick = () => this.removeCountermeasure(index);
-      new import_obsidian61.Setting(cmContainer).setName("Method").addText(
+      new import_obsidian62.Setting(cmContainer).setName("Method").addText(
         (text) => text.setPlaceholder("Force open the door").setValue(cm.method).onChange((value) => {
           cm.method = value;
         })
       );
-      new import_obsidian61.Setting(cmContainer).setName("DC").addText(
+      new import_obsidian62.Setting(cmContainer).setName("DC").addText(
         (text) => {
           var _a;
           return text.setPlaceholder("15").setValue(((_a = cm.dc) == null ? void 0 : _a.toString()) || "").onChange((value) => {
@@ -60484,7 +61098,7 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
           });
         }
       );
-      new import_obsidian61.Setting(cmContainer).setName("Checks Needed").setDesc("How many successful checks to complete?").addText(
+      new import_obsidian62.Setting(cmContainer).setName("Checks Needed").setDesc("How many successful checks to complete?").addText(
         (text) => {
           var _a;
           return text.setPlaceholder("1").setValue(((_a = cm.checks_needed) == null ? void 0 : _a.toString()) || "1").onChange((value) => {
@@ -60495,14 +61109,14 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
           });
         }
       );
-      new import_obsidian61.Setting(cmContainer).setName("Description").addTextArea((text) => {
+      new import_obsidian62.Setting(cmContainer).setName("Description").addTextArea((text) => {
         text.setPlaceholder("Three DC 20 Strength checks required to force the door...").setValue(cm.description || "").onChange((value) => {
           cm.description = value;
         });
         text.inputEl.rows = 2;
         text.inputEl.style.width = "100%";
       });
-      new import_obsidian61.Setting(cmContainer).setName("Effect on Success").addTextArea((text) => {
+      new import_obsidian62.Setting(cmContainer).setName("Effect on Success").addTextArea((text) => {
         text.setPlaceholder("The trap is disabled...").setValue(cm.effect || "").onChange((value) => {
           cm.effect = value;
         });
@@ -60515,14 +61129,14 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
     var _a;
     try {
       const trapFile = this.app.vault.getAbstractFileByPath(this.originalTrapPath);
-      if (!(trapFile instanceof import_obsidian61.TFile)) {
-        new import_obsidian61.Notice("Trap file not found!");
+      if (!(trapFile instanceof import_obsidian62.TFile)) {
+        new import_obsidian62.Notice("Trap file not found!");
         return;
       }
       const cache = this.app.metadataCache.getFileCache(trapFile);
       const frontmatter = cache == null ? void 0 : cache.frontmatter;
       if (!frontmatter) {
-        new import_obsidian61.Notice("Could not read trap data!");
+        new import_obsidian62.Notice("Could not read trap data!");
         return;
       }
       this.trapName = frontmatter.trap_name || trapFile.basename;
@@ -60564,16 +61178,16 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
       }
     } catch (error2) {
       console.error("Error loading trap data:", error2);
-      new import_obsidian61.Notice("Error loading trap data. Check console for details.");
+      new import_obsidian62.Notice("Error loading trap data. Check console for details.");
     }
   }
   async createTrap() {
     if (!this.trapName) {
-      new import_obsidian61.Notice("Please enter a trap name");
+      new import_obsidian62.Notice("Please enter a trap name");
       return;
     }
     if (this.elements.length === 0) {
-      new import_obsidian61.Notice("Please add at least one trap element");
+      new import_obsidian62.Notice("Please add at least one trap element");
       return;
     }
     try {
@@ -60581,7 +61195,7 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
       let worldName = "";
       if (this.adventurePath) {
         const adventureFile = this.app.vault.getAbstractFileByPath(this.adventurePath);
-        if (adventureFile instanceof import_obsidian61.TFile) {
+        if (adventureFile instanceof import_obsidian62.TFile) {
           const content = await this.app.vault.read(adventureFile);
           const campaignMatch = content.match(/^campaign:\s*(.+)$/m);
           const worldMatch = content.match(/^world:\s*(.+)$/m);
@@ -60597,7 +61211,7 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
       if (this.isEdit) {
         trapFile = this.app.vault.getAbstractFileByPath(this.originalTrapPath);
         if (!trapFile) {
-          new import_obsidian61.Notice("Original trap file not found!");
+          new import_obsidian62.Notice("Original trap file not found!");
           return;
         }
         trapPath = this.originalTrapPath;
@@ -60606,7 +61220,7 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
           const folder = trapPath.substring(0, trapPath.lastIndexOf("/"));
           const newPath = `${folder}/${this.trapName}.md`;
           if (await this.app.vault.adapter.exists(newPath)) {
-            new import_obsidian61.Notice(`A trap named "${this.trapName}" already exists!`);
+            new import_obsidian62.Notice(`A trap named "${this.trapName}" already exists!`);
             return;
           }
           await this.app.fileManager.renameFile(trapFile, newPath);
@@ -60633,17 +61247,17 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
         }
         trapPath = `${trapsFolder}/${this.trapName}.md`;
         if (await this.app.vault.adapter.exists(trapPath)) {
-          new import_obsidian61.Notice(`A trap named "${this.trapName}" already exists!`);
+          new import_obsidian62.Notice(`A trap named "${this.trapName}" already exists!`);
           return;
         }
       }
       const trapContent = this.createTrapContent(campaignName, worldName);
       if (this.isEdit && trapFile) {
         await this.app.vault.modify(trapFile, trapContent);
-        new import_obsidian61.Notice(`Trap "${this.trapName}" updated!`);
+        new import_obsidian62.Notice(`Trap "${this.trapName}" updated!`);
       } else {
         await this.app.vault.create(trapPath, trapContent);
-        new import_obsidian61.Notice(`Trap "${this.trapName}" created!`);
+        new import_obsidian62.Notice(`Trap "${this.trapName}" created!`);
         trapFile = this.app.vault.getAbstractFileByPath(trapPath);
       }
       await this.saveStatblocks();
@@ -60653,7 +61267,7 @@ var TrapCreationModal = class extends import_obsidian61.Modal {
       }
     } catch (error2) {
       console.error("Error creating/editing trap:", error2);
-      new import_obsidian61.Notice("Failed to save trap. Check console for details.");
+      new import_obsidian62.Notice("Failed to save trap. Check console for details.");
     }
   }
   createTrapContent(campaignName, worldName) {
@@ -61352,8 +61966,8 @@ ${traitsContent}\`\`\`
 };
 
 // src/item/ItemCreationModal.ts
-var import_obsidian62 = require("obsidian");
-var ItemCreationModal = class extends import_obsidian62.Modal {
+var import_obsidian63 = require("obsidian");
+var ItemCreationModal = class extends import_obsidian63.Modal {
   constructor(app, plugin, itemPath, campaignPath) {
     super(app);
     this.itemName = "";
@@ -61391,52 +62005,52 @@ var ItemCreationModal = class extends import_obsidian62.Modal {
       await this.loadItemData();
     }
     contentEl.createEl("h2", { text: this.isEdit ? "\u270F\uFE0F Edit Item" : "\u2694\uFE0F Create New Item" });
-    new import_obsidian62.Setting(contentEl).setName("Item Name").setDesc("Name of the item").addText(
+    new import_obsidian63.Setting(contentEl).setName("Item Name").setDesc("Name of the item").addText(
       (text) => text.setPlaceholder("Sword of the Planes").setValue(this.itemName).onChange((value) => {
         this.itemName = value;
       })
     );
-    new import_obsidian62.Setting(contentEl).setName("Item Type").setDesc("Simple items are standard D&D items. Evolving items grow with the character's level.").addDropdown(
+    new import_obsidian63.Setting(contentEl).setName("Item Type").setDesc("Simple items are standard D&D items. Evolving items grow with the character's level.").addDropdown(
       (dropdown) => dropdown.addOption("simple", "Simple D&D 5e Item").addOption("evolving", "Evolving Homebrew Item").setValue(this.itemType).onChange((value) => {
         this.itemType = value;
         this.refreshUI();
       })
     );
-    new import_obsidian62.Setting(contentEl).setName("Category").setDesc("Type of item").addDropdown(
+    new import_obsidian63.Setting(contentEl).setName("Category").setDesc("Type of item").addDropdown(
       (dropdown) => dropdown.addOption("weapon", "Weapon").addOption("armor", "Armor").addOption("wondrous", "Wondrous Item").addOption("potion", "Potion").addOption("scroll", "Scroll").addOption("ring", "Ring").addOption("rod", "Rod").addOption("staff", "Staff").addOption("wand", "Wand").addOption("other", "Other").setValue(this.category).onChange((value) => {
         this.category = value;
       })
     );
-    new import_obsidian62.Setting(contentEl).setName("Rarity").setDesc("How rare is this item?").addDropdown(
+    new import_obsidian63.Setting(contentEl).setName("Rarity").setDesc("How rare is this item?").addDropdown(
       (dropdown) => dropdown.addOption("common", "Common").addOption("uncommon", "Uncommon").addOption("rare", "Rare").addOption("very rare", "Very Rare").addOption("legendary", "Legendary").addOption("artifact", "Artifact").setValue(this.rarity).onChange((value) => {
         this.rarity = value;
       })
     );
-    new import_obsidian62.Setting(contentEl).setName("Requires Attunement").setDesc("Does this item require attunement?").addToggle(
+    new import_obsidian63.Setting(contentEl).setName("Requires Attunement").setDesc("Does this item require attunement?").addToggle(
       (toggle) => toggle.setValue(this.requiresAttunement).onChange((value) => {
         this.requiresAttunement = value;
         this.refreshUI();
       })
     );
     if (this.requiresAttunement) {
-      new import_obsidian62.Setting(contentEl).setName("Attunement Requirement").setDesc("e.g., 'by a spellcaster', 'by a paladin', leave empty for no specific requirement").addText((text) => {
+      new import_obsidian63.Setting(contentEl).setName("Attunement Requirement").setDesc("e.g., 'by a spellcaster', 'by a paladin', leave empty for no specific requirement").addText((text) => {
         text.setPlaceholder("by a wizard").setValue(this.attunementRequirement).onChange((value) => {
           this.attunementRequirement = value;
         });
         text.inputEl.style.width = "100%";
       });
     }
-    new import_obsidian62.Setting(contentEl).setName("Weight").setDesc("Item weight (e.g., '3 lb.')").addText(
+    new import_obsidian63.Setting(contentEl).setName("Weight").setDesc("Item weight (e.g., '3 lb.')").addText(
       (text) => text.setPlaceholder("3 lb.").setValue(this.weight).onChange((value) => {
         this.weight = value;
       })
     );
-    new import_obsidian62.Setting(contentEl).setName("Value").setDesc("Item value (e.g., '500 gp')").addText(
+    new import_obsidian63.Setting(contentEl).setName("Value").setDesc("Item value (e.g., '500 gp')").addText(
       (text) => text.setPlaceholder("500 gp").setValue(this.value).onChange((value) => {
         this.value = value;
       })
     );
-    new import_obsidian62.Setting(contentEl).setName(this.itemType === "simple" ? "Description" : "Base Description").setDesc(this.itemType === "simple" ? "Full description of the item and its properties" : "Base properties of the item before it evolves").addTextArea((text) => {
+    new import_obsidian63.Setting(contentEl).setName(this.itemType === "simple" ? "Description" : "Base Description").setDesc(this.itemType === "simple" ? "Full description of the item and its properties" : "Base properties of the item before it evolves").addTextArea((text) => {
       text.setPlaceholder(
         this.itemType === "simple" ? "This magical sword glows with an inner light..." : "This blade contains dormant power that awakens as its wielder grows stronger..."
       ).setValue(this.description).onChange((value) => {
@@ -61453,7 +62067,7 @@ var ItemCreationModal = class extends import_obsidian62.Modal {
       });
       this.levelThresholdsContainer = contentEl.createDiv();
       this.renderLevelThresholds();
-      new import_obsidian62.Setting(contentEl).addButton(
+      new import_obsidian63.Setting(contentEl).addButton(
         (button) => button.setButtonText("+ Add Level Threshold").onClick(() => {
           this.addLevelThreshold();
         })
@@ -61463,14 +62077,14 @@ var ItemCreationModal = class extends import_obsidian62.Modal {
     if (campaigns.length > 0) {
       let selectedCampaign = campaigns.some((campaign) => campaign.path === this.campaignPath) ? this.campaignPath : ((_a = campaigns[0]) == null ? void 0 : _a.path) || "";
       contentEl.createEl("h3", { text: "Save Location" });
-      new import_obsidian62.Setting(contentEl).setName("Campaign").setDesc("Which campaign should this item be saved to?").addDropdown((dropdown) => {
+      new import_obsidian63.Setting(contentEl).setName("Campaign").setDesc("Which campaign should this item be saved to?").addDropdown((dropdown) => {
         campaigns.forEach((campaign) => {
           dropdown.addOption(campaign.path, campaign.name);
         });
         dropdown.setValue(selectedCampaign).onChange((value) => {
           selectedCampaign = value;
         });
-        new import_obsidian62.Setting(contentEl).addButton(
+        new import_obsidian63.Setting(contentEl).addButton(
           (button) => button.setButtonText(this.isEdit ? "Update Item" : "Create Item").setCta().onClick(async () => {
             await this.createItem(selectedCampaign);
           })
@@ -61503,7 +62117,7 @@ var ItemCreationModal = class extends import_obsidian62.Modal {
     this.levelThresholds.forEach((threshold, index) => {
       const thresholdEl = this.levelThresholdsContainer.createDiv({ cls: "trap-element-item" });
       const heading = thresholdEl.createEl("h4", { text: `Level Threshold` });
-      new import_obsidian62.Setting(thresholdEl).setName("Character Level").addText(
+      new import_obsidian63.Setting(thresholdEl).setName("Character Level").addText(
         (text) => text.setValue(threshold.level.toString()).onChange((value) => {
           const num2 = parseInt(value);
           if (!isNaN(num2) && num2 >= 1 && num2 <= 20) {
@@ -61512,14 +62126,14 @@ var ItemCreationModal = class extends import_obsidian62.Modal {
           }
         })
       );
-      new import_obsidian62.Setting(thresholdEl).setName("Evolution Description").setDesc("What new abilities or properties does the item gain at this level?").addTextArea((text) => {
+      new import_obsidian63.Setting(thresholdEl).setName("Evolution Description").setDesc("What new abilities or properties does the item gain at this level?").addTextArea((text) => {
         text.setPlaceholder("The weapon gains +1 to attack and damage rolls...").setValue(threshold.description).onChange((value) => {
           threshold.description = value;
         });
         text.inputEl.rows = 4;
         text.inputEl.style.width = "100%";
       });
-      new import_obsidian62.Setting(thresholdEl).addButton(
+      new import_obsidian63.Setting(thresholdEl).addButton(
         (button) => button.setButtonText("Remove").setWarning().onClick(() => {
           this.removeLevelThreshold(index);
         })
@@ -61529,9 +62143,9 @@ var ItemCreationModal = class extends import_obsidian62.Modal {
   async getAllCampaigns() {
     const campaigns = [];
     const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
-    if (ttrpgsFolder instanceof import_obsidian62.TFolder) {
+    if (ttrpgsFolder instanceof import_obsidian63.TFolder) {
       for (const child of ttrpgsFolder.children) {
-        if (child instanceof import_obsidian62.TFolder) {
+        if (child instanceof import_obsidian63.TFolder) {
           campaigns.push({
             path: child.path,
             name: child.name
@@ -61544,14 +62158,14 @@ var ItemCreationModal = class extends import_obsidian62.Modal {
   async loadItemData() {
     try {
       const itemFile = this.app.vault.getAbstractFileByPath(this.originalItemPath);
-      if (!(itemFile instanceof import_obsidian62.TFile)) {
-        new import_obsidian62.Notice("Item file not found!");
+      if (!(itemFile instanceof import_obsidian63.TFile)) {
+        new import_obsidian63.Notice("Item file not found!");
         return;
       }
       const cache = this.app.metadataCache.getFileCache(itemFile);
       const frontmatter = cache == null ? void 0 : cache.frontmatter;
       if (!frontmatter) {
-        new import_obsidian62.Notice("Could not read item data!");
+        new import_obsidian63.Notice("Could not read item data!");
         return;
       }
       this.itemName = frontmatter.name || itemFile.basename;
@@ -61590,19 +62204,19 @@ var ItemCreationModal = class extends import_obsidian62.Modal {
       }
     } catch (error2) {
       console.error("Error loading item data:", error2);
-      new import_obsidian62.Notice("Error loading item data. Check console for details.");
+      new import_obsidian63.Notice("Error loading item data. Check console for details.");
     }
   }
   async createItem(campaignPath) {
     if (!this.itemName.trim()) {
-      new import_obsidian62.Notice("Please enter an item name");
+      new import_obsidian63.Notice("Please enter an item name");
       return;
     }
     try {
       const campaignName = campaignPath.split("/").pop() || "Unknown";
       let worldName = campaignName;
       const worldFile = this.app.vault.getAbstractFileByPath(`${campaignPath}/World.md`);
-      if (worldFile instanceof import_obsidian62.TFile) {
+      if (worldFile instanceof import_obsidian63.TFile) {
         const worldContent = await this.app.vault.read(worldFile);
         const worldMatch = worldContent.match(/^world:\s*([^\r\n]+)$/m);
         if (worldMatch && worldMatch[1]) {
@@ -61614,7 +62228,7 @@ var ItemCreationModal = class extends import_obsidian62.Modal {
       if (this.isEdit) {
         itemFile = this.app.vault.getAbstractFileByPath(this.originalItemPath);
         if (!itemFile) {
-          new import_obsidian62.Notice("Original item file not found!");
+          new import_obsidian63.Notice("Original item file not found!");
           return;
         }
         itemPath = this.originalItemPath;
@@ -61622,7 +62236,7 @@ var ItemCreationModal = class extends import_obsidian62.Modal {
           const folder = itemPath.substring(0, itemPath.lastIndexOf("/"));
           const newPath = `${folder}/${this.itemName}.md`;
           if (await this.app.vault.adapter.exists(newPath)) {
-            new import_obsidian62.Notice(`An item named "${this.itemName}" already exists!`);
+            new import_obsidian63.Notice(`An item named "${this.itemName}" already exists!`);
             return;
           }
           await this.app.fileManager.renameFile(itemFile, newPath);
@@ -61636,17 +62250,17 @@ var ItemCreationModal = class extends import_obsidian62.Modal {
         }
         itemPath = `${itemsFolder}/${this.itemName}.md`;
         if (await this.app.vault.adapter.exists(itemPath)) {
-          new import_obsidian62.Notice(`An item named "${this.itemName}" already exists!`);
+          new import_obsidian63.Notice(`An item named "${this.itemName}" already exists!`);
           return;
         }
       }
       const itemContent = this.createItemContent(campaignName, worldName);
       if (this.isEdit && itemFile) {
         await this.app.vault.modify(itemFile, itemContent);
-        new import_obsidian62.Notice(`Item "${this.itemName}" updated!`);
+        new import_obsidian63.Notice(`Item "${this.itemName}" updated!`);
       } else {
         await this.app.vault.create(itemPath, itemContent);
-        new import_obsidian62.Notice(`Item "${this.itemName}" created!`);
+        new import_obsidian63.Notice(`Item "${this.itemName}" created!`);
         itemFile = this.app.vault.getAbstractFileByPath(itemPath);
       }
       this.close();
@@ -61655,7 +62269,7 @@ var ItemCreationModal = class extends import_obsidian62.Modal {
       }
     } catch (error2) {
       console.error("Error creating/editing item:", error2);
-      new import_obsidian62.Notice("Failed to save item. Check console for details.");
+      new import_obsidian63.Notice("Failed to save item. Check console for details.");
     }
   }
   createItemContent(campaignName, worldName) {
@@ -61761,9 +62375,9 @@ _Add any additional notes about the item's history, lore, or usage here._
 };
 
 // src/creature/CreatureCreationModal.ts
-var import_obsidian63 = require("obsidian");
+var import_obsidian64 = require("obsidian");
 init_migration();
-var CreatureCreationModal = class extends import_obsidian63.Modal {
+var CreatureCreationModal = class extends import_obsidian64.Modal {
   constructor(app, plugin, creaturePath, _campaignPath) {
     super(app);
     // For editing existing creatures
@@ -61825,7 +62439,7 @@ var CreatureCreationModal = class extends import_obsidian63.Modal {
     contentEl.createEl("h2", { text: this.isEdit ? "\u270F\uFE0F Edit Creature" : "\u{1F409} Create New Creature" });
     contentEl.createEl("h3", { text: "Import from Text" });
     contentEl.createEl("p", {
-      text: "Paste a statblock below to auto-fill the form. Supports both 2014 (D&D Beyond classic) and 2024 (new Monster Manual) formats:",
+      text: "Optional D&D 5e import: paste a 2014 (D&D Beyond classic) or 2024 (Monster Manual) statblock to auto-fill the form:",
       cls: "setting-item-description"
     });
     const importContainer = contentEl.createDiv({ cls: "creature-import-container" });
@@ -61840,52 +62454,52 @@ var CreatureCreationModal = class extends import_obsidian63.Modal {
     importButton.addEventListener("click", () => {
       this.parseStatblockText(importTextArea.value);
       this.refreshUI();
-      new import_obsidian63.Notice("Statblock parsed! Review and adjust fields below.");
+      new import_obsidian64.Notice("Statblock parsed! Review and adjust fields below.");
     });
     contentEl.createEl("hr");
     contentEl.createEl("h3", { text: "Creature Details" });
-    new import_obsidian63.Setting(contentEl).setName("Creature Name").setDesc("Name of the creature").addText(
+    new import_obsidian64.Setting(contentEl).setName("Creature Name").setDesc("Name of the creature").addText(
       (text) => text.setPlaceholder("Frost Giant Zombie").setValue(this.creatureName).onChange((value) => {
         this.creatureName = value;
       })
     );
-    new import_obsidian63.Setting(contentEl).setName("Size").addDropdown(
+    new import_obsidian64.Setting(contentEl).setName("Size").addDropdown(
       (dropdown) => dropdown.addOption("Tiny", "Tiny").addOption("Small", "Small").addOption("Medium", "Medium").addOption("Large", "Large").addOption("Huge", "Huge").addOption("Gargantuan", "Gargantuan").setValue(this.size).onChange((value) => {
         this.size = value;
       })
     );
-    new import_obsidian63.Setting(contentEl).setName("Type").setDesc("Creature type (e.g., undead, elemental, humanoid)").addText(
+    new import_obsidian64.Setting(contentEl).setName("Type").setDesc("Creature type (e.g., undead, elemental, humanoid)").addText(
       (text) => text.setPlaceholder("undead").setValue(this.type).onChange((value) => {
         this.type = value;
       })
     );
-    new import_obsidian63.Setting(contentEl).setName("Subtype/Tags").setDesc("Optional subtype or tags (e.g., goblinoid, shapechanger)").addText(
+    new import_obsidian64.Setting(contentEl).setName("Subtype/Tags").setDesc("Optional subtype or tags (e.g., goblinoid, shapechanger)").addText(
       (text) => text.setPlaceholder("giant").setValue(this.subtype).onChange((value) => {
         this.subtype = value;
       })
     );
-    new import_obsidian63.Setting(contentEl).setName("Alignment").addText(
+    new import_obsidian64.Setting(contentEl).setName("Alignment").addText(
       (text) => text.setPlaceholder("neutral evil").setValue(this.alignment).onChange((value) => {
         this.alignment = value;
       })
     );
     contentEl.createEl("h3", { text: "Combat Statistics" });
-    new import_obsidian63.Setting(contentEl).setName("Armor Class").addText(
+    new import_obsidian64.Setting(contentEl).setName("Armor Class").addText(
       (text) => text.setPlaceholder("15").setValue(this.ac).onChange((value) => {
         this.ac = value;
       })
     );
-    new import_obsidian63.Setting(contentEl).setName("Hit Points").addText(
+    new import_obsidian64.Setting(contentEl).setName("Hit Points").addText(
       (text) => text.setPlaceholder("138").setValue(this.hp).onChange((value) => {
         this.hp = value;
       })
     );
-    new import_obsidian63.Setting(contentEl).setName("Hit Dice").setDesc("Format: XdY + Z (e.g., 12d12 + 60)").addText(
+    new import_obsidian64.Setting(contentEl).setName("Hit Dice").setDesc("Format: XdY + Z (e.g., 12d12 + 60)").addText(
       (text) => text.setPlaceholder("12d12 + 60").setValue(this.hitDice).onChange((value) => {
         this.hitDice = value;
       })
     );
-    new import_obsidian63.Setting(contentEl).setName("Speed").setDesc("All movement speeds (e.g., 40 ft., fly 30 ft.)").addText(
+    new import_obsidian64.Setting(contentEl).setName("Speed").setDesc("All movement speeds (e.g., 40 ft., fly 30 ft.)").addText(
       (text) => text.setPlaceholder("40 ft.").setValue(this.speed).onChange((value) => {
         this.speed = value;
       })
@@ -61902,47 +62516,47 @@ var CreatureCreationModal = class extends import_obsidian63.Modal {
     this.createAbilityScore(abilityScoresContainer, "WIS", this.wis, (val2) => this.wis = val2);
     this.createAbilityScore(abilityScoresContainer, "CHA", this.cha, (val2) => this.cha = val2);
     contentEl.createEl("h3", { text: "Additional Statistics" });
-    new import_obsidian63.Setting(contentEl).setName("Saving Throws").setDesc("Comma-separated (e.g., WIS +2, CON +5)").addText(
+    new import_obsidian64.Setting(contentEl).setName("Saving Throws").setDesc("Comma-separated (e.g., WIS +2, CON +5)").addText(
       (text) => text.setPlaceholder("WIS +2").setValue(this.saves.join(", ")).onChange((value) => {
         this.saves = value ? value.split(",").map((s) => s.trim()) : [];
       })
     );
-    new import_obsidian63.Setting(contentEl).setName("Skills").setDesc("Comma-separated (e.g., Perception +4, Stealth +6)").addText(
+    new import_obsidian64.Setting(contentEl).setName("Skills").setDesc("Comma-separated (e.g., Perception +4, Stealth +6)").addText(
       (text) => text.setPlaceholder("Perception +4").setValue(this.skills.join(", ")).onChange((value) => {
         this.skills = value ? value.split(",").map((s) => s.trim()) : [];
       })
     );
-    new import_obsidian63.Setting(contentEl).setName("Damage Vulnerabilities").addText(
+    new import_obsidian64.Setting(contentEl).setName("Damage Vulnerabilities").addText(
       (text) => text.setPlaceholder("Fire").setValue(this.vulnerabilities).onChange((value) => {
         this.vulnerabilities = value;
       })
     );
-    new import_obsidian63.Setting(contentEl).setName("Damage Resistances").addText(
+    new import_obsidian64.Setting(contentEl).setName("Damage Resistances").addText(
       (text) => text.setPlaceholder("Lightning, Poison").setValue(this.resistances).onChange((value) => {
         this.resistances = value;
       })
     );
-    new import_obsidian63.Setting(contentEl).setName("Damage Immunities").addText(
+    new import_obsidian64.Setting(contentEl).setName("Damage Immunities").addText(
       (text) => text.setPlaceholder("Poison, Cold").setValue(this.immunities).onChange((value) => {
         this.immunities = value;
       })
     );
-    new import_obsidian63.Setting(contentEl).setName("Condition Immunities").addText(
+    new import_obsidian64.Setting(contentEl).setName("Condition Immunities").addText(
       (text) => text.setPlaceholder("Poisoned").setValue(this.conditionImmunities).onChange((value) => {
         this.conditionImmunities = value;
       })
     );
-    new import_obsidian63.Setting(contentEl).setName("Senses").addText(
+    new import_obsidian64.Setting(contentEl).setName("Senses").addText(
       (text) => text.setPlaceholder("Darkvision 60 ft.").setValue(this.senses).onChange((value) => {
         this.senses = value;
       })
     );
-    new import_obsidian63.Setting(contentEl).setName("Languages").addText(
+    new import_obsidian64.Setting(contentEl).setName("Languages").addText(
       (text) => text.setPlaceholder("understands Giant but can't speak").setValue(this.languages).onChange((value) => {
         this.languages = value;
       })
     );
-    new import_obsidian63.Setting(contentEl).setName("Challenge Rating").addText(
+    new import_obsidian64.Setting(contentEl).setName("Challenge Rating").addText(
       (text) => text.setPlaceholder("9").setValue(this.cr).onChange((value) => {
         this.cr = value;
       })
@@ -61954,7 +62568,7 @@ var CreatureCreationModal = class extends import_obsidian63.Modal {
     });
     const traitsContainer = contentEl.createDiv({ cls: "creature-features-container" });
     this.renderFeatureList(traitsContainer, this.traits, "Trait");
-    new import_obsidian63.Setting(contentEl).addButton(
+    new import_obsidian64.Setting(contentEl).addButton(
       (button) => button.setButtonText("+ Add Trait").onClick(() => {
         this.traits.push({ name: "", desc: "" });
         this.refreshUI();
@@ -61963,14 +62577,14 @@ var CreatureCreationModal = class extends import_obsidian63.Modal {
     contentEl.createEl("h3", { text: "Actions" });
     const actionsContainer = contentEl.createDiv({ cls: "creature-features-container" });
     this.renderFeatureList(actionsContainer, this.actions, "Action");
-    new import_obsidian63.Setting(contentEl).addButton(
+    new import_obsidian64.Setting(contentEl).addButton(
       (button) => button.setButtonText("+ Add Action").onClick(() => {
         this.actions.push({ name: "", desc: "" });
         this.refreshUI();
       })
     );
     contentEl.createEl("h3", { text: "Description" });
-    new import_obsidian63.Setting(contentEl).setName("Creature Description").setDesc("Lore, appearance, and behavior").addTextArea((text) => {
+    new import_obsidian64.Setting(contentEl).setName("Creature Description").setDesc("Lore, appearance, and behavior").addTextArea((text) => {
       text.setPlaceholder("Describe the creature...").setValue(this.description).onChange((value) => {
         this.description = value;
       });
@@ -61980,7 +62594,7 @@ var CreatureCreationModal = class extends import_obsidian63.Modal {
     contentEl.createEl("h3", { text: "\u{1F3A8} Token Appearance" });
     const tokenContainer = contentEl.createDiv();
     this.initTokenEditor(tokenContainer);
-    new import_obsidian63.Setting(contentEl).addButton(
+    new import_obsidian64.Setting(contentEl).addButton(
       (button) => button.setButtonText(this.isEdit ? "Update Creature" : "Create Creature").setCta().onClick(async () => {
         await this.saveCreature();
       })
@@ -62016,19 +62630,19 @@ var CreatureCreationModal = class extends import_obsidian63.Modal {
       featureDiv.style.padding = "10px";
       featureDiv.style.border = "1px solid #ccc";
       featureDiv.style.borderRadius = "4px";
-      new import_obsidian63.Setting(featureDiv).setName(`${type} Name`).addText(
+      new import_obsidian64.Setting(featureDiv).setName(`${type} Name`).addText(
         (text) => text.setPlaceholder("Feature name").setValue(feature.name).onChange((value) => {
           feature.name = value;
         })
       );
-      new import_obsidian63.Setting(featureDiv).setName(`${type} Description`).addTextArea((text) => {
+      new import_obsidian64.Setting(featureDiv).setName(`${type} Description`).addTextArea((text) => {
         text.setPlaceholder("Feature description...").setValue(feature.desc).onChange((value) => {
           feature.desc = value;
         });
         text.inputEl.rows = 3;
         text.inputEl.style.width = "100%";
       });
-      new import_obsidian63.Setting(featureDiv).addButton(
+      new import_obsidian64.Setting(featureDiv).addButton(
         (button) => button.setButtonText("Remove").setWarning().onClick(() => {
           features.splice(index, 1);
           this.refreshUI();
@@ -62038,7 +62652,7 @@ var CreatureCreationModal = class extends import_obsidian63.Modal {
   }
   parseStatblockText(text) {
     if (!text || text.trim().length === 0) {
-      new import_obsidian63.Notice("Please paste a statblock first");
+      new import_obsidian64.Notice("Please paste a statblock first");
       return;
     }
     const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
@@ -62331,14 +62945,14 @@ var CreatureCreationModal = class extends import_obsidian63.Modal {
     var _a, _b, _c;
     try {
       const creatureFile = this.app.vault.getAbstractFileByPath(this.originalCreaturePath);
-      if (!(creatureFile instanceof import_obsidian63.TFile)) {
-        new import_obsidian63.Notice("Creature file not found!");
+      if (!(creatureFile instanceof import_obsidian64.TFile)) {
+        new import_obsidian64.Notice("Creature file not found!");
         return;
       }
       const cache = this.app.metadataCache.getFileCache(creatureFile);
       const frontmatter = cache == null ? void 0 : cache.frontmatter;
       if (!frontmatter) {
-        new import_obsidian63.Notice("Could not read creature data!");
+        new import_obsidian64.Notice("Could not read creature data!");
         return;
       }
       this.creatureName = frontmatter.name || creatureFile.basename;
@@ -62387,19 +63001,19 @@ var CreatureCreationModal = class extends import_obsidian63.Modal {
       }
     } catch (error2) {
       console.error("Error loading creature data:", error2);
-      new import_obsidian63.Notice("Error loading creature data. Check console for details.");
+      new import_obsidian64.Notice("Error loading creature data. Check console for details.");
     }
   }
   async saveCreature() {
     var _a, _b, _c, _d, _e, _f, _g;
     if (!this.creatureName.trim()) {
-      new import_obsidian63.Notice("Please enter a creature name");
+      new import_obsidian64.Notice("Please enter a creature name");
       return;
     }
     try {
       const beastiaryPath = "z_Beastiarity";
       if (!await this.app.vault.adapter.exists(beastiaryPath)) {
-        new import_obsidian63.Notice(`Beastiary folder not found at ${beastiaryPath}`);
+        new import_obsidian64.Notice(`Beastiary folder not found at ${beastiaryPath}`);
         return;
       }
       let creaturePath;
@@ -62407,7 +63021,7 @@ var CreatureCreationModal = class extends import_obsidian63.Modal {
       if (this.isEdit) {
         creatureFile = this.app.vault.getAbstractFileByPath(this.originalCreaturePath);
         if (!creatureFile) {
-          new import_obsidian63.Notice("Original creature file not found!");
+          new import_obsidian64.Notice("Original creature file not found!");
           return;
         }
         creaturePath = this.originalCreaturePath;
@@ -62415,7 +63029,7 @@ var CreatureCreationModal = class extends import_obsidian63.Modal {
           const folder = creaturePath.substring(0, creaturePath.lastIndexOf("/"));
           const newPath = `${folder}/${this.creatureName}.md`;
           if (await this.app.vault.adapter.exists(newPath)) {
-            new import_obsidian63.Notice(`A creature named "${this.creatureName}" already exists!`);
+            new import_obsidian64.Notice(`A creature named "${this.creatureName}" already exists!`);
             return;
           }
           await this.plugin.deleteCreatureStatblock(this.originalCreatureName);
@@ -62428,7 +63042,7 @@ var CreatureCreationModal = class extends import_obsidian63.Modal {
       } else {
         creaturePath = `${beastiaryPath}/${this.creatureName}.md`;
         if (await this.app.vault.adapter.exists(creaturePath)) {
-          new import_obsidian63.Notice(`A creature named "${this.creatureName}" already exists!`);
+          new import_obsidian64.Notice(`A creature named "${this.creatureName}" already exists!`);
           return;
         }
       }
@@ -62470,10 +63084,10 @@ var CreatureCreationModal = class extends import_obsidian63.Modal {
       const creatureContent = this.createCreatureContent();
       if (this.isEdit && creatureFile) {
         await this.app.vault.modify(creatureFile, creatureContent);
-        new import_obsidian63.Notice(`Creature "${this.creatureName}" updated!`);
+        new import_obsidian64.Notice(`Creature "${this.creatureName}" updated!`);
       } else {
         await this.app.vault.create(creaturePath, creatureContent);
-        new import_obsidian63.Notice(`Creature "${this.creatureName}" created!`);
+        new import_obsidian64.Notice(`Creature "${this.creatureName}" created!`);
         creatureFile = this.app.vault.getAbstractFileByPath(creaturePath);
       }
       await this.saveToStatblocks();
@@ -62483,7 +63097,7 @@ var CreatureCreationModal = class extends import_obsidian63.Modal {
       }
     } catch (error2) {
       console.error("Error creating/editing creature:", error2);
-      new import_obsidian63.Notice("Failed to save creature. Check console for details.");
+      new import_obsidian64.Notice("Failed to save creature. Check console for details.");
     }
   }
   createCreatureContent() {
@@ -62762,11 +63376,11 @@ creature: ${this.creatureName}
 };
 
 // src/faction/FactionCreationModal.ts
-var import_obsidian64 = require("obsidian");
+var import_obsidian65 = require("obsidian");
 init_templates();
 init_migration();
 init_YamlFrontmatter();
-var FactionCreationModal = class extends import_obsidian64.Modal {
+var FactionCreationModal = class extends import_obsidian65.Modal {
   constructor(app, plugin, campaignPath) {
     super(app);
     this.factionName = "";
@@ -62792,14 +63406,14 @@ var FactionCreationModal = class extends import_obsidian64.Modal {
       text: "Build a compelling faction with clear goals and methods of operation.",
       cls: "setting-item-description"
     });
-    new import_obsidian64.Setting(contentEl).setName("Faction Name").setDesc("What is this faction called?").addText((text) => {
+    new import_obsidian65.Setting(contentEl).setName("Faction Name").setDesc("What is this faction called?").addText((text) => {
       text.setPlaceholder("e.g., The Emerald Enclave, The Zhentarim").onChange((value) => {
         this.factionName = value;
       });
       text.inputEl.focus();
     });
     const campaigns = this.getAllCampaigns();
-    new import_obsidian64.Setting(contentEl).setName("Campaign").setDesc("Which campaign does this faction belong to?").addDropdown((dropdown) => {
+    new import_obsidian65.Setting(contentEl).setName("Campaign").setDesc("Which campaign does this faction belong to?").addDropdown((dropdown) => {
       campaigns.forEach((campaign) => {
         dropdown.addOption(campaign.path, campaign.name);
       });
@@ -62808,62 +63422,62 @@ var FactionCreationModal = class extends import_obsidian64.Modal {
       });
     });
     contentEl.createEl("h3", { text: "\u{1F3AF} Core Faction Engine" });
-    new import_obsidian64.Setting(contentEl).setName("What is their main goal?").setDesc("The faction's primary objective or purpose").addTextArea((text) => {
+    new import_obsidian65.Setting(contentEl).setName("What is their main goal?").setDesc("The faction's primary objective or purpose").addTextArea((text) => {
       text.setPlaceholder("e.g., Preserve the balance of nature and protect the wilderness from civilization's encroachment").onChange((value) => {
         this.mainGoal = value;
       });
       text.inputEl.rows = 3;
     });
-    new import_obsidian64.Setting(contentEl).setName("How do they pursue it?").setDesc("Their methods, tactics, and approach to achieving their goal").addTextArea((text) => {
+    new import_obsidian65.Setting(contentEl).setName("How do they pursue it?").setDesc("Their methods, tactics, and approach to achieving their goal").addTextArea((text) => {
       text.setPlaceholder("e.g., Through covert operations, strategic alliances with druid circles, and carefully placed agents in key positions").onChange((value) => {
         this.pursuitMethod = value;
       });
       text.inputEl.rows = 3;
     });
     contentEl.createEl("h3", { text: "\u{1F4CB} Faction Details" });
-    new import_obsidian64.Setting(contentEl).setName("Leader").setDesc("Who leads this faction? (Optional)").addText((text) => {
+    new import_obsidian65.Setting(contentEl).setName("Leader").setDesc("Who leads this faction? (Optional)").addText((text) => {
       text.setPlaceholder("e.g., High Druid Amaranthe Silvermoon").onChange((value) => {
         this.leader = value;
       });
     });
-    new import_obsidian64.Setting(contentEl).setName("Size & Influence").setDesc("How large and influential is this faction?").addText((text) => {
+    new import_obsidian65.Setting(contentEl).setName("Size & Influence").setDesc("How large and influential is this faction?").addText((text) => {
       text.setPlaceholder("e.g., Regional, hundreds of members").onChange((value) => {
         this.size = value;
       });
     });
-    new import_obsidian64.Setting(contentEl).setName("Resources").setDesc("What resources does this faction control?").addTextArea((text) => {
+    new import_obsidian65.Setting(contentEl).setName("Resources").setDesc("What resources does this faction control?").addTextArea((text) => {
       text.setPlaceholder("e.g., Hidden forest sanctuaries, network of informants, ancient druidic artifacts").onChange((value) => {
         this.resources = value;
       });
       text.inputEl.rows = 2;
     });
-    new import_obsidian64.Setting(contentEl).setName("Reputation").setDesc("How is this faction viewed by others?").addTextArea((text) => {
+    new import_obsidian65.Setting(contentEl).setName("Reputation").setDesc("How is this faction viewed by others?").addTextArea((text) => {
       text.setPlaceholder("e.g., Respected by rural communities, distrusted by merchant guilds, feared by loggers").onChange((value) => {
         this.reputation = value;
       });
       text.inputEl.rows = 2;
     });
     contentEl.createEl("h3", { text: "\u{1F5FA}\uFE0F Relationships" });
-    new import_obsidian64.Setting(contentEl).setName("Territories").setDesc("What areas or locations does this faction control or operate in?").addTextArea((text) => {
+    new import_obsidian65.Setting(contentEl).setName("Territories").setDesc("What areas or locations does this faction control or operate in?").addTextArea((text) => {
       text.setPlaceholder("e.g., The Misty Forest, Hidden groves throughout the Sword Coast").onChange((value) => {
         this.territories = value;
       });
       text.inputEl.rows = 2;
     });
-    new import_obsidian64.Setting(contentEl).setName("Allies").setDesc("Which factions or groups are allied with them?").addTextArea((text) => {
+    new import_obsidian65.Setting(contentEl).setName("Allies").setDesc("Which factions or groups are allied with them?").addTextArea((text) => {
       text.setPlaceholder("e.g., Harpers, local druid circles, forest creatures").onChange((value) => {
         this.allies = value;
       });
       text.inputEl.rows = 2;
     });
-    new import_obsidian64.Setting(contentEl).setName("Enemies").setDesc("Which factions or groups oppose them?").addTextArea((text) => {
+    new import_obsidian65.Setting(contentEl).setName("Enemies").setDesc("Which factions or groups oppose them?").addTextArea((text) => {
       text.setPlaceholder("e.g., Zhentarim, logging companies, industrialist merchants").onChange((value) => {
         this.enemies = value;
       });
       text.inputEl.rows = 2;
     });
     contentEl.createEl("h3", { text: "\u26A0\uFE0F Current Situation" });
-    new import_obsidian64.Setting(contentEl).setName("Active Problem").setDesc("What challenge or conflict is this faction currently facing?").addTextArea((text) => {
+    new import_obsidian65.Setting(contentEl).setName("Active Problem").setDesc("What challenge or conflict is this faction currently facing?").addTextArea((text) => {
       text.setPlaceholder("e.g., A corrupted member has been selling secrets to logging companies").onChange((value) => {
         this.activeProblem = value;
       });
@@ -62880,7 +63494,7 @@ var FactionCreationModal = class extends import_obsidian64.Modal {
     });
     createButton.addEventListener("click", async () => {
       if (!this.factionName.trim()) {
-        new import_obsidian64.Notice("Please enter a faction name!");
+        new import_obsidian65.Notice("Please enter a faction name!");
         return;
       }
       this.close();
@@ -62890,9 +63504,9 @@ var FactionCreationModal = class extends import_obsidian64.Modal {
   getAllCampaigns() {
     const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
     const campaigns = [];
-    if (ttrpgsFolder instanceof import_obsidian64.TFolder) {
+    if (ttrpgsFolder instanceof import_obsidian65.TFolder) {
       ttrpgsFolder.children.forEach((child) => {
-        if (child instanceof import_obsidian64.TFolder) {
+        if (child instanceof import_obsidian65.TFolder) {
           campaigns.push({
             path: child.path,
             name: child.name
@@ -62905,12 +63519,12 @@ var FactionCreationModal = class extends import_obsidian64.Modal {
   async createFactionFile() {
     const campaignName = this.campaign.split("/").pop() || "Unknown";
     const factionPath = `${this.campaign}/Factions`;
-    new import_obsidian64.Notice(`Creating Faction "${this.factionName}"...`);
+    new import_obsidian65.Notice(`Creating Faction "${this.factionName}"...`);
     try {
       await this.plugin.ensureFolderExists(factionPath);
       const worldFile = this.app.vault.getAbstractFileByPath(`${this.campaign}/World.md`);
       let worldName = campaignName;
-      if (worldFile instanceof import_obsidian64.TFile) {
+      if (worldFile instanceof import_obsidian65.TFile) {
         const worldContent = await this.app.vault.read(worldFile);
         const worldMatch = worldContent.match(/^world:\s*([^\r\n]+)$/m);
         if (worldMatch && worldMatch[1] && worldMatch[1].trim()) {
@@ -62943,9 +63557,9 @@ var FactionCreationModal = class extends import_obsidian64.Modal {
       const filePath = `${factionPath}/${this.factionName}.md`;
       await this.app.vault.create(filePath, factionContent);
       await this.app.workspace.openLinkText(filePath, "", true);
-      new import_obsidian64.Notice(`\u2705 Faction "${this.factionName}" created successfully!`);
+      new import_obsidian65.Notice(`\u2705 Faction "${this.factionName}" created successfully!`);
     } catch (error2) {
-      new import_obsidian64.Notice(`\u274C Error creating Faction: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      new import_obsidian65.Notice(`\u274C Error creating Faction: ${error2 instanceof Error ? error2.message : String(error2)}`);
       console.error("Faction creation error:", error2);
     }
   }
@@ -62956,10 +63570,10 @@ var FactionCreationModal = class extends import_obsidian64.Modal {
 };
 
 // src/spell/SpellImportModal.ts
-var import_obsidian66 = require("obsidian");
+var import_obsidian67 = require("obsidian");
 
 // src/spell/SpellDetailsModal.ts
-var import_obsidian65 = require("obsidian");
+var import_obsidian66 = require("obsidian");
 
 // src/spell/buildSpellContent.ts
 init_templates();
@@ -63009,7 +63623,7 @@ ${classes}`
 }
 
 // src/spell/SpellDetailsModal.ts
-var SpellDetailsModal = class extends import_obsidian65.Modal {
+var SpellDetailsModal = class extends import_obsidian66.Modal {
   constructor(app, plugin, spellData, campaignPath) {
     super(app);
     this.campaignPath = "";
@@ -63082,9 +63696,9 @@ var SpellDetailsModal = class extends import_obsidian65.Modal {
       const filePath = `${spellPath}/${spell.name}.md`;
       await this.app.vault.create(filePath, content);
       await this.app.workspace.openLinkText(filePath, "", true);
-      new import_obsidian65.Notice(`\u2705 Spell "${spell.name}" imported successfully!`);
+      new import_obsidian66.Notice(`\u2705 Spell "${spell.name}" imported successfully!`);
     } catch (error2) {
-      new import_obsidian65.Notice(`\u274C Error importing spell: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      new import_obsidian66.Notice(`\u274C Error importing spell: ${error2 instanceof Error ? error2.message : String(error2)}`);
       console.error("Import error:", error2);
     }
   }
@@ -63095,7 +63709,7 @@ var SpellDetailsModal = class extends import_obsidian65.Modal {
 };
 
 // src/spell/SpellImportModal.ts
-var SpellImportModal = class extends import_obsidian66.Modal {
+var SpellImportModal = class extends import_obsidian67.Modal {
   constructor(app, plugin, campaignPath) {
     super(app);
     this.spellList = [];
@@ -63151,7 +63765,7 @@ var SpellImportModal = class extends import_obsidian66.Modal {
       cls: "spell-loading"
     });
     try {
-      const response = await (0, import_obsidian66.requestUrl)({
+      const response = await (0, import_obsidian67.requestUrl)({
         url: "https://www.dnd5eapi.co/api/2014/spells",
         method: "GET"
       });
@@ -63160,7 +63774,7 @@ var SpellImportModal = class extends import_obsidian66.Modal {
       this.spellList = [];
       for (let i = 0; i < spellRefs.length; i++) {
         try {
-          const detailResponse = await (0, import_obsidian66.requestUrl)({
+          const detailResponse = await (0, import_obsidian67.requestUrl)({
             url: `https://www.dnd5eapi.co${spellRefs[i].url}`,
             method: "GET"
           });
@@ -63327,7 +63941,7 @@ var SpellImportModal = class extends import_obsidian66.Modal {
     try {
       if (button) {
         if (button.hasClass("importing")) {
-          new import_obsidian66.Notice("Import already in progress...");
+          new import_obsidian67.Notice("Import already in progress...");
           return;
         }
         button.addClass("importing");
@@ -63335,15 +63949,15 @@ var SpellImportModal = class extends import_obsidian66.Modal {
         button.disabled = true;
       }
       if (this.spellList.length === 0) {
-        new import_obsidian66.Notice("Loading spells from API first...");
-        const response = await (0, import_obsidian66.requestUrl)({
+        new import_obsidian67.Notice("Loading spells from API first...");
+        const response = await (0, import_obsidian67.requestUrl)({
           url: "https://www.dnd5eapi.co/api/2014/spells",
           method: "GET"
         });
         const spellRefs = response.json.results || [];
         for (let i = 0; i < spellRefs.length; i++) {
           try {
-            const detailResponse = await (0, import_obsidian66.requestUrl)({
+            const detailResponse = await (0, import_obsidian67.requestUrl)({
               url: `https://www.dnd5eapi.co${spellRefs[i].url}`,
               method: "GET"
             });
@@ -63359,7 +63973,7 @@ var SpellImportModal = class extends import_obsidian66.Modal {
       let successCount = 0;
       let errorCount = 0;
       const totalSpells = this.spellList.length;
-      new import_obsidian66.Notice(`Starting bulk import of ${totalSpells} spells...`);
+      new import_obsidian67.Notice(`Starting bulk import of ${totalSpells} spells...`);
       for (let i = 0; i < this.spellList.length; i++) {
         try {
           const spell = this.spellList[i];
@@ -63373,16 +63987,16 @@ var SpellImportModal = class extends import_obsidian66.Modal {
           await this.app.vault.create(filePath, content);
           successCount++;
           if (i % 50 === 0 && i > 0) {
-            new import_obsidian66.Notice(`Importing spells... ${i}/${totalSpells}`);
+            new import_obsidian67.Notice(`Importing spells... ${i}/${totalSpells}`);
           }
         } catch (error2) {
           errorCount++;
           console.error(`Failed to import ${this.spellList[i].name}:`, error2);
         }
       }
-      new import_obsidian66.Notice(`\u2705 Bulk import complete! ${successCount} spells imported, ${errorCount} errors.`);
+      new import_obsidian67.Notice(`\u2705 Bulk import complete! ${successCount} spells imported, ${errorCount} errors.`);
     } catch (error2) {
-      new import_obsidian66.Notice(`\u274C Bulk import failed: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      new import_obsidian67.Notice(`\u274C Bulk import failed: ${error2 instanceof Error ? error2.message : String(error2)}`);
       console.error("Bulk import error:", error2);
     } finally {
       if (button) {
@@ -63507,7 +64121,7 @@ var SpellImportModal = class extends import_obsidian66.Modal {
       new SpellDetailsModal(this.app, this.plugin, spell, this.campaignPath).open();
       this.close();
     } catch (error2) {
-      new import_obsidian66.Notice("\u274C Failed to load spell details");
+      new import_obsidian67.Notice("\u274C Failed to load spell details");
       console.error("Spell details error:", error2);
     }
   }
@@ -63517,7 +64131,7 @@ var SpellImportModal = class extends import_obsidian66.Modal {
       cls: "setting-item-description"
     });
     let spellName = "";
-    new import_obsidian66.Setting(container).setName("Spell Name").setDesc("Name of your custom spell").addText((text) => {
+    new import_obsidian67.Setting(container).setName("Spell Name").setDesc("Name of your custom spell").addText((text) => {
       text.setPlaceholder("e.g., Arcane Blast").onChange((value) => {
         spellName = value;
       });
@@ -63532,7 +64146,7 @@ var SpellImportModal = class extends import_obsidian66.Modal {
     });
     createBtn.addEventListener("click", async () => {
       if (!spellName.trim()) {
-        new import_obsidian66.Notice("Please enter a spell name");
+        new import_obsidian67.Notice("Please enter a spell name");
         return;
       }
       await this.createCustomSpell(spellName);
@@ -63548,9 +64162,9 @@ var SpellImportModal = class extends import_obsidian66.Modal {
       const content = template.replace("# Spell", `# ${spellName}`);
       await this.app.vault.create(filePath, content);
       await this.app.workspace.openLinkText(filePath, "", true);
-      new import_obsidian66.Notice(`\u2705 Custom spell "${spellName}" created!`);
+      new import_obsidian67.Notice(`\u2705 Custom spell "${spellName}" created!`);
     } catch (error2) {
-      new import_obsidian66.Notice(`\u274C Error creating spell: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      new import_obsidian67.Notice(`\u274C Error creating spell: ${error2 instanceof Error ? error2.message : String(error2)}`);
     }
   }
   onClose() {
@@ -63560,11 +64174,11 @@ var SpellImportModal = class extends import_obsidian66.Modal {
 };
 
 // src/settings/SettingsTab.ts
-var import_obsidian68 = require("obsidian");
+var import_obsidian69 = require("obsidian");
 
 // src/hub/PurgeConfirmModal.ts
-var import_obsidian67 = require("obsidian");
-var PurgeConfirmModal = class extends import_obsidian67.Modal {
+var import_obsidian68 = require("obsidian");
+var PurgeConfirmModal = class extends import_obsidian68.Modal {
   constructor(app, plugin) {
     super(app);
     this.plugin = plugin;
@@ -63665,7 +64279,7 @@ function addSection(parent, title, description, opts = {}) {
   });
   return body;
 }
-var DndCampaignHubSettingTab = class extends import_obsidian68.PluginSettingTab {
+var DndCampaignHubSettingTab = class extends import_obsidian69.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -63686,29 +64300,29 @@ var DndCampaignHubSettingTab = class extends import_obsidian68.PluginSettingTab 
       "Start or adjust the core workflow: active campaign, starter folders, and first-run choices.",
       { startOpen: true }
     );
-    new import_obsidian68.Setting(setup).setName("Setup wizard").setDesc("Choose the campaign structure, starter content, and optional systems without digging through every setting.").addButton(
+    new import_obsidian69.Setting(setup).setName("Setup wizard").setDesc("Choose the campaign structure, starter content, and optional systems without digging through every setting.").addButton(
       (btn) => btn.setButtonText(this.plugin.settings.onboardingSetupComplete ? "Re-run Setup Wizard" : "Open Setup Wizard").setCta().onClick(() => {
         this.plugin.openSetupWizard();
       })
     );
-    new import_obsidian68.Setting(setup).setName("Setup checklist").setDesc(
+    new import_obsidian69.Setting(setup).setName("Setup checklist").setDesc(
       this.plugin.settings.onboardingSetupComplete ? "The first-run setup is marked complete. Reset this when you want the plugin to treat setup as unfinished again." : "The first-run setup is currently marked incomplete."
     ).addButton(
       (btn) => btn.setButtonText(this.plugin.settings.onboardingSetupComplete ? "Reset Checklist" : "Mark Complete").onClick(async () => {
         this.plugin.settings.onboardingSetupComplete = !this.plugin.settings.onboardingSetupComplete;
         await this.plugin.saveSettings();
-        new import_obsidian68.Notice(
+        new import_obsidian69.Notice(
           this.plugin.settings.onboardingSetupComplete ? "Setup checklist marked complete." : "Setup checklist reset."
         );
         void this.display();
       })
     );
-    new import_obsidian68.Setting(setup).setName("Campaign Home").setDesc("Open the main campaign control surface. The selected campaign there is used by creation workflows.").addButton(
+    new import_obsidian69.Setting(setup).setName("Campaign Home").setDesc("Open the main campaign control surface. The selected campaign there is used by creation workflows.").addButton(
       (btn) => btn.setButtonText("Open Campaign Home").onClick(() => {
         void this.plugin.openCampaignHome(this.plugin.getActiveCampaignPath());
       })
     );
-    new import_obsidian68.Setting(setup).setName("Create content").setDesc("Open the unified creation menu for sessions, scenes, characters, encounters, maps, and world notes.").addButton(
+    new import_obsidian69.Setting(setup).setName("Create content").setDesc("Open the unified creation menu for sessions, scenes, characters, encounters, maps, and world notes.").addButton(
       (btn) => btn.setButtonText("Create Content").onClick(() => {
         this.plugin.openCreateContent(this.plugin.getActiveCampaignPath());
       })
@@ -63718,7 +64332,7 @@ var DndCampaignHubSettingTab = class extends import_obsidian68.PluginSettingTab 
       "Audio & Projection",
       "Configure music, sound effects, handouts, and player-facing screens used during sessions."
     );
-    new import_obsidian68.Setting(media).setName("Music and SFX settings").setDesc("Choose the audio folder, build playlists, configure the soundboard, and tune playback behaviour.").addButton(
+    new import_obsidian69.Setting(media).setName("Music and SFX settings").setDesc("Choose the audio folder, build playlists, configure the soundboard, and tune playback behaviour.").addButton(
       (btn) => btn.setButtonText("Open Music Settings").setCta().onClick(() => {
         new MusicSettingsModal(
           this.app,
@@ -63727,28 +64341,28 @@ var DndCampaignHubSettingTab = class extends import_obsidian68.PluginSettingTab 
             this.plugin.settings.musicSettings = updated;
             this.plugin.musicPlayer.reloadSettings(updated);
             await this.plugin.saveSettings();
-            new import_obsidian68.Notice("Music settings saved.");
+            new import_obsidian69.Notice("Music settings saved.");
           }
         ).open();
       })
     );
-    new import_obsidian68.Setting(media).setName("Music player").setDesc("Open the live player for playlists, ambient layers, and sound effects.").addButton(
+    new import_obsidian69.Setting(media).setName("Music player").setDesc("Open the live player for playlists, ambient layers, and sound effects.").addButton(
       (btn) => btn.setButtonText("Open Music Player").onClick(() => {
         void this.plugin.ensureMusicPlayerOpen();
       })
     );
-    new import_obsidian68.Setting(media).setName("Session projection").setDesc("Manage player-facing screens for scenes, handouts, maps, and session information.").addButton(
+    new import_obsidian69.Setting(media).setName("Session projection").setDesc("Manage player-facing screens for scenes, handouts, maps, and session information.").addButton(
       (btn) => btn.setButtonText("Open Projection Hub").onClick(() => {
         this.plugin.openSessionProjectionHub();
       })
     );
     const maps = addSection(containerEl, "Maps & Encounters", "Map setup, encounter table maps, combat behaviour, and dynamic lighting.");
-    new import_obsidian68.Setting(maps).setName("Map Manager").setDesc("Create and edit maps used by scenes, encounters, and inline map controls.").addButton(
+    new import_obsidian69.Setting(maps).setName("Map Manager").setDesc("Create and edit maps used by scenes, encounters, and inline map controls.").addButton(
       (btn) => btn.setButtonText("Open Map Manager").setCta().onClick(() => {
         new MapManagerModal(this.app, this.plugin, this.plugin.mapManager).open();
       })
     );
-    new import_obsidian68.Setting(maps).setName("Auto-pan to active combatant").setDesc(
+    new import_obsidian69.Setting(maps).setName("Auto-pan to active combatant").setDesc(
       "During combat, smoothly center the projected player map on the active combatant when the turn changes."
     ).addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.combatAutoPan).onChange(async (value) => {
@@ -63756,13 +64370,13 @@ var DndCampaignHubSettingTab = class extends import_obsidian68.PluginSettingTab 
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian68.Setting(maps).setName("Encounter log folder").setDesc("Completed Initiative Tracker encounter logs are written here.").addText(
+    new import_obsidian69.Setting(maps).setName("Encounter log folder").setDesc("Completed Initiative Tracker encounter logs are written here.").addText(
       (text) => text.setPlaceholder("z_ITEncounterLog").setValue(this.plugin.settings.combatEncounterLogFolder || "z_ITEncounterLog").onChange(async (value) => {
         this.plugin.settings.combatEncounterLogFolder = value.trim() || "z_ITEncounterLog";
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian68.Setting(maps).setName("Vision update mode").setDesc(
+    new import_obsidian69.Setting(maps).setName("Vision update mode").setDesc(
       "Choose whether fog of war updates while dragging tokens or only after dropping them."
     ).addDropdown(
       (dd) => dd.addOption("on-drop", "Update on drop (fast)").addOption("while-dragging", "Update while dragging (live)").setValue(this.plugin.settings.visionUpdateMode).onChange(async (value) => {
@@ -63770,7 +64384,7 @@ var DndCampaignHubSettingTab = class extends import_obsidian68.PluginSettingTab 
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian68.Setting(maps).setName("Player view light animations").setDesc(
+    new import_obsidian69.Setting(maps).setName("Player view light animations").setDesc(
       "Animate flickering and buzzing light sources in the player map view. Turn this off on slower devices or very large maps."
     ).addToggle(
       (toggle) => {
@@ -63782,7 +64396,7 @@ var DndCampaignHubSettingTab = class extends import_obsidian68.PluginSettingTab 
         });
       }
     );
-    new import_obsidian68.Setting(maps).setName("Map canvas resolution").setDesc(
+    new import_obsidian69.Setting(maps).setName("Map canvas resolution").setDesc(
       "Higher values make tokens, fog, and grids sharper on some maps, but use more memory. Reopen maps after changing this."
     ).addDropdown(
       (dd) => {
@@ -63794,7 +64408,7 @@ var DndCampaignHubSettingTab = class extends import_obsidian68.PluginSettingTab 
       }
     );
     const srd = addSection(containerEl, "Reference Data", "Import optional D&D 5e SRD notes and creature tokens for use as campaign reference.");
-    new import_obsidian68.Setting(srd).setName("Import all SRD reference data").setDesc("Creates reference notes for conditions, equipment, races, features, and other SRD categories.").addButton(
+    new import_obsidian69.Setting(srd).setName("Import all SRD reference data").setDesc("Creates reference notes for conditions, equipment, races, features, and other SRD categories.").addButton(
       (btn) => btn.setButtonText("Import All").setCta().onClick(async () => {
         await this.plugin.importAllSRDData();
       })
@@ -63831,7 +64445,7 @@ var DndCampaignHubSettingTab = class extends import_obsidian68.PluginSettingTab 
         }
       });
     }
-    new import_obsidian68.Setting(srd).setName("Import SRD creature tokens").setDesc(
+    new import_obsidian69.Setting(srd).setName("Import SRD creature tokens").setDesc(
       "Creates SRD creature notes and battlemap tokens. Existing imported creatures with matching paths may be overwritten."
     ).addButton((btn) => {
       const statusEl = srd.createDiv({ cls: "dnd-settings-import-status" });
@@ -63858,13 +64472,13 @@ var DndCampaignHubSettingTab = class extends import_obsidian68.PluginSettingTab 
       });
     });
     const maintenance = addSection(containerEl, "Maintenance", "Update generated notes after plugin/template changes.");
-    new import_obsidian68.Setting(maintenance).setName("Migrate campaign files").setDesc("Update older generated notes to the latest template versions. Backups are created before files are changed.").addButton(
+    new import_obsidian69.Setting(maintenance).setName("Migrate campaign files").setDesc("Update older generated notes to the latest template versions. Backups are created before files are changed.").addButton(
       (btn) => btn.setButtonText("Run Migrations").setCta().onClick(() => {
         this.plugin.migrateTemplates();
       })
     );
     const danger = addSection(containerEl, "Danger Zone", "Destructive actions \u2014 use with caution.", { cls: "dnd-settings-danger" });
-    new import_obsidian68.Setting(danger).setName("Purge all plugin data").setDesc("Permanently remove all D&D Campaign Hub folders and files from this vault. This cannot be undone.").addButton(
+    new import_obsidian69.Setting(danger).setName("Purge all plugin data").setDesc("Permanently remove all D&D Campaign Hub folders and files from this vault. This cannot be undone.").addButton(
       (btn) => btn.setButtonText("Purge Vault").setWarning().onClick(() => {
         new PurgeConfirmModal(this.app, this.plugin).open();
       })
@@ -63873,8 +64487,8 @@ var DndCampaignHubSettingTab = class extends import_obsidian68.PluginSettingTab 
 };
 
 // src/hub/DndHubModal.ts
-var import_obsidian69 = require("obsidian");
-var DndHubModal = class _DndHubModal extends import_obsidian69.Modal {
+var import_obsidian70 = require("obsidian");
+var DndHubModal = class _DndHubModal extends import_obsidian70.Modal {
   constructor(app, plugin) {
     super(app);
     this.expandedCategory = null;
@@ -64091,12 +64705,12 @@ var DndHubModal = class _DndHubModal extends import_obsidian69.Modal {
   /** Query a single folder and return results tagged with campaign origin. */
   queryFolder(folderPath, types, recursive = false) {
     const folder = this.app.vault.getAbstractFileByPath(folderPath);
-    if (!(folder instanceof import_obsidian69.TFolder)) return [];
+    if (!(folder instanceof import_obsidian70.TFolder)) return [];
     const files = [];
     const walk = (f) => {
       for (const child of f.children) {
-        if (child instanceof import_obsidian69.TFile && child.extension === "md") files.push(child);
-        else if (recursive && child instanceof import_obsidian69.TFolder) walk(child);
+        if (child instanceof import_obsidian70.TFile && child.extension === "md") files.push(child);
+        else if (recursive && child instanceof import_obsidian70.TFolder) walk(child);
       }
     };
     walk(folder);
@@ -64360,9 +64974,9 @@ var DndHubModal = class _DndHubModal extends import_obsidian69.Modal {
 };
 
 // src/hub/CampaignHomeView.ts
-var import_obsidian70 = require("obsidian");
+var import_obsidian71 = require("obsidian");
 init_constants();
-var CampaignHomeView = class extends import_obsidian70.ItemView {
+var CampaignHomeView = class extends import_obsidian71.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.plugin = plugin;
@@ -64423,10 +65037,12 @@ var CampaignHomeView = class extends import_obsidian70.ItemView {
   renderNoCampaign(container) {
     const empty = container.createDiv({ cls: "campaign-home-empty" });
     empty.createEl("h2", { text: "Campaign Home" });
-    empty.createEl("p", {
-      text: "No campaign folder was found yet. Create a campaign to unlock sessions, scenes, maps, party tools, and audio workflows."
-    });
-    this.createActionButton(empty, "Create Campaign", "mod-cta", () => this.plugin.createCampaign());
+    renderActionableEmptyState(
+      empty,
+      "No campaign found",
+      "Create a campaign to unlock sessions, scenes, maps, party tools, and audio workflows.",
+      [{ label: "Create Campaign", onClick: () => this.plugin.createCampaign(), cta: true }]
+    );
   }
   renderHeader(container, data, campaigns) {
     const header = container.createDiv({ cls: "campaign-home-header" });
@@ -64450,10 +65066,10 @@ var CampaignHomeView = class extends import_obsidian70.ItemView {
   renderPrimaryActions(container) {
     const actions = container.createDiv({ cls: "campaign-home-primary-actions" });
     this.createActionButton(actions, "New Session", "mod-cta", () => this.plugin.createSession(this.campaignPath));
+    this.createActionButton(actions, "Find Campaign Content", "", () => this.plugin.openCampaignContentSearch(this.campaignPath));
     this.createActionButton(actions, "Continue Last Session", "", () => this.plugin.continueLastSession(this.campaignPath));
     this.createActionButton(actions, "Create Content", "", () => this.plugin.openCreateContent(this.campaignPath));
     this.createActionButton(actions, "Add Scene", "", () => this.plugin.createScene(this.campaignPath));
-    this.createActionButton(actions, "Build Encounter", "", () => this.plugin.createEncounter(this.campaignPath));
     this.createActionButton(actions, "Open Party", "", () => this.plugin.openPartyManager(this.campaignPath));
     this.createActionButton(actions, "Open Music", "", () => this.plugin.ensureMusicPlayerOpen());
     this.createActionButton(actions, "Open Map Manager", "", () => this.plugin.openMapManager());
@@ -64580,7 +65196,7 @@ var CampaignHomeView = class extends import_obsidian70.ItemView {
         void onClick();
       } catch (error2) {
         console.error("[CampaignHome] Action failed:", error2);
-        new import_obsidian70.Notice("Action failed. Check the console for details.");
+        new import_obsidian71.Notice("Action failed. Check the console for details.");
       }
     });
     return button;
@@ -64685,9 +65301,136 @@ var CampaignHomeView = class extends import_obsidian70.ItemView {
   }
 };
 
+// src/hub/CampaignContentSearchModal.ts
+var import_obsidian72 = require("obsidian");
+
+// src/hub/campaignSearch.ts
+var normalize = (value) => value.toLocaleLowerCase().trim();
+function scoreCampaignSearchItem(item, query) {
+  const q = normalize(query);
+  if (!q) return 1;
+  const name = normalize(item.name);
+  const type = normalize(item.type);
+  const context = normalize(item.context);
+  if (name === q) return 1e3;
+  if (name.startsWith(q)) return 700 - Math.min(name.length - q.length, 100);
+  if (name.includes(q)) return 500 - Math.min(name.indexOf(q), 100);
+  if (type.startsWith(q)) return 300;
+  if (context.includes(q)) return 200;
+  const terms = q.split(/\s+/).filter(Boolean);
+  const haystack = `${name} ${type} ${context}`;
+  return terms.every((term) => haystack.includes(term)) ? 100 : 0;
+}
+function searchCampaignItems(items, query, limit = 50) {
+  return items.map((item, index) => ({ item, index, score: scoreCampaignSearchItem(item, query) })).filter((entry) => entry.score > 0).sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name) || a.index - b.index).slice(0, limit).map((entry) => entry.item);
+}
+
+// src/hub/CampaignContentSearchModal.ts
+var SEARCHABLE_TYPES = /* @__PURE__ */ new Set(["session", "adventure", "scene", "encounter", "npc", "pc", "player", "creature", "item", "map", "battlemap"]);
+var TYPE_LABELS = { pc: "PC", player: "PC", npc: "NPC", battlemap: "Map" };
+var CampaignContentSearchModal = class extends import_obsidian72.Modal {
+  constructor(app, plugin, campaignPath = plugin.getActiveCampaignPath()) {
+    super(app);
+    this.plugin = plugin;
+    this.campaignPath = campaignPath;
+    this.items = [];
+    this.selectedIndex = 0;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("dnd-campaign-content-search");
+    contentEl.createEl("h2", { text: "Find Campaign Content" });
+    contentEl.createEl("p", { text: this.campaignPath ? `Searching ${this.campaignPath}` : "Select a campaign in Campaign Home first.", cls: "setting-item-description" });
+    if (!this.campaignPath) {
+      contentEl.createEl("p", { text: "No active campaign. Open Campaign Home and select or create a campaign.", cls: "dnd-hub-empty" });
+      return;
+    }
+    this.items = this.collectItems();
+    if (this.items.length === 0) {
+      contentEl.createEl("p", { text: "No searchable campaign notes yet. Create a session, adventure, scene, encounter, character, creature, item, or map note first.", cls: "dnd-hub-empty" });
+      return;
+    }
+    const input = contentEl.createEl("input", { type: "search", placeholder: "Search sessions, scenes, NPCs, items\u2026", cls: "dnd-campaign-search-input" });
+    input.setAttribute("aria-label", "Search campaign content");
+    const results = contentEl.createDiv({ cls: "dnd-campaign-search-results" });
+    let visible = this.items.slice(0, 50);
+    const updateSelection = () => {
+      Array.from(results.children).forEach((child, index) => child.toggleClass("is-selected", index === this.selectedIndex));
+    };
+    const render = () => {
+      visible = searchCampaignItems(this.items, input.value, 50);
+      this.selectedIndex = Math.min(this.selectedIndex, Math.max(visible.length - 1, 0));
+      results.empty();
+      if (visible.length === 0) {
+        results.createEl("p", { text: `No campaign content matches \u201C${input.value}\u201D. Try a name, type, or adventure/folder.`, cls: "dnd-hub-empty" });
+        return;
+      }
+      visible.forEach((item, index) => {
+        const row = results.createDiv({ cls: `dnd-campaign-search-result${index === this.selectedIndex ? " is-selected" : ""}` });
+        row.createEl("strong", { text: item.name });
+        row.createEl("span", { text: `${TYPE_LABELS[item.type] || item.type} \xB7 ${item.context}`, cls: "setting-item-description" });
+        row.addEventListener("mouseenter", () => {
+          this.selectedIndex = index;
+          updateSelection();
+        });
+        row.addEventListener("click", () => void this.openItem(item));
+      });
+    };
+    input.addEventListener("input", () => {
+      this.selectedIndex = 0;
+      render();
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        this.selectedIndex = Math.min(this.selectedIndex + 1, visible.length - 1);
+        render();
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        this.selectedIndex = Math.max(this.selectedIndex - 1, 0);
+        render();
+      }
+      if (event.key === "Enter" && visible[this.selectedIndex]) {
+        event.preventDefault();
+        void this.openItem(visible[this.selectedIndex]);
+      }
+    });
+    render();
+    window.setTimeout(() => input.focus(), 0);
+  }
+  collectItems() {
+    var _a, _b;
+    const seen = /* @__PURE__ */ new Set();
+    const result = [];
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (!(file.path === this.campaignPath || file.path.startsWith(`${this.campaignPath}/`)) || seen.has(file.path)) continue;
+      const fm = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter;
+      const rawType = String((fm == null ? void 0 : fm.type) || "").toLowerCase();
+      if (!SEARCHABLE_TYPES.has(rawType)) continue;
+      seen.add(file.path);
+      const type = rawType === "player" ? "pc" : rawType === "battlemap" ? "map" : rawType;
+      const parent = ((_b = file.parent) == null ? void 0 : _b.path.replace(`${this.campaignPath}/`, "")) || "Campaign root";
+      const linkedAdventure = String((fm == null ? void 0 : fm.adventure) || "").replace(/^\[\[|\]\]$/g, "");
+      result.push({ file, path: file.path, name: String((fm == null ? void 0 : fm.name) || file.basename), type, context: linkedAdventure || parent });
+    }
+    return result;
+  }
+  async openItem(item) {
+    try {
+      await this.app.workspace.getLeaf("tab").openFile(item.file);
+      this.close();
+    } catch (error2) {
+      console.error("[CampaignSearch] Could not open note", error2);
+      new import_obsidian72.Notice("Could not open that campaign note.");
+    }
+  }
+};
+
 // src/hub/CreateContentModal.ts
-var import_obsidian71 = require("obsidian");
-var CreateContentModal = class extends import_obsidian71.Modal {
+var import_obsidian73 = require("obsidian");
+var CreateContentModal = class extends import_obsidian73.Modal {
   constructor(plugin, campaignPath) {
     super(plugin.app);
     this.plugin = plugin;
@@ -64705,6 +65448,18 @@ var CreateContentModal = class extends import_obsidian71.Modal {
     const { contentEl } = this;
     contentEl.empty();
     const campaignPath = this.campaignPath || this.plugin.getActiveCampaignPath();
+    if (!campaignPath) {
+      renderActionableEmptyState(
+        contentEl,
+        "No campaign selected",
+        "Create or select a campaign before adding sessions, characters, encounters, or reference material.",
+        [{ label: "Create Campaign", onClick: () => {
+          this.close();
+          this.plugin.createCampaign();
+        }, cta: true }]
+      );
+      return;
+    }
     const campaignName = campaignPath.split("/").pop() || "No campaign selected";
     const intro = contentEl.createDiv({ cls: "dnd-create-content-intro" });
     intro.createEl("p", { text: `Current campaign: ${campaignName}` });
@@ -64793,8 +65548,8 @@ var CreateContentModal = class extends import_obsidian71.Modal {
 };
 
 // src/hub/CreationNextStepsModal.ts
-var import_obsidian72 = require("obsidian");
-var CreationNextStepsModal = class extends import_obsidian72.Modal {
+var import_obsidian74 = require("obsidian");
+var CreationNextStepsModal = class extends import_obsidian74.Modal {
   constructor(plugin, file, kind, campaignPath, fallbackName = "") {
     super(plugin.app);
     this.plugin = plugin;
@@ -64955,15 +65710,15 @@ var CreationNextStepsModal = class extends import_obsidian72.Modal {
 };
 
 // src/hub/SetupWizardModal.ts
-var import_obsidian73 = require("obsidian");
-var SetupWizardModal = class extends import_obsidian73.Modal {
+var import_obsidian75 = require("obsidian");
+var SetupWizardModal = class extends import_obsidian75.Modal {
   constructor(plugin) {
     super(plugin.app);
     this.plugin = plugin;
   }
   onOpen() {
     this.modalEl.addClass("dnd-setup-wizard-modal");
-    this.titleEl.setText("D&D Campaign Hub Setup");
+    this.titleEl.setText("TTRPG Campaign Hub Setup");
     this.render();
   }
   onClose() {
@@ -65055,9 +65810,9 @@ var SetupWizardModal = class extends import_obsidian73.Modal {
 };
 
 // src/map-views/GmMapView.ts
-var import_obsidian74 = require("obsidian");
+var import_obsidian76 = require("obsidian");
 init_constants();
-var GmMapView = class extends import_obsidian74.ItemView {
+var GmMapView = class extends import_obsidian76.ItemView {
   // Guard against double renderMap (setState + onOpen race)
   constructor(leaf, plugin) {
     super(leaf);
@@ -65146,7 +65901,7 @@ var GmMapView = class extends import_obsidian74.ItemView {
 };
 
 // src/map-views/PlayerMapView.ts
-var import_obsidian75 = require("obsidian");
+var import_obsidian77 = require("obsidian");
 init_constants();
 
 // src/map/LightTypes.ts
@@ -65657,7 +66412,7 @@ function getPivotDoorEndpoints(wall) {
   };
   return hingeIsStart ? { start: hinge, end: rotated } : { start: rotated, end: hinge };
 }
-var PlayerMapView = class extends import_obsidian75.ItemView {
+var PlayerMapView = class extends import_obsidian77.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.mapConfig = null;
@@ -67131,6 +67886,7 @@ var PlayerMapView = class extends import_obsidian75.ItemView {
     mapContainer.addEventListener("mousedown", (e) => {
       if (!this.tabletopMode) return;
       isPanning = true;
+      this.cameraCommandVersion++;
       this.tabletopTargetX = null;
       this.tabletopTargetY = null;
       panStartX = e.clientX - this.tabletopPanX;
@@ -67142,6 +67898,7 @@ var PlayerMapView = class extends import_obsidian75.ItemView {
       if (!isPanning || !this.tabletopMode) return;
       this.tabletopPanX = e.clientX - panStartX;
       this.tabletopPanY = e.clientY - panStartY;
+      this.cameraCommandVersion++;
       this.clampTabletopPan();
       this.applyTabletopTransform();
     });
@@ -67187,16 +67944,13 @@ var PlayerMapView = class extends import_obsidian75.ItemView {
     mapContainer.addEventListener("mouseup", stopPan);
     mapContainer.addEventListener("mouseleave", stopPan);
     rotateLeftBtn.addEventListener("click", () => {
-      this.tabletopRotation = (this.tabletopRotation - 15 + 360) % 360;
-      this.applyTabletopTransform();
+      this.setTabletopRotation(this.tabletopRotation - 15);
     });
     rotateRightBtn.addEventListener("click", () => {
-      this.tabletopRotation = (this.tabletopRotation + 15) % 360;
-      this.applyTabletopTransform();
+      this.setTabletopRotation(this.tabletopRotation + 15);
     });
     rotateResetBtn.addEventListener("click", () => {
-      this.tabletopRotation = 0;
-      this.applyTabletopTransform();
+      this.setTabletopRotation(0);
     });
     const applyTabletopMode = () => {
       tabletopBtn.setText(this.tabletopMode ? "\u{1F3B2} Tabletop: ON" : "\u{1F3B2} Tabletop: OFF");
@@ -70613,7 +71367,7 @@ var PlayerMapView = class extends import_obsidian75.ItemView {
 };
 
 // src/projection/ProjectionManager.ts
-var import_obsidian76 = require("obsidian");
+var import_obsidian78 = require("obsidian");
 init_constants();
 init_ScreenEnumeration();
 
@@ -70938,7 +71692,7 @@ var ProjectionManager = class {
           if (this.destroyed) return;
           this.clearHandoutTracking(sKey);
           this._notifyChange();
-          new import_obsidian76.Notice(`Projection updated \u2014 ${mapConfig.name || mapId}`);
+          new import_obsidian78.Notice(`Projection updated \u2014 ${mapConfig.name || mapId}`);
           return;
         }
       }
@@ -70998,7 +71752,7 @@ var ProjectionManager = class {
       }
     }, 300);
     this._notifyChange();
-    new import_obsidian76.Notice(`Projecting to ${screen.label} (${mode === "battle" ? "Battle" : "Free"})`);
+    new import_obsidian78.Notice(`Projecting to ${screen.label} (${mode === "battle" ? "Battle" : "Free"})`);
   }
   /**
    * Project the Combat Tracker player view to a specific screen.
@@ -71040,7 +71794,7 @@ var ProjectionManager = class {
       }, 300);
     }
     this._notifyChange();
-    new import_obsidian76.Notice(`\u2694\uFE0F Combat view projected to ${screen.label}`);
+    new import_obsidian78.Notice(`\u2694\uFE0F Combat view projected to ${screen.label}`);
   }
   /**
    * Project the end-of-combat awards screen to a specific screen.
@@ -71083,7 +71837,7 @@ var ProjectionManager = class {
       }, 300);
     }
     this._notifyChange();
-    new import_obsidian76.Notice(`Combat awards projected to ${screen.label}`);
+    new import_obsidian78.Notice(`Combat awards projected to ${screen.label}`);
   }
   /**
    * Project a handout (image, note, or PDF) onto a screen.
@@ -71101,7 +71855,7 @@ var ProjectionManager = class {
     const managedLeaf = isManaged ? spm.getManagedLeaf(sKey) : null;
     if (isManaged && (!managedLeaf || !this.isLeafAlive(managedLeaf))) {
       this.clearHandoutTracking(sKey);
-      new import_obsidian76.Notice("Managed screen not available");
+      new import_obsidian78.Notice("Managed screen not available");
       return;
     }
     const existingLeaf = this.handoutLeaves.get(sKey);
@@ -71142,7 +71896,7 @@ var ProjectionManager = class {
     if (isManaged) spm.setHandoutStatus(sKey, handoutState);
     this._notifyChange();
     const fileName = (_b = filePath.split("/").pop()) != null ? _b : filePath;
-    new import_obsidian76.Notice(`Projecting: ${fileName}`);
+    new import_obsidian78.Notice(`Projecting: ${fileName}`);
   }
   /**
    * Stop a handout on a specific screen, reverting to primary content or idle.
@@ -71183,7 +71937,7 @@ var ProjectionManager = class {
     }
     this.clearHandoutTracking(sKey);
     this._notifyChange();
-    new import_obsidian76.Notice("Handout stopped");
+    new import_obsidian78.Notice("Handout stopped");
   }
   /**
    * Check if a screen has an active handout.
@@ -71256,7 +72010,7 @@ var ProjectionManager = class {
       }, 300);
     }
     this._notifyChange();
-    new import_obsidian76.Notice(`\u{1F3C3} Pursuit view projected to ${screen.label}`);
+    new import_obsidian78.Notice(`\u{1F3C3} Pursuit view projected to ${screen.label}`);
   }
   /**
    * Swap the map on a specific projection identified by its screenKey.
@@ -71300,7 +72054,7 @@ var ProjectionManager = class {
     this.activeProjections.delete(sKey);
     this.clearHandoutTracking(sKey);
     this._notifyChange();
-    if (proj) new import_obsidian76.Notice(`Projection stopped \u2014 ${proj.screen.label}`);
+    if (proj) new import_obsidian78.Notice(`Projection stopped \u2014 ${proj.screen.label}`);
   }
   /** Stop all projections, including standalone handouts and pending transitions. */
   async stopAllProjections() {
@@ -71310,7 +72064,7 @@ var ProjectionManager = class {
       ...this.screenOperations.keys()
     ]);
     await Promise.all([...keys].map((sKey) => this.stopProjectionOnScreen(sKey)));
-    new import_obsidian76.Notice("All projections stopped");
+    new import_obsidian78.Notice("All projections stopped");
   }
   /** @deprecated compat — stops all projections. */
   async stopProjection() {
@@ -71436,7 +72190,7 @@ var ProjectionManager = class {
     const autoCal = this.autoCalibrate(screen);
     if (autoCal) {
       await this.saveCalibrationForScreen(screen, autoCal);
-      new import_obsidian76.Notice(
+      new import_obsidian78.Notice(
         `Auto-calibrated ${screen.label}: ${autoCal.monitorDiagonalInch}" diagonal, ${autoCal.pixelsPerMm.toFixed(1)} px/mm`
       );
     }
@@ -71797,7 +72551,7 @@ var ProjectionManager = class {
 };
 
 // src/projection/SessionProjectionManager.ts
-var import_obsidian77 = require("obsidian");
+var import_obsidian79 = require("obsidian");
 init_constants();
 init_ScreenEnumeration();
 var SessionProjectionManager = class {
@@ -71882,11 +72636,11 @@ var SessionProjectionManager = class {
    */
   async startSession(screens, configs) {
     if (this._active) {
-      new import_obsidian77.Notice("Session is already active");
+      new import_obsidian79.Notice("Session is already active");
       return;
     }
     if (configs.length === 0) {
-      new import_obsidian77.Notice("No managed screens configured. Set up screens first.");
+      new import_obsidian79.Notice("No managed screens configured. Set up screens first.");
       return;
     }
     const screenByKey = /* @__PURE__ */ new Map();
@@ -71910,12 +72664,12 @@ var SessionProjectionManager = class {
       }
     }
     if (opened === 0) {
-      new import_obsidian77.Notice("Could not open any managed screens.");
+      new import_obsidian79.Notice("Could not open any managed screens.");
       return;
     }
     this._active = true;
     this._notifyChange();
-    new import_obsidian77.Notice(`\u{1F3AC} Session started \u2014 ${opened} screen${opened > 1 ? "s" : ""} active`);
+    new import_obsidian79.Notice(`\u{1F3AC} Session started \u2014 ${opened} screen${opened > 1 ? "s" : ""} active`);
   }
   /** Stop the active session — close all managed popouts. */
   stopSession() {
@@ -71930,7 +72684,7 @@ var SessionProjectionManager = class {
     this.screenStates.clear();
     this._active = false;
     this._notifyChange();
-    new import_obsidian77.Notice("\u{1F3AC} Session ended \u2014 all screens closed");
+    new import_obsidian79.Notice("\u{1F3AC} Session ended \u2014 all screens closed");
   }
   // ── Screen Transitions ──────────────────────────────────────────
   /**
@@ -72028,9 +72782,9 @@ var SessionProjectionManager = class {
 };
 
 // src/projection/IdleScreenView.ts
-var import_obsidian78 = require("obsidian");
+var import_obsidian80 = require("obsidian");
 init_constants();
-var IdleScreenView = class extends import_obsidian78.ItemView {
+var IdleScreenView = class extends import_obsidian80.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.idleContent = { type: "black" };
@@ -72182,15 +72936,15 @@ var IdleScreenView = class extends import_obsidian78.ItemView {
 };
 
 // src/projection/SessionProjectionHubModal.ts
-var import_obsidian80 = require("obsidian");
+var import_obsidian82 = require("obsidian");
 init_ScreenEnumeration();
 
 // src/projection/MediaPickerModal.ts
-var import_obsidian79 = require("obsidian");
+var import_obsidian81 = require("obsidian");
 var IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif"];
 var VIDEO_EXTENSIONS = ["mp4", "webm"];
 var ALL_MEDIA_EXTENSIONS = [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS];
-var _MediaPickerModal = class _MediaPickerModal extends import_obsidian79.Modal {
+var _MediaPickerModal = class _MediaPickerModal extends import_obsidian81.Modal {
   /**
    * @param app       Obsidian app instance
    * @param onSelect  Callback with the vault path of the selected file
@@ -72248,9 +73002,9 @@ var _MediaPickerModal = class _MediaPickerModal extends import_obsidian79.Modal 
     const results = [];
     const walk = (folder) => {
       for (const child of folder.children) {
-        if (child instanceof import_obsidian79.TFile && exts.includes(child.extension.toLowerCase())) {
+        if (child instanceof import_obsidian81.TFile && exts.includes(child.extension.toLowerCase())) {
           results.push(child);
-        } else if (child instanceof import_obsidian79.TFolder) {
+        } else if (child instanceof import_obsidian81.TFolder) {
           walk(child);
         }
       }
@@ -72451,12 +73205,12 @@ var _MediaPickerModal = class _MediaPickerModal extends import_obsidian79.Modal 
           counter++;
         }
         await this.app.vault.createBinary(destPath, buffer);
-        new import_obsidian79.Notice(`\u2705 Uploaded "${osFile.name}" to ${destPath}`);
+        new import_obsidian81.Notice(`\u2705 Uploaded "${osFile.name}" to ${destPath}`);
         this.onSelect(destPath);
         this.close();
       } catch (err) {
         console.error("MediaPickerModal: upload failed", err);
-        new import_obsidian79.Notice("\u274C Failed to upload file");
+        new import_obsidian81.Notice("\u274C Failed to upload file");
       }
     });
     input.click();
@@ -72468,7 +73222,7 @@ _MediaPickerModal.THUMB_MAX_PX = 200;
 var MediaPickerModal = _MediaPickerModal;
 
 // src/projection/SessionProjectionHubModal.ts
-var SessionProjectionHubModal = class extends import_obsidian80.Modal {
+var SessionProjectionHubModal = class extends import_obsidian82.Modal {
   constructor(plugin) {
     super(plugin.app);
     this.screens = [];
@@ -72529,7 +73283,7 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
         text: st.status === "idle" ? "Idle" : st.status === "map" ? "Map" : st.status === "combat" ? "Combat" : st.status === "combat-awards" ? "Combat Awards" : st.status === "pursuit" ? "Pursuit" : "Media"
       });
     }
-    new import_obsidian80.Setting(container).addButton((btn) => {
+    new import_obsidian82.Setting(container).addButton((btn) => {
       btn.setButtonText("\u23F9 Stop Session").setCta().onClick(() => {
         spm.stopSession();
         this.render();
@@ -72544,7 +73298,7 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
         text: "No screens detected. Make sure your monitors are connected and try again.",
         cls: "setting-item-description"
       });
-      new import_obsidian80.Setting(container).addButton(
+      new import_obsidian82.Setting(container).addButton(
         (btn) => btn.setButtonText("\u{1F504} Refresh").onClick(async () => {
           try {
             this.screens = await enumerateScreens();
@@ -72596,11 +73350,11 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
         this.renderIdleConfig(card, sKey, cfg);
       }
     }
-    const actions = new import_obsidian80.Setting(container);
+    const actions = new import_obsidian82.Setting(container);
     actions.addButton(
       (btn) => btn.setButtonText("\u{1F4BE} Save Config").onClick(async () => {
         await this.saveConfig();
-        new import_obsidian80.Notice("Screen configuration saved");
+        new import_obsidian82.Notice("Screen configuration saved");
       })
     );
     actions.addButton(
@@ -72618,7 +73372,7 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
     var _a;
     const profiles = (_a = this.plugin.settings.sessionProjection.profiles) != null ? _a : [];
     const bar = container.createDiv({ cls: "profile-bar" });
-    new import_obsidian80.Setting(bar).setName("Profile").addDropdown((dd) => {
+    new import_obsidian82.Setting(bar).setName("Profile").addDropdown((dd) => {
       var _a2;
       dd.addOption("", "\u2014 None \u2014");
       for (const p of profiles) {
@@ -72641,7 +73395,7 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
         }
         this.saveToProfile(this.activeProfileId);
         await this.saveConfig();
-        new import_obsidian80.Notice("Profile saved");
+        new import_obsidian82.Notice("Profile saved");
       });
     }).addExtraButton((btn) => {
       btn.setIcon("plus").setTooltip("Save as new profile").onClick(() => {
@@ -72650,7 +73404,7 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
     }).addExtraButton((btn) => {
       btn.setIcon("pencil").setTooltip("Rename profile").onClick(() => {
         if (!this.activeProfileId) {
-          new import_obsidian80.Notice("No profile selected");
+          new import_obsidian82.Notice("No profile selected");
           return;
         }
         const profile = profiles.find((p) => p.id === this.activeProfileId);
@@ -72659,7 +73413,7 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
     }).addExtraButton((btn) => {
       btn.setIcon("trash").setTooltip("Delete profile").onClick(async () => {
         if (!this.activeProfileId) {
-          new import_obsidian80.Notice("No profile selected");
+          new import_obsidian82.Notice("No profile selected");
           return;
         }
         await this.deleteProfile(this.activeProfileId);
@@ -72692,20 +73446,20 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
   }
   /** Prompt user for a name, then create a new profile from current config. */
   promptSaveAs() {
-    const modal = new import_obsidian80.Modal(this.app);
+    const modal = new import_obsidian82.Modal(this.app);
     modal.titleEl.setText("Save Profile As");
     let name = "";
-    new import_obsidian80.Setting(modal.contentEl).setName("Profile name").addText((text) => {
+    new import_obsidian82.Setting(modal.contentEl).setName("Profile name").addText((text) => {
       text.setPlaceholder("e.g. Main Campaign").onChange((v) => {
         name = v;
       });
       setTimeout(() => text.inputEl.focus(), 50);
     });
-    new import_obsidian80.Setting(modal.contentEl).addButton((btn) => {
+    new import_obsidian82.Setting(modal.contentEl).addButton((btn) => {
       btn.setButtonText("Save").setCta().onClick(async () => {
         const trimmed = name.trim();
         if (!trimmed) {
-          new import_obsidian80.Notice("Please enter a name");
+          new import_obsidian82.Notice("Please enter a name");
           return;
         }
         const id = Date.now().toString(36);
@@ -72723,7 +73477,7 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
         this.activeProfileId = id;
         await this.saveConfig();
         modal.close();
-        new import_obsidian80.Notice(`Profile "${trimmed}" created`);
+        new import_obsidian82.Notice(`Profile "${trimmed}" created`);
         this.render();
       });
     });
@@ -72731,10 +73485,10 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
   }
   /** Prompt user to rename an existing profile. */
   promptRename(profile) {
-    const modal = new import_obsidian80.Modal(this.app);
+    const modal = new import_obsidian82.Modal(this.app);
     modal.titleEl.setText("Rename Profile");
     let name = profile.name;
-    new import_obsidian80.Setting(modal.contentEl).setName("Profile name").addText((text) => {
+    new import_obsidian82.Setting(modal.contentEl).setName("Profile name").addText((text) => {
       text.setValue(name).onChange((v) => {
         name = v;
       });
@@ -72743,17 +73497,17 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
         text.inputEl.select();
       }, 50);
     });
-    new import_obsidian80.Setting(modal.contentEl).addButton((btn) => {
+    new import_obsidian82.Setting(modal.contentEl).addButton((btn) => {
       btn.setButtonText("Rename").setCta().onClick(async () => {
         const trimmed = name.trim();
         if (!trimmed) {
-          new import_obsidian80.Notice("Please enter a name");
+          new import_obsidian82.Notice("Please enter a name");
           return;
         }
         profile.name = trimmed;
         await this.saveConfig();
         modal.close();
-        new import_obsidian80.Notice(`Profile renamed to "${trimmed}"`);
+        new import_obsidian82.Notice(`Profile renamed to "${trimmed}"`);
         this.render();
       });
     });
@@ -72768,12 +73522,12 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
       this.activeProfileId = null;
     }
     await this.saveConfig();
-    new import_obsidian80.Notice("Profile deleted");
+    new import_obsidian82.Notice("Profile deleted");
   }
   // ── Idle content configuration per screen ───────────────────────
   renderIdleConfig(card, sKey, cfg) {
     const section = card.createDiv({ cls: "idle-config" });
-    new import_obsidian80.Setting(section).setName("Idle content").addDropdown((dd) => {
+    new import_obsidian82.Setting(section).setName("Idle content").addDropdown((dd) => {
       dd.addOption("black", "Black screen");
       dd.addOption("color", "Solid color");
       dd.addOption("image", "Image / GIF");
@@ -72786,7 +73540,7 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
     });
     switch (cfg.idleContent.type) {
       case "color":
-        new import_obsidian80.Setting(section).setName("Color").addText((text) => {
+        new import_obsidian82.Setting(section).setName("Color").addText((text) => {
           text.setPlaceholder("#1a1a2e").setValue(cfg.idleContent.color || "").onChange((val2) => {
             cfg.idleContent.color = val2;
           });
@@ -72799,7 +73553,7 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
       case "video": {
         const mediaFilter = cfg.idleContent.type === "video" ? "video" : "image";
         const mediaLabel = cfg.idleContent.type === "image" ? "Image / GIF" : "Video file";
-        const fileSetting = new import_obsidian80.Setting(section).setName(mediaLabel);
+        const fileSetting = new import_obsidian82.Setting(section).setName(mediaLabel);
         if (cfg.idleContent.filePath) {
           fileSetting.setDesc(cfg.idleContent.filePath);
         }
@@ -72838,14 +73592,14 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
           });
         }
         if (cfg.idleContent.type === "video") {
-          new import_obsidian80.Setting(section).setName("Loop").addToggle((t) => {
+          new import_obsidian82.Setting(section).setName("Loop").addToggle((t) => {
             t.setValue(cfg.idleContent.loop !== false);
             t.onChange((val2) => {
               cfg.idleContent.loop = val2;
             });
           });
         }
-        new import_obsidian80.Setting(section).setName("Fit mode").addDropdown((dd) => {
+        new import_obsidian82.Setting(section).setName("Fit mode").addDropdown((dd) => {
           dd.addOption("cover", "Cover (fill, crop edges)");
           dd.addOption("contain", "Contain (fit, letterbox)");
           dd.addOption("fill", "Stretch to fill");
@@ -72868,9 +73622,9 @@ var SessionProjectionHubModal = class extends import_obsidian80.Modal {
 };
 
 // src/projection/HandoutProjectionView.ts
-var import_obsidian81 = require("obsidian");
+var import_obsidian83 = require("obsidian");
 init_constants();
-var HandoutProjectionView = class extends import_obsidian81.ItemView {
+var HandoutProjectionView = class extends import_obsidian83.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.filePath = "";
@@ -72970,7 +73724,7 @@ var HandoutProjectionView = class extends import_obsidian81.ItemView {
     this.noteScrollContainer = noteContainer;
     try {
       const content = await this.getSourceNoteContent();
-      await import_obsidian81.MarkdownRenderer.render(
+      await import_obsidian83.MarkdownRenderer.render(
         this.app,
         content,
         noteContainer,
@@ -73063,7 +73817,7 @@ var HandoutProjectionView = class extends import_obsidian81.ItemView {
   findSourceMarkdownView() {
     var _a, _b;
     const activeLeaf = this.app.workspace.activeLeaf;
-    if ((activeLeaf == null ? void 0 : activeLeaf.view) instanceof import_obsidian81.MarkdownView && ((_a = activeLeaf.view.file) == null ? void 0 : _a.path) === this.filePath) {
+    if ((activeLeaf == null ? void 0 : activeLeaf.view) instanceof import_obsidian83.MarkdownView && ((_a = activeLeaf.view.file) == null ? void 0 : _a.path) === this.filePath) {
       return activeLeaf.view;
     }
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
@@ -75428,10 +76182,10 @@ var PursuitTracker = class {
 };
 
 // src/pursuit/PursuitTrackerView.ts
-var import_obsidian83 = require("obsidian");
+var import_obsidian85 = require("obsidian");
 init_constants();
 init_ScreenEnumeration();
-var PursuitTrackerView = class extends import_obsidian83.ItemView {
+var PursuitTrackerView = class extends import_obsidian85.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.unsubscribe = null;
@@ -75810,7 +76564,7 @@ var PursuitTrackerView = class extends import_obsidian83.ItemView {
     btn.addEventListener("click", () => {
       const val2 = parseInt(input.value, 10);
       if (isNaN(val2)) {
-        new import_obsidian83.Notice("Enter a roll result.");
+        new import_obsidian85.Notice("Enter a roll result.");
         return;
       }
       if (pending.type === "complication-check") {
@@ -76010,11 +76764,11 @@ var PursuitTrackerView = class extends import_obsidian83.ItemView {
     moveBtn.addEventListener("click", () => {
       const val2 = parseInt(moveInput.value, 10);
       if (isNaN(val2) || val2 < 0) {
-        new import_obsidian83.Notice("Enter a valid number of feet.");
+        new import_obsidian85.Notice("Enter a valid number of feet.");
         return;
       }
       if (val2 > remaining) {
-        new import_obsidian83.Notice(`Max remaining movement is ${remaining}ft.`);
+        new import_obsidian85.Notice(`Max remaining movement is ${remaining}ft.`);
         return;
       }
       tracker.confirmMovement(val2);
@@ -76092,7 +76846,7 @@ var PursuitTrackerView = class extends import_obsidian83.ItemView {
       btn.addEventListener("click", () => {
         const val2 = parseInt(input.value, 10);
         if (isNaN(val2)) {
-          new import_obsidian83.Notice("Enter a roll result.");
+          new import_obsidian85.Notice("Enter a roll result.");
           return;
         }
         tracker.submitEscapeCheck(val2);
@@ -76159,7 +76913,7 @@ var PursuitTrackerView = class extends import_obsidian83.ItemView {
     if (!p.escaped && !p.droppedOut) {
       const addBtn = div.createEl("button", { text: "+", cls: "dnd-pursuit-condition-add", attr: { title: "Add condition" } });
       addBtn.addEventListener("click", (e) => {
-        const menu = new import_obsidian83.Menu();
+        const menu = new import_obsidian85.Menu();
         for (const c of STANDARD_CONDITIONS) {
           if (!p.conditions.includes(c)) {
             menu.addItem((item) => item.setTitle(c).onClick(() => tracker.addCondition(p.id, c)));
@@ -76540,7 +77294,7 @@ var PursuitTrackerView = class extends import_obsidian83.ItemView {
           startPenaltyApplied: false
         });
         overlay.remove();
-        new import_obsidian83.Notice(`Added ${selected.name} to the chase!`);
+        new import_obsidian85.Notice(`Added ${selected.name} to the chase!`);
       } else if (manualName.trim()) {
         tracker.addParticipant({
           id: `pursuit_${now}_add`,
@@ -76595,9 +77349,9 @@ var PursuitTrackerView = class extends import_obsidian83.ItemView {
           startPenaltyApplied: false
         });
         overlay.remove();
-        new import_obsidian83.Notice(`Added ${manualName.trim()} to the chase!`);
+        new import_obsidian85.Notice(`Added ${manualName.trim()} to the chase!`);
       } else {
-        new import_obsidian83.Notice("Search and select an entity, or enter a name manually.");
+        new import_obsidian85.Notice("Search and select an entity, or enter a name manually.");
       }
     });
     cancelBtn.addEventListener("click", () => overlay.remove());
@@ -76611,17 +77365,17 @@ var PursuitTrackerView = class extends import_obsidian83.ItemView {
   async openPlayerView(e) {
     const pm = this.plugin.projectionManager;
     if (!pm) {
-      new import_obsidian83.Notice("Projection system not available.");
+      new import_obsidian85.Notice("Projection system not available.");
       return;
     }
     const screens = await enumerateScreens();
     if (screens.length === 0) {
-      new import_obsidian83.Notice("No external screens detected.");
+      new import_obsidian85.Notice("No external screens detected.");
       return;
     }
     for (const proj of pm.getLiveProjections()) {
       if (proj.contentType === "pursuit") {
-        new import_obsidian83.Notice("Pursuit player view already projected.");
+        new import_obsidian85.Notice("Pursuit player view already projected.");
         return;
       }
     }
@@ -76630,7 +77384,7 @@ var PursuitTrackerView = class extends import_obsidian83.ItemView {
       const screen = screens[0];
       const sKey = screenKey(screen);
       if (occupied.has(sKey)) {
-        const menu2 = new import_obsidian83.Menu();
+        const menu2 = new import_obsidian85.Menu();
         menu2.addItem(
           (item) => item.setTitle(`\u{1F504} Switch ${screen.label} to Pursuit View`).onClick(async () => {
             await pm.projectPursuitView(screen);
@@ -76642,7 +77396,7 @@ var PursuitTrackerView = class extends import_obsidian83.ItemView {
       }
       return;
     }
-    const menu = new import_obsidian83.Menu();
+    const menu = new import_obsidian85.Menu();
     for (const screen of screens) {
       const sKey = screenKey(screen);
       const isOccupied = occupied.has(sKey);
@@ -76792,7 +77546,7 @@ var PursuitTrackerView = class extends import_obsidian83.ItemView {
     addBtn.addEventListener("click", () => {
       var _a2, _b2, _c2, _d;
       if (!selected) {
-        new import_obsidian83.Notice("Search and select a creature first.");
+        new import_obsidian85.Notice("Search and select a creature first.");
         return;
       }
       const now = Date.now();
@@ -76850,7 +77604,7 @@ var PursuitTrackerView = class extends import_obsidian83.ItemView {
         startPenaltyApplied: false
       });
       overlay.remove();
-      new import_obsidian83.Notice(`\u{1F432} Added ${selected.name} at ${position}ft!`);
+      new import_obsidian85.Notice(`\u{1F432} Added ${selected.name} at ${position}ft!`);
     });
     cancelBtn.addEventListener("click", () => overlay.remove());
     overlay.addEventListener("click", (ev) => {
@@ -76881,9 +77635,9 @@ var PursuitTrackerView = class extends import_obsidian83.ItemView {
 };
 
 // src/pursuit/PursuitPlayerView.ts
-var import_obsidian84 = require("obsidian");
+var import_obsidian86 = require("obsidian");
 init_constants();
-var PursuitPlayerView = class extends import_obsidian84.ItemView {
+var PursuitPlayerView = class extends import_obsidian86.ItemView {
   constructor(leaf, plugin) {
     super(leaf);
     this.unsubscribe = null;
@@ -77282,7 +78036,7 @@ var PursuitPlayerView = class extends import_obsidian84.ItemView {
     }
     if (p.notePath) {
       const file = this.app.vault.getAbstractFileByPath(p.notePath);
-      if (file instanceof import_obsidian84.TFile) {
+      if (file instanceof import_obsidian86.TFile) {
         const cache = this.app.metadataCache.getFileCache(file);
         const noteTokenId = (_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.token_id;
         if (noteTokenId) {
@@ -77364,7 +78118,7 @@ var PursuitPlayerView = class extends import_obsidian84.ItemView {
 };
 
 // src/pursuit/PursuitSetupModal.ts
-var import_obsidian85 = require("obsidian");
+var import_obsidian87 = require("obsidian");
 
 // src/pursuit/CombatPursuitSync.ts
 var CombatPursuitSync = class {
@@ -77593,7 +78347,7 @@ function extractPassivePerception(senses) {
   const m = senses.match(/Passive Perception\s+(\d+)/i);
   return m ? parseInt(m[1], 10) : null;
 }
-var PursuitSetupModal = class extends import_obsidian85.Modal {
+var PursuitSetupModal = class extends import_obsidian87.Modal {
   constructor(app, plugin, combatState) {
     super(app);
     // ── Chase config ──
@@ -77659,12 +78413,12 @@ var PursuitSetupModal = class extends import_obsidian85.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.createEl("h2", { text: "\u{1F3C3} Setup Chase" });
-    new import_obsidian85.Setting(contentEl).setName("Chase Name").addText(
+    new import_obsidian87.Setting(contentEl).setName("Chase Name").addText(
       (text) => text.setPlaceholder("e.g. Market Chase").setValue(this.chaseName).onChange((v) => {
         this.chaseName = v;
       })
     );
-    new import_obsidian85.Setting(contentEl).setName("Include Party Members").setDesc("Select party members to include as quarry in the chase").addToggle(
+    new import_obsidian87.Setting(contentEl).setName("Include Party Members").setDesc("Select party members to include as quarry in the chase").addToggle(
       (toggle) => toggle.setValue(this.includeParty).onChange(async (value) => {
         this.includeParty = value;
         await this.renderPartySelection();
@@ -77683,37 +78437,37 @@ var PursuitSetupModal = class extends import_obsidian85.Modal {
       cls: "setting-item-description",
       text: "These affect the stealth condition for quarry members at end of round."
     });
-    new import_obsidian85.Setting(contentEl).setName("Environment Name").addText(
+    new import_obsidian87.Setting(contentEl).setName("Environment Name").addText(
       (text) => text.setPlaceholder("Crowded Market").setValue(this.environment.name).onChange((v) => {
         this.environment.name = v;
       })
     );
-    new import_obsidian85.Setting(contentEl).setName("Cover available").setDesc("Stalls, carts, buildings, columns \u2014 things to hide behind").addToggle(
+    new import_obsidian87.Setting(contentEl).setName("Cover available").setDesc("Stalls, carts, buildings, columns \u2014 things to hide behind").addToggle(
       (t) => t.setValue(this.environment.hasCover).onChange((v) => {
         this.environment.hasCover = v;
       })
     );
-    new import_obsidian85.Setting(contentEl).setName("Heavily obscured areas").setDesc("Fog, darkness, smoke, heavy rain").addToggle(
+    new import_obsidian87.Setting(contentEl).setName("Heavily obscured areas").setDesc("Fog, darkness, smoke, heavy rain").addToggle(
       (t) => t.setValue(this.environment.hasObscurement).onChange((v) => {
         this.environment.hasObscurement = v;
       })
     );
-    new import_obsidian85.Setting(contentEl).setName("Crowded or noisy").setDesc("Lots of bystanders, loud market hawkers").addToggle(
+    new import_obsidian87.Setting(contentEl).setName("Crowded or noisy").setDesc("Lots of bystanders, loud market hawkers").addToggle(
       (t) => t.setValue(this.environment.crowdedOrNoisy).onChange((v) => {
         this.environment.crowdedOrNoisy = v;
       })
     );
-    new import_obsidian85.Setting(contentEl).setName("Wide open (few hiding spots)").setDesc("Open field, long corridor \u2014 gives disadvantage on stealth").addToggle(
+    new import_obsidian87.Setting(contentEl).setName("Wide open (few hiding spots)").setDesc("Open field, long corridor \u2014 gives disadvantage on stealth").addToggle(
       (t) => t.setValue(this.environment.wideOpen).onChange((v) => {
         this.environment.wideOpen = v;
       })
     );
-    new import_obsidian85.Setting(contentEl).setName("Elevation changes").setDesc("Rooftops, balconies, sewer gratings").addToggle(
+    new import_obsidian87.Setting(contentEl).setName("Elevation changes").setDesc("Rooftops, balconies, sewer gratings").addToggle(
       (t) => t.setValue(this.environment.hasElevation).onChange((v) => {
         this.environment.hasElevation = v;
       })
     );
-    new import_obsidian85.Setting(contentEl).setName("Complication Table").setDesc("Environment-specific d20 complication table used each turn").addDropdown((dd) => {
+    new import_obsidian87.Setting(contentEl).setName("Complication Table").setDesc("Environment-specific d20 complication table used each turn").addDropdown((dd) => {
       for (const table of COMPLICATION_TABLES) {
         dd.addOption(table.id, `${table.icon} ${table.name}`);
       }
@@ -77722,34 +78476,34 @@ var PursuitSetupModal = class extends import_obsidian85.Modal {
         this.environment.complicationTableId = v;
       });
     });
-    new import_obsidian85.Setting(contentEl).setName("Ranger / Survival pursuer").setDesc("At least one pursuer is a ranger or has proficiency in Survival (disadvantage)").addToggle(
+    new import_obsidian87.Setting(contentEl).setName("Ranger / Survival pursuer").setDesc("At least one pursuer is a ranger or has proficiency in Survival (disadvantage)").addToggle(
       (t) => t.setValue(this.hasRangerPursuer).onChange((v) => {
         this.hasRangerPursuer = v;
       })
     );
     contentEl.createEl("h3", { text: "Chase Rules" });
-    new import_obsidian85.Setting(contentEl).setName("Default quarry head start (ft)").setDesc("Default starting position for quarry members (can be overridden per participant)").addText((text) => {
+    new import_obsidian87.Setting(contentEl).setName("Default quarry head start (ft)").setDesc("Default starting position for quarry members (can be overridden per participant)").addText((text) => {
       text.setPlaceholder("60").setValue(String(this.quarryHeadStart)).onChange((v) => {
         this.quarryHeadStart = parseInt(v) || 60;
       });
       text.inputEl.type = "number";
       text.inputEl.style.width = "70px";
     });
-    new import_obsidian85.Setting(contentEl).setName("Default pursuer start position (ft)").setDesc("Default starting position for pursuers (can be overridden per participant)").addText((text) => {
+    new import_obsidian87.Setting(contentEl).setName("Default pursuer start position (ft)").setDesc("Default starting position for pursuers (can be overridden per participant)").addText((text) => {
       text.setPlaceholder("0").setValue(String(this.pursuerStart)).onChange((v) => {
         this.pursuerStart = parseInt(v) || 0;
       });
       text.inputEl.type = "number";
       text.inputEl.style.width = "70px";
     });
-    new import_obsidian85.Setting(contentEl).setName("Max escape distance (ft)").setDesc("Quarry that reaches this distance auto-escapes. 0 = no limit.").addText((text) => {
+    new import_obsidian87.Setting(contentEl).setName("Max escape distance (ft)").setDesc("Quarry that reaches this distance auto-escapes. 0 = no limit.").addText((text) => {
       text.setPlaceholder("0").setValue(String(this.maxDistance)).onChange((v) => {
         this.maxDistance = parseInt(v) || 0;
       });
       text.inputEl.type = "number";
       text.inputEl.style.width = "70px";
     });
-    new import_obsidian85.Setting(contentEl).setName("Max rounds").setDesc("Chase auto-ends after this many rounds. 0 = no limit.").addText((text) => {
+    new import_obsidian87.Setting(contentEl).setName("Max rounds").setDesc("Chase auto-ends after this many rounds. 0 = no limit.").addText((text) => {
       text.setPlaceholder("0").setValue(String(this.maxRounds)).onChange((v) => {
         this.maxRounds = parseInt(v) || 0;
       });
@@ -77757,7 +78511,7 @@ var PursuitSetupModal = class extends import_obsidian85.Modal {
       text.inputEl.style.width = "70px";
     });
     if (this.fromCombat && this.plugin.mapController.isMapActive()) {
-      const importSetting = new import_obsidian85.Setting(contentEl).setName("Import distances from map").setDesc("Set the direction the quarry is fleeing, then import token positions.");
+      const importSetting = new import_obsidian87.Setting(contentEl).setName("Import distances from map").setDesc("Set the direction the quarry is fleeing, then import token positions.");
       importSetting.addDropdown(
         (dd) => dd.addOption("N", "\u2B06 North").addOption("NE", "\u2197 North-East").addOption("E", "\u27A1 East").addOption("SE", "\u2198 South-East").addOption("S", "\u2B07 South").addOption("SW", "\u2199 South-West").addOption("W", "\u2B05 West").addOption("NW", "\u2196 North-West").setValue(this.fleeDirection).onChange((v) => {
           this.fleeDirection = v;
@@ -77874,7 +78628,7 @@ var PursuitSetupModal = class extends import_obsidian85.Modal {
     let creatureRole = "pursuer";
     let searchResults = null;
     if (this.searchableEntities.length > 0) {
-      const vaultSetting = new import_obsidian85.Setting(vaultSection).setName("Add from Vault").setDesc(`Search NPCs and creatures (${this.searchableEntities.length} available)`);
+      const vaultSetting = new import_obsidian87.Setting(vaultSection).setName("Add from Vault").setDesc(`Search NPCs and creatures (${this.searchableEntities.length} available)`);
       const searchContainer = vaultSetting.controlEl.createDiv({ cls: "dnd-creature-search-container" });
       const searchInput = searchContainer.createEl("input", {
         type: "text",
@@ -77961,7 +78715,7 @@ var PursuitSetupModal = class extends import_obsidian85.Modal {
       });
       const addVaultCreature = () => {
         if (!selectedEntity) {
-          new import_obsidian85.Notice("Please search and select a creature first!");
+          new import_obsidian87.Notice("Please search and select a creature first!");
           return;
         }
         const count = parseInt(creatureCount) || 1;
@@ -77992,7 +78746,7 @@ var PursuitSetupModal = class extends import_obsidian85.Modal {
         });
         this.renderCreatureList();
         this.updateFooter();
-        new import_obsidian85.Notice(`Added ${count}x ${selectedEntity.name} as ${creatureRole}`);
+        new import_obsidian87.Notice(`Added ${count}x ${selectedEntity.name} as ${creatureRole}`);
         searchInput.value = "";
         selectedEntity = null;
       };
@@ -78014,7 +78768,7 @@ var PursuitSetupModal = class extends import_obsidian85.Modal {
     let manualStealth = "0";
     let manualPPerc = "10";
     let manualRole = "pursuer";
-    const manualSetting = new import_obsidian85.Setting(manualSection).setName("Add Custom Creature").setDesc("Manually enter pursuit-relevant stats");
+    const manualSetting = new import_obsidian87.Setting(manualSection).setName("Add Custom Creature").setDesc("Manually enter pursuit-relevant stats");
     manualSetting.addText((text) => {
       text.setPlaceholder("Name").onChange((v) => {
         manualName = v;
@@ -78076,7 +78830,7 @@ var PursuitSetupModal = class extends import_obsidian85.Modal {
     manualSetting.addButton(
       (btn) => btn.setButtonText("Add").setCta().onClick(() => {
         if (!manualName.trim()) {
-          new import_obsidian85.Notice("Please enter a creature name!");
+          new import_obsidian87.Notice("Please enter a creature name!");
           return;
         }
         const count = parseInt(manualCount) || 1;
@@ -78106,7 +78860,7 @@ var PursuitSetupModal = class extends import_obsidian85.Modal {
         });
         this.renderCreatureList();
         this.updateFooter();
-        new import_obsidian85.Notice(`Added ${count}x ${manualName.trim()} as ${manualRole}`);
+        new import_obsidian87.Notice(`Added ${count}x ${manualName.trim()} as ${manualRole}`);
       })
     );
     container.createEl("p", {
@@ -78315,7 +79069,7 @@ var PursuitSetupModal = class extends import_obsidian85.Modal {
       let chaMod = 0;
       if (c.notePath) {
         const file = this.app.vault.getAbstractFileByPath(c.notePath);
-        if (file instanceof import_obsidian85.TFile) {
+        if (file instanceof import_obsidian87.TFile) {
           const cache = this.app.metadataCache.getFileCache(file);
           const fm = cache == null ? void 0 : cache.frontmatter;
           if (fm) {
@@ -78384,18 +79138,18 @@ var PursuitSetupModal = class extends import_obsidian85.Modal {
     var _a, _b, _c, _d, _e;
     const mc = this.plugin.mapController;
     if (!mc.isMapActive()) {
-      new import_obsidian85.Notice("No active battle map to import from.");
+      new import_obsidian87.Notice("No active battle map to import from.");
       return;
     }
     const gridSize = mc.getGridSize();
     const scale2 = mc.getScale();
     if (!gridSize || !scale2) {
-      new import_obsidian85.Notice("Could not read map grid size or scale.");
+      new import_obsidian87.Notice("Could not read map grid size or scale.");
       return;
     }
     const markers = mc.getPlacedMarkers();
     if (markers.length === 0) {
-      new import_obsidian85.Notice("No tokens placed on the map.");
+      new import_obsidian87.Notice("No tokens placed on the map.");
       return;
     }
     const library = this.plugin.markerLibrary;
@@ -78467,7 +79221,7 @@ var PursuitSetupModal = class extends import_obsidian85.Modal {
       }
     }
     if (matched.length === 0) {
-      new import_obsidian85.Notice("Could not match any participants to map tokens.");
+      new import_obsidian87.Notice("Could not match any participants to map tokens.");
       return;
     }
     const sv = scale2.value;
@@ -78499,14 +79253,14 @@ var PursuitSetupModal = class extends import_obsidian85.Modal {
     if (this.partyMemberListContainer) this.renderPartyMemberList();
     this.updateFooter();
     const msg = unmatched > 0 ? `\u{1F4CD} Imported distances for ${matched.length} participants (${unmatched} unmatched).` : `\u{1F4CD} Imported distances for ${matched.length} participants from map!`;
-    new import_obsidian85.Notice(msg);
+    new import_obsidian87.Notice(msg);
   }
   // ── Start Chase ────────────────────────────────────────────
   startChase() {
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y;
     const { quarryCount, pursuerCount } = this.countRoles();
     if (quarryCount === 0 || pursuerCount === 0) {
-      new import_obsidian85.Notice("Need at least one quarry and one pursuer.");
+      new import_obsidian87.Notice("Need at least one quarry and one pursuer.");
       return;
     }
     const participants = [];
@@ -78656,12 +79410,12 @@ var PursuitSetupModal = class extends import_obsidian85.Modal {
     }
     this.close();
     this.plugin.openPursuitTracker();
-    new import_obsidian85.Notice(`\u{1F3C3} Chase "${this.chaseName}" started with ${participants.length} participants!`);
+    new import_obsidian87.Notice(`\u{1F3C3} Chase "${this.chaseName}" started with ${participants.length} participants!`);
   }
 };
 
 // src/map-views/renderMapView.ts
-var import_obsidian94 = require("obsidian");
+var import_obsidian96 = require("obsidian");
 init_constants();
 
 // src/map/MagicWandWallModal.ts
@@ -78820,8 +79574,8 @@ function magicWandDetect(imageData, clickX, clickY, threshold, tolerance, simpli
 init_MarkerLibraryModal();
 
 // src/utils/GridCalibrationModal.ts
-var import_obsidian86 = require("obsidian");
-var GridCalibrationModal = class extends import_obsidian86.Modal {
+var import_obsidian88 = require("obsidian");
+var GridCalibrationModal = class extends import_obsidian88.Modal {
   constructor(app, config, onApply, measuredDistance) {
     super(app);
     this.config = config;
@@ -78967,8 +79721,8 @@ var GridCalibrationModal = class extends import_obsidian86.Modal {
 };
 
 // src/map-views/DeleteMapConfirmModal.ts
-var import_obsidian87 = require("obsidian");
-var DeleteMapConfirmModal = class extends import_obsidian87.Modal {
+var import_obsidian89 = require("obsidian");
+var DeleteMapConfirmModal = class extends import_obsidian89.Modal {
   constructor(app, plugin, mapId, mapName, sourcePath, onDeleted) {
     super(app);
     this.plugin = plugin;
@@ -79035,17 +79789,17 @@ var DeleteMapConfirmModal = class extends import_obsidian87.Modal {
       if (removeCodeBlock && this.sourcePath) {
         await this.removeCodeBlockFromNote();
       }
-      new import_obsidian87.Notice(`\u2705 Map "${this.mapName}" deleted`);
+      new import_obsidian89.Notice(`\u2705 Map "${this.mapName}" deleted`);
       this.onDeleted();
     } catch (err) {
       console.error("[DeleteMap] Error deleting map:", err);
-      new import_obsidian87.Notice("\u274C Failed to delete map");
+      new import_obsidian89.Notice("\u274C Failed to delete map");
     }
   }
   async removeCodeBlockFromNote() {
     try {
       const file = this.app.vault.getAbstractFileByPath(this.sourcePath);
-      if (!(file instanceof import_obsidian87.TFile)) return;
+      if (!(file instanceof import_obsidian89.TFile)) return;
       const content = await this.app.vault.read(file);
       const escapedId = this.mapId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const codeBlockRegex = new RegExp(
@@ -79067,8 +79821,8 @@ var DeleteMapConfirmModal = class extends import_obsidian87.Modal {
 };
 
 // src/map-views/TabletopCalibrationModal.ts
-var import_obsidian88 = require("obsidian");
-var TabletopCalibrationModal = class extends import_obsidian88.Modal {
+var import_obsidian90 = require("obsidian");
+var TabletopCalibrationModal = class extends import_obsidian90.Modal {
   constructor(app, plugin, popoutWin, onDone) {
     super(app);
     this.plugin = plugin;
@@ -79164,7 +79918,7 @@ var TabletopCalibrationModal = class extends import_obsidian88.Modal {
     saveBtn.addEventListener("click", async () => {
       const diag = parseFloat(diagonalInput.value);
       if (!diag || diag <= 0) {
-        new import_obsidian88.Notice("Please enter your monitor diagonal size.");
+        new import_obsidian90.Notice("Please enter your monitor diagonal size.");
         return;
       }
       const baseMm = parseFloat(baseInput.value) || 25;
@@ -79181,7 +79935,7 @@ var TabletopCalibrationModal = class extends import_obsidian88.Modal {
       await this.plugin.saveSettings();
       this.onDone(calibration);
       this.close();
-      new import_obsidian88.Notice(`Tabletop calibrated: ${ppmm.toFixed(2)} px/mm, grid = ${baseMm}mm`);
+      new import_obsidian90.Notice(`Tabletop calibrated: ${ppmm.toFixed(2)} px/mm, grid = ${baseMm}mm`);
     });
   }
   onClose() {
@@ -79192,7 +79946,7 @@ var TabletopCalibrationModal = class extends import_obsidian88.Modal {
 // src/map-views/renderMapView.ts
 init_ScreenEnumeration();
 init_EnvAssetTypes();
-var MapEncounterSetupModal = class extends import_obsidian94.Modal {
+var MapEncounterSetupModal = class extends import_obsidian96.Modal {
   constructor(app, plugin, config, sourceEl, onComplete) {
     super(app);
     this.plugin = plugin;
@@ -79215,7 +79969,7 @@ var MapEncounterSetupModal = class extends import_obsidian94.Modal {
       return ((_b = (_a2 = this.plugin.app.metadataCache.getFileCache(f)) == null ? void 0 : _a2.frontmatter) == null ? void 0 : _b.type) === "encounter";
     }).sort((a, b) => b.stat.mtime - a.stat.mtime);
     this.selectedEncounterPath = this.config.linkedEncounter || ((_a = this.encounterFiles[0]) == null ? void 0 : _a.path) || "";
-    new import_obsidian94.Setting(contentEl).setName("Encounter").setDesc("Choose the encounter note to link and load.").addDropdown((dropdown) => {
+    new import_obsidian96.Setting(contentEl).setName("Encounter").setDesc("Choose the encounter note to link and load.").addDropdown((dropdown) => {
       for (const file of this.encounterFiles) {
         const name = this.getEncounterName(file);
         dropdown.addOption(file.path, name);
@@ -79228,10 +79982,10 @@ var MapEncounterSetupModal = class extends import_obsidian94.Modal {
     if (this.encounterFiles.length === 0) {
       contentEl.createEl("p", { text: "No encounter notes were found in the vault." });
     }
-    new import_obsidian94.Setting(contentEl).addButton(
+    new import_obsidian96.Setting(contentEl).addButton(
       (btn) => btn.setButtonText("Link and Load Combat").setCta().onClick(async () => {
         if (!this.selectedEncounterPath) {
-          new import_obsidian94.Notice("No encounter selected");
+          new import_obsidian96.Notice("No encounter selected");
           return;
         }
         await this.linkAndLoad(this.selectedEncounterPath);
@@ -79258,8 +80012,8 @@ var MapEncounterSetupModal = class extends import_obsidian94.Modal {
   async linkAndLoad(path) {
     var _a;
     const file = this.plugin.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian94.TFile)) {
-      new import_obsidian94.Notice("Encounter file not found");
+    if (!(file instanceof import_obsidian96.TFile)) {
+      new import_obsidian96.Notice("Encounter file not found");
       return;
     }
     const cache = this.plugin.app.metadataCache.getFileCache(file);
@@ -79344,7 +80098,7 @@ var MapEncounterSetupModal = class extends import_obsidian94.Modal {
     await this.plugin.openCombatTracker();
     this.onComplete();
     this.close();
-    new import_obsidian94.Notice(`\u2705 Linked and loaded "${encounterName}"`);
+    new import_obsidian96.Notice(`\u2705 Linked and loaded "${encounterName}"`);
   }
 };
 async function renderMapView(plugin, source, el, ctx) {
@@ -79412,7 +80166,7 @@ async function renderMapView(plugin, source, el, ctx) {
       return;
     }
     const imageFile = plugin.app.vault.getAbstractFileByPath(config.imageFile);
-    if (!imageFile || !(imageFile instanceof import_obsidian94.TFile)) {
+    if (!imageFile || !(imageFile instanceof import_obsidian96.TFile)) {
       el.createEl("div", {
         text: `\u26A0\uFE0F Image file not found: ${config.imageFile}`,
         cls: "dnd-map-error"
@@ -79755,7 +80509,7 @@ async function renderMapView(plugin, source, el, ctx) {
       redrawAnnotations();
       plugin.saveMapAnnotations(config, el);
       if (viewport._syncPlayerView) viewport._syncPlayerView();
-      new import_obsidian94.Notice(`${wallDef.name} placed`);
+      new import_obsidian96.Notice(`${wallDef.name} placed`);
     };
     const findConnectedWalls = (startIdx, walls) => {
       const EPSILON = getWallSnapThreshold() * 0.25;
@@ -79862,11 +80616,11 @@ async function renderMapView(plugin, source, el, ctx) {
           indices.forEach((wi) => {
             if (config.walls[wi]) config.walls[wi].height = val2;
           });
-          new import_obsidian94.Notice(`Set ${indices.length} wall${indices.length > 1 ? "s" : ""} to ${val2} ft`);
+          new import_obsidian96.Notice(`Set ${indices.length} wall${indices.length > 1 ? "s" : ""} to ${val2} ft`);
           plugin.saveMapAnnotations(config, el);
           if (viewport._syncPlayerView) viewport._syncPlayerView();
         } else {
-          new import_obsidian94.Notice("Enter a valid height in feet");
+          new import_obsidian96.Notice("Enter a valid height in feet");
           return;
         }
         closePopup();
@@ -79876,7 +80630,7 @@ async function renderMapView(plugin, source, el, ctx) {
         indices.forEach((wi) => {
           if (config.walls[wi]) delete config.walls[wi].height;
         });
-        new import_obsidian94.Notice(`Set ${indices.length} wall${indices.length > 1 ? "s" : ""} to infinite height`);
+        new import_obsidian96.Notice(`Set ${indices.length} wall${indices.length > 1 ? "s" : ""} to infinite height`);
         plugin.saveMapAnnotations(config, el);
         if (viewport._syncPlayerView) viewport._syncPlayerView();
         closePopup();
@@ -80152,7 +80906,7 @@ async function renderMapView(plugin, source, el, ctx) {
       if (!config.markers || selectedMarkerIndices.length < 2) return;
       const uniqueIndices = [...new Set(selectedMarkerIndices)].filter((i) => config.markers[i] && !isTokenGroup(config.markers[i])).sort((a, b) => a - b);
       if (uniqueIndices.length < 2) {
-        new import_obsidian94.Notice("Select at least two normal tokens to create a group");
+        new import_obsidian96.Notice("Select at least two normal tokens to create a group");
         return;
       }
       saveToHistory();
@@ -80183,7 +80937,7 @@ async function renderMapView(plugin, source, el, ctx) {
       redrawAnnotations();
       plugin.saveMapAnnotations(config, el);
       if (viewport._syncPlayerView) viewport._syncPlayerView();
-      new import_obsidian94.Notice(`Grouped ${members.length} tokens`);
+      new import_obsidian96.Notice(`Grouped ${members.length} tokens`);
     };
     const getSelectedGroupAddTarget = () => {
       if (!config.markers || selectedMarkerIndices.length < 2) return null;
@@ -80196,7 +80950,7 @@ async function renderMapView(plugin, source, el, ctx) {
     const addSelectedMarkersToGroup = () => {
       const target = getSelectedGroupAddTarget();
       if (!target) {
-        new import_obsidian94.Notice("Select one group token and at least one normal token");
+        new import_obsidian96.Notice("Select one group token and at least one normal token");
         return;
       }
       const groupMarker = config.markers[target.groupIndex];
@@ -80221,7 +80975,7 @@ async function renderMapView(plugin, source, el, ctx) {
       redrawAnnotations();
       plugin.saveMapAnnotations(config, el);
       if (viewport._syncPlayerView) viewport._syncPlayerView();
-      new import_obsidian94.Notice(`Added ${tokensToAdd.length} token${tokensToAdd.length > 1 ? "s" : ""} to ${getMarkerDisplayName(groupMarker)}`);
+      new import_obsidian96.Notice(`Added ${tokensToAdd.length} token${tokensToAdd.length > 1 ? "s" : ""} to ${getMarkerDisplayName(groupMarker)}`);
     };
     const releaseTokenFromGroup = (groupMarker, memberIndex) => {
       var _a2;
@@ -80231,7 +80985,7 @@ async function renderMapView(plugin, source, el, ctx) {
       const occupied = (config.markers || []).filter((m) => m.id !== groupMarker.id && m.position).map((m) => ({ x: m.position.x, y: m.position.y }));
       const position = findSafeGroupReleasePosition(groupMarker, occupied);
       if (!position) {
-        new import_obsidian94.Notice("No safe adjacent tile found for this token");
+        new import_obsidian96.Notice("No safe adjacent tile found for this token");
         return false;
       }
       const released = cloneMarkerForGroup(member);
@@ -80439,7 +81193,7 @@ async function renderMapView(plugin, source, el, ctx) {
             config.lights[i].brightness = parseInt(brightInput.value);
           }
         });
-        new import_obsidian94.Notice(`Updated ${selectedLightIndices.length} light${selectedLightIndices.length > 1 ? "s" : ""}`);
+        new import_obsidian96.Notice(`Updated ${selectedLightIndices.length} light${selectedLightIndices.length > 1 ? "s" : ""}`);
         plugin.saveMapAnnotations(config, el);
         if (viewport._syncPlayerView) viewport._syncPlayerView();
         closePopup();
@@ -80542,7 +81296,7 @@ async function renderMapView(plugin, source, el, ctx) {
         const shouldSetVisibility = visibilityToggle.checked && visibilityTargets.length > 0;
         const shouldSetSize = sizeToggle.checked && sizeTargets.length > 0;
         if (!shouldMoveLayer && !shouldSetVisibility && !shouldSetSize) {
-          new import_obsidian94.Notice("Choose at least one token setting to update");
+          new import_obsidian96.Notice("Choose at least one token setting to update");
           return;
         }
         saveToHistory();
@@ -80558,7 +81312,7 @@ async function renderMapView(plugin, source, el, ctx) {
           sizeTargets.forEach((marker) => setMarkerCreatureSize(marker, size));
         }
         refreshVisionSelector();
-        new import_obsidian94.Notice(`Updated ${selectedMarkers.length} token${selectedMarkers.length > 1 ? "s" : ""}`);
+        new import_obsidian96.Notice(`Updated ${selectedMarkers.length} token${selectedMarkers.length > 1 ? "s" : ""}`);
         plugin.saveMapAnnotations(config, el);
         if (viewport._syncPlayerView) viewport._syncPlayerView();
         closePopup();
@@ -80609,7 +81363,7 @@ async function renderMapView(plugin, source, el, ctx) {
             config.envAssets[id].scale = parseFloat(scaleInput.value);
           }
         });
-        new import_obsidian94.Notice(`Updated ${selectedEnvAssetIds.length} asset${selectedEnvAssetIds.length > 1 ? "s" : ""}`);
+        new import_obsidian96.Notice(`Updated ${selectedEnvAssetIds.length} asset${selectedEnvAssetIds.length > 1 ? "s" : ""}`);
         plugin.saveMapAnnotations(config, el);
         if (viewport._syncPlayerView) viewport._syncPlayerView();
         closePopup();
@@ -80641,7 +81395,7 @@ async function renderMapView(plugin, source, el, ctx) {
         selectedWallIndices.sort((a, b) => b - a).forEach((i) => {
           config.walls.splice(i, 1);
         });
-        new import_obsidian94.Notice(`Deleted ${total} element${total > 1 ? "s" : ""}`);
+        new import_obsidian96.Notice(`Deleted ${total} element${total > 1 ? "s" : ""}`);
         plugin.saveMapAnnotations(config, el);
         if (viewport._syncPlayerView) viewport._syncPlayerView();
         clearMultiSelection();
@@ -80761,7 +81515,7 @@ async function renderMapView(plugin, source, el, ctx) {
     };
     const undo = () => {
       if (undoStack.length === 0) {
-        new import_obsidian94.Notice("Nothing to undo");
+        new import_obsidian96.Notice("Nothing to undo");
         return;
       }
       redoStack.push(_snapshotState());
@@ -80770,11 +81524,11 @@ async function renderMapView(plugin, source, el, ctx) {
       plugin.saveMapAnnotations(config, el);
       if (viewport._syncPlayerView) viewport._syncPlayerView();
       updateUndoRedoButtons();
-      new import_obsidian94.Notice("Undo");
+      new import_obsidian96.Notice("Undo");
     };
     const redo = () => {
       if (redoStack.length === 0) {
-        new import_obsidian94.Notice("Nothing to redo");
+        new import_obsidian96.Notice("Nothing to redo");
         return;
       }
       undoStack.push(_snapshotState());
@@ -80783,7 +81537,7 @@ async function renderMapView(plugin, source, el, ctx) {
       plugin.saveMapAnnotations(config, el);
       if (viewport._syncPlayerView) viewport._syncPlayerView();
       updateUndoRedoButtons();
-      new import_obsidian94.Notice("Redo");
+      new import_obsidian96.Notice("Redo");
     };
     const duplicateElement = (type, index) => {
       saveToHistory();
@@ -80803,7 +81557,7 @@ async function renderMapView(plugin, source, el, ctx) {
           };
           config.markers.push(duplicate);
           selectedElementForDuplication = { type: "marker", index: config.markers.length - 1 };
-          new import_obsidian94.Notice("Token duplicated");
+          new import_obsidian96.Notice("Token duplicated");
           break;
         }
         case "light": {
@@ -80816,7 +81570,7 @@ async function renderMapView(plugin, source, el, ctx) {
           };
           config.lightSources.push(duplicate);
           selectedElementForDuplication = { type: "light", index: config.lightSources.length - 1 };
-          new import_obsidian94.Notice("Light source duplicated");
+          new import_obsidian96.Notice("Light source duplicated");
           break;
         }
         case "env-asset": {
@@ -80834,7 +81588,7 @@ async function renderMapView(plugin, source, el, ctx) {
           config.envAssets.push(duplicate);
           selectedElementForDuplication = { type: "env-asset", index: config.envAssets.length - 1 };
           selectedEnvAssetInstanceId = duplicate.id;
-          new import_obsidian94.Notice("Environment asset duplicated");
+          new import_obsidian96.Notice("Environment asset duplicated");
           break;
         }
         case "wall": {
@@ -80853,7 +81607,7 @@ async function renderMapView(plugin, source, el, ctx) {
           };
           config.walls.push(duplicate);
           selectedElementForDuplication = { type: "wall", index: config.walls.length - 1 };
-          new import_obsidian94.Notice("Wall duplicated");
+          new import_obsidian96.Notice("Wall duplicated");
           break;
         }
         case "text-annotation": {
@@ -80870,7 +81624,7 @@ async function renderMapView(plugin, source, el, ctx) {
           config.textAnnotations.push(duplicate);
           selectedElementForDuplication = { type: "text-annotation", index: config.textAnnotations.length - 1 };
           selectedTextAnnotationId = duplicate.id;
-          new import_obsidian94.Notice("Text annotation duplicated");
+          new import_obsidian96.Notice("Text annotation duplicated");
           break;
         }
       }
@@ -81090,7 +81844,7 @@ async function renderMapView(plugin, source, el, ctx) {
       redrawTerrainLayer();
       redrawAnnotations();
       plugin.saveMapAnnotations(config, el);
-      new import_obsidian94.Notice(hLoc(hcLang, "allTerrainCleared"));
+      new import_obsidian96.Notice(hLoc(hcLang, "allTerrainCleared"));
       plugin.refreshHexcrawlView();
     });
     terrainPicker.createDiv({ cls: "dnd-fog-picker-sep" });
@@ -81108,7 +81862,7 @@ async function renderMapView(plugin, source, el, ctx) {
         (updated) => {
           config.customTerrainDescriptions = updated;
           plugin.saveMapAnnotations(config, el);
-          new import_obsidian94.Notice(hLoc(hcLang, "customDescsSaved"));
+          new import_obsidian96.Notice(hLoc(hcLang, "customDescsSaved"));
         },
         hcLang
       ).open();
@@ -81144,7 +81898,7 @@ async function renderMapView(plugin, source, el, ctx) {
       redrawTerrainLayer();
       redrawAnnotations();
       plugin.saveMapAnnotations(config, el);
-      new import_obsidian94.Notice(hLoc(hcLang, "allClimateCleared"));
+      new import_obsidian96.Notice(hLoc(hcLang, "allClimateCleared"));
       plugin.refreshHexcrawlView();
     });
     const openHexcrawlBtn = createToolBtn(hexcrawlContent, "\u{1F4CB}", hLoc(hcLang, "toolOpenPanel"));
@@ -81257,7 +82011,7 @@ async function renderMapView(plugin, source, el, ctx) {
         refreshVisionSelector();
         if (viewport._syncPlayerView) viewport._syncPlayerView();
         _applyAutoPan(true);
-        new import_obsidian94.Notice(selectedVisionTokenId ? `Vision: ${icon} ${name}` : "Vision: All Players");
+        new import_obsidian96.Notice(selectedVisionTokenId ? `Vision: ${icon} ${name}` : "Vision: All Players");
       });
       return item;
     };
@@ -81338,7 +82092,7 @@ async function renderMapView(plugin, source, el, ctx) {
           }
           if (!matchedMarker && combatant.notePath) {
             const noteFile = plugin.app.vault.getAbstractFileByPath(combatant.notePath);
-            if (noteFile instanceof import_obsidian94.TFile) {
+            if (noteFile instanceof import_obsidian96.TFile) {
               const noteCache = plugin.app.metadataCache.getFileCache(noteFile);
               const noteTokenId = (_a2 = noteCache == null ? void 0 : noteCache.frontmatter) == null ? void 0 : _a2.token_id;
               if (noteTokenId) {
@@ -81375,13 +82129,13 @@ async function renderMapView(plugin, source, el, ctx) {
           _applyAutoPan(true);
           const markerDef = matchedMarker.markerId ? plugin.markerLibrary.getMarker(matchedMarker.markerId) : null;
           const icon = isTokenGroup(matchedMarker) ? "\u{1F465}" : (markerDef == null ? void 0 : markerDef.type) === "player" ? "\u{1F464}" : (markerDef == null ? void 0 : markerDef.type) === "creature" ? "\u{1F479}" : "\u{1F9D1}";
-          new import_obsidian94.Notice(`Vision synced: ${icon} ${getMarkerDisplayName(matchedMarker)}`);
+          new import_obsidian96.Notice(`Vision synced: ${icon} ${getMarkerDisplayName(matchedMarker)}`);
         } else if (!matchedMarker && selectedVisionTokenId !== null) {
           selectedVisionTokenId = null;
           refreshVisionSelector();
           if (viewport._syncPlayerView) viewport._syncPlayerView();
           _applyAutoPan(true);
-          new import_obsidian94.Notice("Vision synced: \u{1F465} All Players");
+          new import_obsidian96.Notice("Vision synced: \u{1F465} All Players");
         }
       });
       const ctVisionObserver = new MutationObserver(() => {
@@ -81464,7 +82218,7 @@ async function renderMapView(plugin, source, el, ctx) {
       plugin.saveMapAnnotations(config, el);
       const viewport2 = el.querySelector(".dnd-map-viewport");
       if (viewport2 && viewport2._syncPlayerView) viewport2._syncPlayerView();
-      new import_obsidian94.Notice("Fog cleared \u2014 entire map revealed");
+      new import_obsidian96.Notice("Fog cleared \u2014 entire map revealed");
     });
     const fogHideAllBtn = fogPicker.createEl("button", {
       cls: "dnd-map-aoe-shape-btn dnd-fog-action-btn",
@@ -81480,7 +82234,7 @@ async function renderMapView(plugin, source, el, ctx) {
       plugin.saveMapAnnotations(config, el);
       const viewport2 = el.querySelector(".dnd-map-viewport");
       if (viewport2 && viewport2._syncPlayerView) viewport2._syncPlayerView();
-      new import_obsidian94.Notice("Entire map hidden by fog");
+      new import_obsidian96.Notice("Entire map hidden by fog");
     });
     fogBtn.toggleClass("hidden", config.activeLayer !== "Background");
     wallsBtn.toggleClass("hidden", config.activeLayer !== "Background");
@@ -81611,9 +82365,9 @@ async function renderMapView(plugin, source, el, ctx) {
         plugin.saveMapAnnotations(config, el);
         const viewport2 = el.querySelector(".dnd-map-viewport");
         if (viewport2 && viewport2._syncPlayerView) viewport2._syncPlayerView();
-        new import_obsidian94.Notice("All walls deleted");
+        new import_obsidian96.Notice("All walls deleted");
       } else {
-        new import_obsidian94.Notice("No walls to delete");
+        new import_obsidian96.Notice("No walls to delete");
       }
     });
     const lightsPicker = lightsBtn.createDiv({ cls: "dnd-map-aoe-picker hidden" });
@@ -81658,7 +82412,7 @@ async function renderMapView(plugin, source, el, ctx) {
       config.lightSources = [];
       redrawAnnotations();
       plugin.saveMapAnnotations(config, el);
-      new import_obsidian94.Notice("All light sources removed");
+      new import_obsidian96.Notice("All light sources removed");
     });
     const elevationPicker = elevationPaintBtn.createDiv({ cls: "dnd-map-aoe-picker hidden" });
     const elevationInputRow = elevationPicker.createDiv({ cls: "dnd-map-aoe-row" });
@@ -81687,7 +82441,7 @@ async function renderMapView(plugin, source, el, ctx) {
       e.stopPropagation();
       elevationPaintValue = 0;
       elevationInput.value = "0";
-      new import_obsidian94.Notice("Elevation eraser active (0 ft)");
+      new import_obsidian96.Notice("Elevation eraser active (0 ft)");
     });
     const difficultTerrainPicker = difficultTerrainBtn.createDiv({ cls: "dnd-map-aoe-picker hidden" });
     const dtPaintBtn = difficultTerrainPicker.createEl("button", {
@@ -81705,14 +82459,14 @@ async function renderMapView(plugin, source, el, ctx) {
       isDifficultTerrainEraser = false;
       dtPaintBtn.addClass("active");
       dtEraseBtn.removeClass("active");
-      new import_obsidian94.Notice("Difficult terrain brush active");
+      new import_obsidian96.Notice("Difficult terrain brush active");
     });
     dtEraseBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       isDifficultTerrainEraser = true;
       dtEraseBtn.addClass("active");
       dtPaintBtn.removeClass("active");
-      new import_obsidian94.Notice("Difficult terrain eraser active");
+      new import_obsidian96.Notice("Difficult terrain eraser active");
     });
     const aoePicker = aoeBtn.createDiv({ cls: "dnd-map-aoe-picker hidden" });
     const aoeShapes = [
@@ -81739,7 +82493,7 @@ async function renderMapView(plugin, source, el, ctx) {
             redrawAnnotations();
             plugin.saveMapAnnotations(config, el);
             updateGridToolsVisibility();
-            new import_obsidian94.Notice("AoE effect removed");
+            new import_obsidian96.Notice("AoE effect removed");
           }
           lastPlacedAoeId = null;
         }
@@ -81793,7 +82547,7 @@ async function renderMapView(plugin, source, el, ctx) {
           redrawGridOverlays();
           redrawAnnotations();
           await plugin.saveMapAnnotations(config, el);
-          new import_obsidian94.Notice("Grid calibration applied");
+          new import_obsidian96.Notice("Grid calibration applied");
         }
       ).open();
     });
@@ -81805,7 +82559,7 @@ async function renderMapView(plugin, source, el, ctx) {
         measureBtn.removeClass("active");
         setActiveTool("pan");
         redrawAnnotations();
-        new import_obsidian94.Notice("Measurement cancelled");
+        new import_obsidian96.Notice("Measurement cancelled");
       } else {
         setActiveTool("pan");
         isCalibrating = true;
@@ -81813,12 +82567,12 @@ async function renderMapView(plugin, source, el, ctx) {
         calibrationPoint2 = null;
         measureBtn.addClass("active");
         viewport.style.cursor = "crosshair";
-        new import_obsidian94.Notice("Click two points on the map to measure distance");
+        new import_obsidian96.Notice("Click two points on the map to measure distance");
       }
     });
     clearTunnelsBtn.addEventListener("click", () => {
       if (!config.tunnels || config.tunnels.length === 0) {
-        new import_obsidian94.Notice("No tunnels to clear");
+        new import_obsidian96.Notice("No tunnels to clear");
         return;
       }
       const tunnelCount = config.tunnels.length;
@@ -81830,7 +82584,7 @@ async function renderMapView(plugin, source, el, ctx) {
       redrawAnnotations();
       if (viewport._syncPlayerView) viewport._syncPlayerView();
       const msg = `Cleared ${tunnelCount} tunnel${tunnelCount === 1 ? "" : "s"}`;
-      new import_obsidian94.Notice(ejected > 0 ? `${msg} (${ejected} token${ejected === 1 ? "" : "s"} ejected)` : msg);
+      new import_obsidian96.Notice(ejected > 0 ? `${msg} (${ejected} token${ejected === 1 ? "" : "s"} ejected)` : msg);
     });
     const hasGrid = config.gridType && config.gridType !== "none";
     const gridSliderFlyout = moveGridBtn.createDiv({ cls: "dnd-map-grid-slider-flyout" });
@@ -82147,7 +82901,7 @@ async function renderMapView(plugin, source, el, ctx) {
       var _a2, _b2;
       if (!config.linkedEncounter) return "Not linked";
       const file = plugin.app.vault.getAbstractFileByPath(config.linkedEncounter);
-      if (file instanceof import_obsidian94.TFile) {
+      if (file instanceof import_obsidian96.TFile) {
         const fm = (_a2 = plugin.app.metadataCache.getFileCache(file)) == null ? void 0 : _a2.frontmatter;
         return (fm == null ? void 0 : fm.name) || (fm == null ? void 0 : fm.encounter_name) || file.basename;
       }
@@ -82180,7 +82934,7 @@ async function renderMapView(plugin, source, el, ctx) {
       if (viewport._syncPlayerView) {
         viewport._syncPlayerView();
       }
-      new import_obsidian94.Notice(config.showInitiativeInPlayerView ? "Initiative shown in Player View" : "Initiative hidden from Player View");
+      new import_obsidian96.Notice(config.showInitiativeInPlayerView ? "Initiative shown in Player View" : "Initiative hidden from Player View");
     });
     const pvInitiativeSizeBtn = pvDropdown.createEl("button", {
       cls: "dnd-map-pv-toggle-item",
@@ -82273,7 +83027,7 @@ async function renderMapView(plugin, source, el, ctx) {
       pvDropdown.addClass("hidden");
       const pm = plugin.projectionManager;
       if (!pm) {
-        new import_obsidian94.Notice("Projection manager not available");
+        new import_obsidian96.Notice("Projection manager not available");
         return;
       }
       const screens = await pm.getScreens();
@@ -82286,7 +83040,7 @@ async function renderMapView(plugin, source, el, ctx) {
         return (proj == null ? void 0 : proj.contentType) === "combat";
       });
       if (available.length === 0 && switchable.length === 0 && screens.length > 0) {
-        new import_obsidian94.Notice("All screens are already in use");
+        new import_obsidian96.Notice("All screens are already in use");
         return;
       }
       const mapId = config.mapId || resourcePath;
@@ -82300,7 +83054,7 @@ async function renderMapView(plugin, source, el, ctx) {
         await pm.project(mapId, payload, resourcePath, switchable[0], mode, centerPlayersWhenReady);
         return;
       }
-      const menu = new import_obsidian94.Menu();
+      const menu = new import_obsidian96.Menu();
       for (const screen of available) {
         const cal = pm.getCalibrationForScreen(screen);
         const label = `${screen.isPrimary ? "\u{1F5A5}\uFE0F" : "\u{1F5B5}"} ${screen.label} (${screen.width}\xD7${screen.height})${cal ? " \u2713" : ""}`;
@@ -82325,7 +83079,7 @@ async function renderMapView(plugin, source, el, ctx) {
           item.setTitle("\u2699\uFE0F Manage Calibrations...");
           item.onClick(() => {
             new TabletopCalibrationModal(plugin.app, plugin, window, () => {
-              new import_obsidian94.Notice("Calibration saved");
+              new import_obsidian96.Notice("Calibration saved");
             }).open();
           });
         });
@@ -82937,7 +83691,7 @@ async function renderMapView(plugin, source, el, ctx) {
           viewport._syncPlayerView();
         }
       }, 200);
-      new import_obsidian94.Notice("Player view opened");
+      new import_obsidian96.Notice("Player view opened");
     });
     const sidePanelBtn = viewport.createEl("button", {
       cls: "dnd-map-side-panel-btn",
@@ -82954,7 +83708,7 @@ async function renderMapView(plugin, source, el, ctx) {
       });
       if (existingGmLeaf) {
         plugin.app.workspace.setActiveLeaf(existingGmLeaf);
-        new import_obsidian94.Notice("Map already open in another window");
+        new import_obsidian96.Notice("Map already open in another window");
         return;
       }
       const popoutLeaf = plugin.app.workspace.openPopoutLeaf({
@@ -83001,7 +83755,7 @@ async function renderMapView(plugin, source, el, ctx) {
           originalChildren.forEach((n) => viewer.appendChild(n));
         });
       }
-      new import_obsidian94.Notice("Map opened in new window");
+      new import_obsidian96.Notice("Map opened in new window");
     });
     let scale2 = 1;
     let translateX = 0;
@@ -85546,7 +86300,7 @@ async function renderMapView(plugin, source, el, ctx) {
     const getHeadingOptions = (path) => {
       var _a2;
       const file = path ? plugin.app.vault.getAbstractFileByPath(path) : null;
-      if (!(file instanceof import_obsidian94.TFile)) return [];
+      if (!(file instanceof import_obsidian96.TFile)) return [];
       const headings = ((_a2 = plugin.app.metadataCache.getFileCache(file)) == null ? void 0 : _a2.headings) || [];
       return headings.map((h) => {
         var _a3, _b2, _c2;
@@ -85563,7 +86317,7 @@ async function renderMapView(plugin, source, el, ctx) {
     };
     const getRoomAnnotationNotePath = (annotation) => {
       const storedPath = annotation.notePath || "";
-      if (storedPath && plugin.app.vault.getAbstractFileByPath(storedPath) instanceof import_obsidian94.TFile) return storedPath;
+      if (storedPath && plugin.app.vault.getAbstractFileByPath(storedPath) instanceof import_obsidian96.TFile) return storedPath;
       const fallbackPath = notePath || "";
       const heading = String(annotation.heading || "").trim();
       if (fallbackPath && (!heading || noteHasHeading(fallbackPath, heading))) return fallbackPath;
@@ -85574,7 +86328,7 @@ async function renderMapView(plugin, source, el, ctx) {
       const heading = String(annotation.heading || "").trim();
       if (!path || !heading) return "";
       const file = plugin.app.vault.getAbstractFileByPath(path);
-      if (!(file instanceof import_obsidian94.TFile)) return "";
+      if (!(file instanceof import_obsidian96.TFile)) return "";
       const headings = getHeadingOptions(path);
       const current = headings.find((h) => h.heading === heading);
       if (!current) return "";
@@ -85604,7 +86358,7 @@ async function renderMapView(plugin, source, el, ctx) {
       openBtn.addEventListener("click", async () => {
         const path = getRoomAnnotationNotePath(annotation);
         const file = path ? plugin.app.vault.getAbstractFileByPath(path) : null;
-        if (file instanceof import_obsidian94.TFile) {
+        if (file instanceof import_obsidian96.TFile) {
           await plugin.app.workspace.getLeaf(false).openFile(file);
           closeRoomAnnotationPopover();
         }
@@ -85620,7 +86374,7 @@ async function renderMapView(plugin, source, el, ctx) {
       const excerpt = await getLinkedSectionExcerpt(annotation);
       body.empty();
       if (excerpt) {
-        await import_obsidian94.MarkdownRenderer.render(plugin.app, excerpt, body, getRoomAnnotationNotePath(annotation), plugin);
+        await import_obsidian96.MarkdownRenderer.render(plugin.app, excerpt, body, getRoomAnnotationNotePath(annotation), plugin);
       } else {
         body.setText("No section preview available.");
       }
@@ -85636,7 +86390,7 @@ async function renderMapView(plugin, source, el, ctx) {
     };
     const openRoomAnnotationModal = (annotation) => {
       const headingOptions = getHeadingOptions(getRoomAnnotationNotePath(annotation));
-      const modal = new class extends import_obsidian94.Modal {
+      const modal = new class extends import_obsidian96.Modal {
         onOpen() {
           const { contentEl } = this;
           contentEl.empty();
@@ -85649,10 +86403,10 @@ async function renderMapView(plugin, source, el, ctx) {
           let fontColor = getRoomAnnotationFontColor(annotation);
           let badgeSize = getRoomAnnotationBadgeSize(annotation);
           let fontSize = getRoomAnnotationFontSize(annotation);
-          new import_obsidian94.Setting(contentEl).setName("Label").setDesc("Short number or text shown on the DM map layer.").addText((text) => text.setPlaceholder("1").setValue(label).onChange((value) => {
+          new import_obsidian96.Setting(contentEl).setName("Label").setDesc("Short number or text shown on the DM map layer.").addText((text) => text.setPlaceholder("1").setValue(label).onChange((value) => {
             label = value;
           }));
-          new import_obsidian94.Setting(contentEl).setName("Linked note").setDesc("Defaults to the note containing this map.").addText((text) => text.setPlaceholder(notePath || "Path/To/Note.md").setValue(notePathValue).onChange((value) => {
+          new import_obsidian96.Setting(contentEl).setName("Linked note").setDesc("Defaults to the note containing this map.").addText((text) => text.setPlaceholder(notePath || "Path/To/Note.md").setValue(notePathValue).onChange((value) => {
             notePathValue = value;
           }));
           const listId = `dnd-room-heading-${Date.now()}`;
@@ -85660,7 +86414,7 @@ async function renderMapView(plugin, source, el, ctx) {
           for (const option of headingOptions) {
             datalist.createEl("option", { attr: { value: option.heading } });
           }
-          new import_obsidian94.Setting(contentEl).setName("Section").setDesc("Choose a heading from the linked note for the quick preview.").addText((text) => {
+          new import_obsidian96.Setting(contentEl).setName("Section").setDesc("Choose a heading from the linked note for the quick preview.").addText((text) => {
             text.setPlaceholder("Room 1").setValue(heading).onChange((value) => {
               var _a2;
               heading = value;
@@ -85668,19 +86422,19 @@ async function renderMapView(plugin, source, el, ctx) {
             });
             text.inputEl.setAttribute("list", listId);
           });
-          new import_obsidian94.Setting(contentEl).setName("Badge color").addColorPicker((picker) => picker.setValue(color).onChange((value) => {
+          new import_obsidian96.Setting(contentEl).setName("Badge color").addColorPicker((picker) => picker.setValue(color).onChange((value) => {
             color = value;
           }));
-          new import_obsidian94.Setting(contentEl).setName("Font color").addColorPicker((picker) => picker.setValue(fontColor).onChange((value) => {
+          new import_obsidian96.Setting(contentEl).setName("Font color").addColorPicker((picker) => picker.setValue(fontColor).onChange((value) => {
             fontColor = value;
           }));
-          new import_obsidian94.Setting(contentEl).setName("Badge size").setDesc("Height of the annotation badge. Saved as the default for this map.").addText((text) => text.setPlaceholder("32").setValue(String(badgeSize)).onChange((value) => {
+          new import_obsidian96.Setting(contentEl).setName("Badge size").setDesc("Height of the annotation badge. Saved as the default for this map.").addText((text) => text.setPlaceholder("32").setValue(String(badgeSize)).onChange((value) => {
             badgeSize = Math.max(24, Math.min(160, parseInt(value, 10) || 32));
           }));
-          new import_obsidian94.Setting(contentEl).setName("Font size").setDesc("Text size inside the badge. Saved as the default for this map.").addText((text) => text.setPlaceholder("14").setValue(String(fontSize)).onChange((value) => {
+          new import_obsidian96.Setting(contentEl).setName("Font size").setDesc("Text size inside the badge. Saved as the default for this map.").addText((text) => text.setPlaceholder("14").setValue(String(fontSize)).onChange((value) => {
             fontSize = Math.max(8, Math.min(72, parseInt(value, 10) || 14));
           }));
-          new import_obsidian94.Setting(contentEl).addButton((btn) => btn.setButtonText("Save").setCta().onClick(() => {
+          new import_obsidian96.Setting(contentEl).addButton((btn) => btn.setButtonText("Save").setCta().onClick(() => {
             var _a2;
             const now = Date.now();
             saveToHistory();
@@ -85707,7 +86461,7 @@ async function renderMapView(plugin, source, el, ctx) {
       modal.open();
     };
     const showRoomAnnotationContextMenu = (annotation, e) => {
-      const menu = new import_obsidian94.Menu();
+      const menu = new import_obsidian96.Menu();
       menu.addItem((item) => item.setTitle("Open Preview").onClick(() => showRoomAnnotationPopover(annotation, e.clientX, e.clientY)));
       menu.addItem((item) => item.setTitle("Edit").onClick(() => openRoomAnnotationModal(annotation)));
       menu.addSeparator();
@@ -85780,7 +86534,7 @@ async function renderMapView(plugin, source, el, ctx) {
         const input = document.createElement("textarea");
         input.value = ta.text === "Text" ? "" : ta.text;
         input.style.cssText = "width:300px;height:80px;resize:both;";
-        const modal = new class extends import_obsidian94.Modal {
+        const modal = new class extends import_obsidian96.Modal {
           onOpen() {
             this.contentEl.createEl("h3", { text: "Edit Text Annotation" });
             this.contentEl.appendChild(input);
@@ -85801,14 +86555,14 @@ async function renderMapView(plugin, source, el, ctx) {
         modal.open();
         return;
       }
-      const menu = new import_obsidian94.Menu();
+      const menu = new import_obsidian96.Menu();
       menu.addItem((item) => {
         item.setTitle("\u270F\uFE0F Edit Text");
         item.onClick(() => {
           const input = document.createElement("textarea");
           input.value = ta.text;
           input.style.cssText = "width:300px;height:80px;resize:both;";
-          const modal = new class extends import_obsidian94.Modal {
+          const modal = new class extends import_obsidian96.Modal {
             onOpen() {
               this.contentEl.createEl("h3", { text: "Edit Text Annotation" });
               this.contentEl.appendChild(input);
@@ -87030,7 +87784,7 @@ async function renderMapView(plugin, source, el, ctx) {
       } else if (tool === "target-distance") {
         targetDistBtn.addClass("active");
         viewport.style.cursor = "crosshair";
-        new import_obsidian94.Notice("Token Distance: Click origin token, then target token", 3e3);
+        new import_obsidian96.Notice("Token Distance: Click origin token, then target token", 3e3);
       } else if (tool === "move-grid") {
         moveGridBtn.addClass("active");
         viewport.style.cursor = "move";
@@ -87041,17 +87795,17 @@ async function renderMapView(plugin, source, el, ctx) {
         const _pvMapId = config.mapId || resourcePath;
         const _pvProj = (_a2 = plugin.projectionManager) == null ? void 0 : _a2.getProjectionForMap(_pvMapId);
         if (_pvProj && _pvProj.state.mode === "battle") {
-          new import_obsidian94.Notice("View Mode is disabled during Battle Mode projection");
+          new import_obsidian96.Notice("View Mode is disabled during Battle Mode projection");
           return;
         }
         viewport.style.cursor = "crosshair";
         viewport.focus();
-        new import_obsidian94.Notice("Player View Mode: Drag to position, Q/E or [/] to rotate 90\xB0", 4e3);
+        new import_obsidian96.Notice("Player View Mode: Drag to position, Q/E or [/] to rotate 90\xB0", 4e3);
       } else if (tool === "eraser") {
         eraserBtn.addClass("active");
         viewport.style.cursor = "crosshair";
         eraserCursorPos = null;
-        new import_obsidian94.Notice("Eraser: Click or drag to erase annotations", 3e3);
+        new import_obsidian96.Notice("Eraser: Click or drag to erase annotations", 3e3);
       } else if (tool === "fog") {
         fogBtn.addClass("active");
         viewport.style.cursor = "crosshair";
@@ -87059,35 +87813,35 @@ async function renderMapView(plugin, source, el, ctx) {
         wallsBtn.addClass("active");
         viewport.style.cursor = "crosshair";
         viewport.focus();
-        new import_obsidian94.Notice("Walls Mode: Click to add points, Double-click to finish, Escape to cancel", 4e3);
+        new import_obsidian96.Notice("Walls Mode: Click to add points, Double-click to finish, Escape to cancel", 4e3);
       } else if (tool === "magic-wand") {
         wallsBtn.addClass("active");
         magicWandBtn.addClass("active");
         viewport.style.cursor = "crosshair";
         viewport.focus();
-        new import_obsidian94.Notice("Magic Wand: Click on dark areas to auto-detect and create walls. Adjust threshold/tolerance in the picker.", 5e3);
+        new import_obsidian96.Notice("Magic Wand: Click on dark areas to auto-detect and create walls. Adjust threshold/tolerance in the picker.", 5e3);
       } else if (tool === "lights") {
         lightsBtn.addClass("active");
         viewport.style.cursor = "crosshair";
         viewport.focus();
-        new import_obsidian94.Notice("Lights Mode: Click to place light source, use picker to select type", 4e3);
+        new import_obsidian96.Notice("Lights Mode: Click to place light source, use picker to select type", 4e3);
       } else if (tool === "walllight-draw") {
         lightsBtn.addClass("active");
         viewport.style.cursor = "crosshair";
         viewport.focus();
-        new import_obsidian94.Notice("Wall Light: Click start point, then click end point to place light strip", 4e3);
+        new import_obsidian96.Notice("Wall Light: Click start point, then click end point to place light strip", 4e3);
       } else if (tool === "elevation-paint") {
         elevationPaintBtn.addClass("active");
         viewport.style.cursor = "crosshair";
-        new import_obsidian94.Notice("Elevation Paint: Click or drag to set tile elevation", 3e3);
+        new import_obsidian96.Notice("Elevation Paint: Click or drag to set tile elevation", 3e3);
       } else if (tool === "difficult-terrain") {
         difficultTerrainBtn.addClass("active");
         viewport.style.cursor = "crosshair";
-        new import_obsidian94.Notice("Difficult Terrain: Click or drag to mark tiles. Movement costs double.", 3e3);
+        new import_obsidian96.Notice("Difficult Terrain: Click or drag to mark tiles. Movement costs double.", 3e3);
       } else if (tool === "room-annotation") {
         roomAnnotationBtn.addClass("active");
         viewport.style.cursor = "crosshair";
-        new import_obsidian94.Notice("DM Room Notes: Click to place or open a room note annotation", 3e3);
+        new import_obsidian96.Notice("DM Room Notes: Click to place or open a room note annotation", 3e3);
       } else if (tool === "poi") {
         poiBtn.addClass("active");
         viewport.style.cursor = "crosshair";
@@ -87102,19 +87856,19 @@ async function renderMapView(plugin, source, el, ctx) {
         hexcrawlMoveHoverHex = null;
         redrawAnnotations();
         if (viewport._syncPlayerView) viewport._syncPlayerView();
-        new import_obsidian94.Notice(hLoc(hcLang, "clickHexTravel"), 3e3);
+        new import_obsidian96.Notice(hLoc(hcLang, "clickHexTravel"), 3e3);
       } else if (tool === "set-start-hex") {
         setStartHexBtn.addClass("active");
         viewport.style.cursor = "crosshair";
-        new import_obsidian94.Notice(hLoc(hcLang, "clickHexSetStart"), 3e3);
+        new import_obsidian96.Notice(hLoc(hcLang, "clickHexSetStart"), 3e3);
       } else if (tool === "hex-desc") {
         hexDescBtn.addClass("active");
         viewport.style.cursor = "crosshair";
-        new import_obsidian94.Notice(hLoc(hcLang, "clickHexEditDesc"), 3e3);
+        new import_obsidian96.Notice(hLoc(hcLang, "clickHexEditDesc"), 3e3);
       } else if (tool === "env-asset") {
         envAssetBtn.addClass("active");
         viewport.style.cursor = "crosshair";
-        new import_obsidian94.Notice("Environment Assets: Click to place, click to select, right-click for options", 4e3);
+        new import_obsidian96.Notice("Environment Assets: Click to place, click to select, right-click for options", 4e3);
       }
       if (tool !== "env-asset" && tool !== "select") {
         selectedEnvAssetInstanceId = null;
@@ -87348,7 +88102,7 @@ async function renderMapView(plugin, source, el, ctx) {
       if (isCalibrating) {
         if (!calibrationPoint1) {
           calibrationPoint1 = { x: mapPos.x, y: mapPos.y };
-          new import_obsidian94.Notice("Click second point to complete measurement");
+          new import_obsidian96.Notice("Click second point to complete measurement");
           redrawAnnotations();
         } else {
           calibrationPoint2 = { x: mapPos.x, y: mapPos.y };
@@ -87381,7 +88135,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawGridOverlays();
               redrawAnnotations();
               await plugin.saveMapAnnotations(config, el);
-              new import_obsidian94.Notice("Grid calibration applied");
+              new import_obsidian96.Notice("Grid calibration applied");
             },
             pixelDistance
           ).open();
@@ -87632,7 +88386,7 @@ async function renderMapView(plugin, source, el, ctx) {
           }
         }
         if (!campaignFolder) {
-          new import_obsidian94.Notice("\u26A0\uFE0F Unable to determine campaign folder. Note or map must be in ttrpgs/[campaign-name]/ structure.");
+          new import_obsidian96.Notice("\u26A0\uFE0F Unable to determine campaign folder. Note or map must be in ttrpgs/[campaign-name]/ structure.");
           return;
         }
         Promise.resolve().then(() => (init_PoiModals(), PoiModals_exports)).then(({ PoiPickerModal: PoiPickerModal2 }) => {
@@ -87662,7 +88416,7 @@ async function renderMapView(plugin, source, el, ctx) {
               }
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
-              new import_obsidian94.Notice(hLoc(hcLang, "poiAssigned"));
+              new import_obsidian96.Notice(hLoc(hcLang, "poiAssigned"));
             }
           ).open();
         });
@@ -87786,10 +88540,10 @@ async function renderMapView(plugin, source, el, ctx) {
           if (foundIdx >= 0) {
             targetDistOriginIdx = foundIdx;
             targetDistState = "selecting-target";
-            new import_obsidian94.Notice("Now click the target token", 2e3);
+            new import_obsidian96.Notice("Now click the target token", 2e3);
             redrawAnnotations();
           } else {
-            new import_obsidian94.Notice("Click on a token to set as origin", 2e3);
+            new import_obsidian96.Notice("Click on a token to set as origin", 2e3);
           }
         } else if (targetDistState === "selecting-target") {
           let foundIdx = -1;
@@ -87825,7 +88579,7 @@ async function renderMapView(plugin, source, el, ctx) {
         }
       } else if (activeTool === "marker") {
         if (!selectedMarkerId) {
-          new import_obsidian94.Notice("Please select a marker first");
+          new import_obsidian96.Notice("Please select a marker first");
           return;
         }
         let placeX = mapPos.x;
@@ -87868,7 +88622,7 @@ async function renderMapView(plugin, source, el, ctx) {
         plugin.saveMapAnnotations(config, el);
         updateGridToolsVisibility();
         refreshVisionSelector();
-        new import_obsidian94.Notice("Marker placed");
+        new import_obsidian96.Notice("Marker placed");
       } else if (activeTool === "env-asset") {
         if (selectedEnvAssetInstanceId) {
           const selInst = (config.envAssets || []).find((a) => a.id === selectedEnvAssetInstanceId);
@@ -87930,7 +88684,7 @@ async function renderMapView(plugin, source, el, ctx) {
             redrawAnnotations();
             if (viewport._syncPlayerView) viewport._syncPlayerView();
             plugin.saveMapAnnotations(config, el);
-            new import_obsidian94.Notice(`Placed: ${assetDef.name}`);
+            new import_obsidian96.Notice(`Placed: ${assetDef.name}`);
           }
         } else {
           selectedEnvAssetInstanceId = null;
@@ -87946,7 +88700,7 @@ async function renderMapView(plugin, source, el, ctx) {
             plugin.saveMapAnnotations(config, el);
             updateGridToolsVisibility();
             if (viewport._syncPlayerView) viewport._syncPlayerView();
-            new import_obsidian94.Notice("AoE effect removed");
+            new import_obsidian96.Notice("AoE effect removed");
           }
           lastPlacedAoeId = null;
         } else if (!aoeOrigin) {
@@ -87973,7 +88727,7 @@ async function renderMapView(plugin, source, el, ctx) {
           redrawAnnotations();
           plugin.saveMapAnnotations(config, el);
           updateGridToolsVisibility();
-          new import_obsidian94.Notice("AoE effect placed (click again to remove)");
+          new import_obsidian96.Notice("AoE effect placed (click again to remove)");
         }
       } else if (activeTool === "eraser") {
         isErasing = true;
@@ -88107,14 +88861,14 @@ async function renderMapView(plugin, source, el, ctx) {
             config.walls.push(...result.walls);
             plugin.saveMapAnnotations(config, el);
             if (viewport._syncPlayerView) viewport._syncPlayerView();
-            new import_obsidian94.Notice(`\u{1FA84} ${result.walls.length} wall segments created`);
+            new import_obsidian96.Notice(`\u{1FA84} ${result.walls.length} wall segments created`);
           } else {
-            new import_obsidian94.Notice("No walls detected \u2014 try clicking a dark area or adjusting threshold");
+            new import_obsidian96.Notice("No walls detected \u2014 try clicking a dark area or adjusting threshold");
           }
           redrawAnnotations();
         } catch (err) {
           console.error("[MagicWand] Detection failed:", err);
-          new import_obsidian94.Notice("Magic wand detection failed \u2014 see console for details");
+          new import_obsidian96.Notice("Magic wand detection failed \u2014 see console for details");
         }
       } else if (activeTool === "lights") {
         if (selectedLightSource) {
@@ -88132,9 +88886,9 @@ async function renderMapView(plugin, source, el, ctx) {
           if (viewport._syncPlayerView) {
             viewport._syncPlayerView();
           }
-          new import_obsidian94.Notice(`${light.name} placed`);
+          new import_obsidian96.Notice(`${light.name} placed`);
         } else {
-          new import_obsidian94.Notice("Please select a light source type first");
+          new import_obsidian96.Notice("Please select a light source type first");
         }
       } else if (activeTool === "walllight-draw") {
         wallLightPoints.push({ x: mapPos.x, y: mapPos.y });
@@ -88161,7 +88915,7 @@ async function renderMapView(plugin, source, el, ctx) {
           redrawAnnotations();
           plugin.saveMapAnnotations(config, el);
           if (viewport._syncPlayerView) viewport._syncPlayerView();
-          new import_obsidian94.Notice("Wall light placed");
+          new import_obsidian96.Notice("Wall light placed");
         } else {
           wallLightPreviewPos = { x: mapPos.x, y: mapPos.y };
           redrawAnnotations();
@@ -88214,7 +88968,7 @@ async function renderMapView(plugin, source, el, ctx) {
         const terrain = getTerrainDefinition(
           new HexcrawlTracker(config.hexcrawlState, config.hexTerrains || [], config.hexClimates || []).getTerrainAt(hex.col, hex.row)
         );
-        new import_obsidian94.Notice(hLoc(hcLang, "startPositionSet", { col: hex.col, row: hex.row, icon: terrain.icon, name: hLoc(hcLang, `terrain.${terrain.id}`) }));
+        new import_obsidian96.Notice(hLoc(hcLang, "startPositionSet", { col: hex.col, row: hex.row, icon: terrain.icon, name: hLoc(hcLang, `terrain.${terrain.id}`) }));
         setActiveTool("pan");
       } else if (activeTool === "hex-desc") {
         const hex = pixelToHex(mapPos.x, mapPos.y);
@@ -88242,7 +88996,7 @@ async function renderMapView(plugin, source, el, ctx) {
             }
             plugin.saveMapAnnotations(config, el);
             redrawTerrainLayer();
-            new import_obsidian94.Notice(newDesc ? hLoc(hcLang, "descSaved", { col: hex.col, row: hex.row }) : hLoc(hcLang, "descCleared", { col: hex.col, row: hex.row }));
+            new import_obsidian96.Notice(newDesc ? hLoc(hcLang, "descSaved", { col: hex.col, row: hex.row }) : hLoc(hcLang, "descCleared", { col: hex.col, row: hex.row }));
           },
           hcLang
         ).open();
@@ -88286,20 +89040,20 @@ async function renderMapView(plugin, source, el, ctx) {
         const hex = pixelToHex(mapPos.x, mapPos.y);
         const hcState = config.hexcrawlState;
         if (!hcState || !hcState.enabled) {
-          new import_obsidian94.Notice(hLoc(hcLang, "enableHexcrawlFirst"));
+          new import_obsidian96.Notice(hLoc(hcLang, "enableHexcrawlFirst"));
           return;
         }
         if (hcState.partyPosition) {
           const dist = hexDistance(hcState.partyPosition.col, hcState.partyPosition.row, hex.col, hex.row);
           if (dist !== 1) {
-            new import_obsidian94.Notice(hLoc(hcLang, "mustMoveAdjacent"));
+            new import_obsidian96.Notice(hLoc(hcLang, "mustMoveAdjacent"));
             return;
           }
         }
         const prevPartyPos = hcState.partyPosition ? { col: hcState.partyPosition.col, row: hcState.partyPosition.row } : null;
         const tracker = new HexcrawlTracker(hcState, config.hexTerrains || [], config.hexClimates || []);
         if (!tracker.canMoveToday()) {
-          new import_obsidian94.Notice(hLoc(hcLang, "noMovementBudget"));
+          new import_obsidian96.Notice(hLoc(hcLang, "noMovementBudget"));
           return;
         }
         openHexProcedureModal(plugin.app, plugin, tracker, hex.col, hex.row, config.customTerrainDescriptions).then((result) => {
@@ -88317,7 +89071,7 @@ async function renderMapView(plugin, source, el, ctx) {
           plugin.refreshHexcrawlView();
           redrawAnnotations();
           viewport._syncPlayerView();
-          new import_obsidian94.Notice(hLoc(hcLang, "traveledToHex", { col: hex.col, row: hex.row }));
+          new import_obsidian96.Notice(hLoc(hcLang, "traveledToHex", { col: hex.col, row: hex.row }));
         });
       } else if (activeTool === "player-view") {
         const existingRect = plugin._gmViewRect || viewport._gmViewRect;
@@ -88969,7 +89723,7 @@ async function renderMapView(plugin, source, el, ctx) {
         fogPolygonPoints = [];
         redrawAnnotations();
         plugin.saveMapAnnotations(config, el);
-        new import_obsidian94.Notice(`Fog polygon ${fogMode === "reveal" ? "revealed" : fogMode === "magic-darkness" ? "shrouded in magic darkness" : "hidden"}`);
+        new import_obsidian96.Notice(`Fog polygon ${fogMode === "reveal" ? "revealed" : fogMode === "magic-darkness" ? "shrouded in magic darkness" : "hidden"}`);
         e.preventDefault();
         e.stopPropagation();
       } else if (activeTool === "walls" && wallPoints.length >= 2) {
@@ -88991,7 +89745,7 @@ async function renderMapView(plugin, source, el, ctx) {
         wallPreviewPos = null;
         redrawAnnotations();
         plugin.saveMapAnnotations(config, el);
-        new import_obsidian94.Notice(`${wallDef.name} chain saved (${config.walls.length} total segments)`);
+        new import_obsidian96.Notice(`${wallDef.name} chain saved (${config.walls.length} total segments)`);
         e.preventDefault();
         e.stopPropagation();
       }
@@ -89087,7 +89841,7 @@ async function renderMapView(plugin, source, el, ctx) {
             config.fogOfWar.regions.push(region);
             redrawAnnotations();
             plugin.saveMapAnnotations(config, el);
-            new import_obsidian94.Notice(`Fog region ${fogMode === "reveal" ? "revealed" : fogMode === "magic-darkness" ? "shrouded in magic darkness" : "hidden"}`);
+            new import_obsidian96.Notice(`Fog region ${fogMode === "reveal" ? "revealed" : fogMode === "magic-darkness" ? "shrouded in magic darkness" : "hidden"}`);
           }
         }
         fogDragStart = null;
@@ -89375,7 +90129,7 @@ async function renderMapView(plugin, source, el, ctx) {
         if (annotEraserHadRemoval) {
           plugin.saveMapAnnotations(config, el);
           updateGridToolsVisibility();
-          new import_obsidian94.Notice("Annotations erased");
+          new import_obsidian96.Notice("Annotations erased");
           if (viewport._syncPlayerView) viewport._syncPlayerView();
         }
         annotEraserHadRemoval = false;
@@ -89384,7 +90138,7 @@ async function renderMapView(plugin, source, el, ctx) {
         if (eraserHadRemoval) {
           plugin.saveMapAnnotations(config, el);
           updateGridToolsVisibility();
-          new import_obsidian94.Notice("Annotations erased");
+          new import_obsidian96.Notice("Annotations erased");
         }
         eraserHadRemoval = false;
       }
@@ -89627,13 +90381,13 @@ async function renderMapView(plugin, source, el, ctx) {
                   marker.elevation.depth = newPos.elevation;
                 }
                 const progress = Math.round(newIndex / (tunnel.path.length - 1) * 100);
-                new import_obsidian94.Notice(`Tunnel progress: ${progress}%`, 1e3);
+                new import_obsidian96.Notice(`Tunnel progress: ${progress}%`, 1e3);
                 redrawAnnotations();
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
               } else if (newIndex === tunnel.path.length - 1 && e.key === "ArrowUp") {
-                new import_obsidian94.Notice("Reached tunnel exit - right-click to exit tunnel");
+                new import_obsidian96.Notice("Reached tunnel exit - right-click to exit tunnel");
               } else if (newIndex === 0 && e.key === "ArrowDown") {
-                new import_obsidian94.Notice("Reached tunnel entrance - right-click to exit tunnel");
+                new import_obsidian96.Notice("Reached tunnel entrance - right-click to exit tunnel");
               }
             } else if (e.key === "ArrowRight") {
               let dist = 0;
@@ -89659,11 +90413,11 @@ async function renderMapView(plugin, source, el, ctx) {
                   marker.elevation.depth = newPos.elevation;
                 }
                 const progress = Math.round(newIndex / (tunnel.path.length - 1) * 100);
-                new import_obsidian94.Notice(`Tunnel progress: ${progress}%`, 1e3);
+                new import_obsidian96.Notice(`Tunnel progress: ${progress}%`, 1e3);
                 redrawAnnotations();
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
               } else {
-                new import_obsidian94.Notice("Reached tunnel exit - right-click to exit tunnel");
+                new import_obsidian96.Notice("Reached tunnel exit - right-click to exit tunnel");
               }
             } else if (e.key === "ArrowLeft") {
               let dist = 0;
@@ -89689,11 +90443,11 @@ async function renderMapView(plugin, source, el, ctx) {
                   marker.elevation.depth = newPos.elevation;
                 }
                 const progress = Math.round(newIndex / (tunnel.path.length - 1) * 100);
-                new import_obsidian94.Notice(`Tunnel progress: ${progress}%`, 1e3);
+                new import_obsidian96.Notice(`Tunnel progress: ${progress}%`, 1e3);
                 redrawAnnotations();
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
               } else {
-                new import_obsidian94.Notice("Reached tunnel entrance - right-click to exit tunnel");
+                new import_obsidian96.Notice("Reached tunnel entrance - right-click to exit tunnel");
               }
             }
           }
@@ -89719,13 +90473,13 @@ async function renderMapView(plugin, source, el, ctx) {
           wallPreviewPos = null;
           redrawAnnotations();
           plugin.saveMapAnnotations(config, el);
-          new import_obsidian94.Notice(`${wallDef.name} chain added (${config.walls.length} segments total)`);
+          new import_obsidian96.Notice(`${wallDef.name} chain added (${config.walls.length} segments total)`);
         } else if (e.key === "Escape") {
           e.preventDefault();
           wallPoints = [];
           wallPreviewPos = null;
           redrawAnnotations();
-          new import_obsidian94.Notice("Wall drawing cancelled");
+          new import_obsidian96.Notice("Wall drawing cancelled");
         }
       }
       if (activeTool === "player-view") {
@@ -89920,7 +90674,7 @@ async function renderMapView(plugin, source, el, ctx) {
           const wt = wall.type || "wall";
           const wallDef = WALL_TYPES[wt] || WALL_TYPES.wall;
           const isOpen = wall.open === true;
-          const menu = new import_obsidian94.Menu();
+          const menu = new import_obsidian96.Menu();
           menu.addItem((item) => item.setTitle(`${wallDef.icon} ${wall.name || wallDef.name}`).setDisabled(true));
           menu.addSeparator();
           menu.addItem(
@@ -89930,7 +90684,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian94.Notice(wall.open ? `${wallDef.name} opened` : `${wallDef.name} closed`);
+              new import_obsidian96.Notice(wall.open ? `${wallDef.name} opened` : `${wallDef.name} closed`);
             })
           );
           if (isPivotType2(wt)) {
@@ -89942,7 +90696,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 redrawAnnotations();
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian94.Notice("Open direction reversed");
+                new import_obsidian96.Notice("Open direction reversed");
               })
             );
             menu.addItem(
@@ -89952,7 +90706,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 redrawAnnotations();
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian94.Notice(`Hinge moved to ${wall.pivotEnd}`);
+                new import_obsidian96.Notice(`Hinge moved to ${wall.pivotEnd}`);
               })
             );
           }
@@ -89981,7 +90735,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 refreshVisionSelector();
                 redrawAnnotations();
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian94.Notice("Token updated");
+                new import_obsidian96.Notice("Token updated");
               }).open();
             });
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
@@ -90011,7 +90765,7 @@ async function renderMapView(plugin, source, el, ctx) {
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               _applyAutoPan(true);
               if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-              new import_obsidian94.Notice(`Marker moved to ${layer} layer`);
+              new import_obsidian96.Notice(`Marker moved to ${layer} layer`);
             });
           });
           contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
@@ -90029,7 +90783,7 @@ async function renderMapView(plugin, source, el, ctx) {
                   redrawAnnotations();
                   plugin.saveMapAnnotations(config, el);
                   if (viewport._syncPlayerView) viewport._syncPlayerView();
-                  new import_obsidian94.Notice(`${getMarkerDisplayName(member)} released from group`);
+                  new import_obsidian96.Notice(`${getMarkerDisplayName(member)} released from group`);
                 }
                 if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
               });
@@ -90044,7 +90798,7 @@ async function renderMapView(plugin, source, el, ctx) {
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-              new import_obsidian94.Notice(count > 0 ? `Released ${count} tokens` : "No safe adjacent tile found");
+              new import_obsidian96.Notice(count > 0 ? `Released ${count} tokens` : "No safe adjacent tile found");
             });
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
           }
@@ -90067,7 +90821,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian94.Notice(m.visibleToPlayers ? "Token visible to players" : "Token hidden from players");
+              new import_obsidian96.Notice(m.visibleToPlayers ? "Token visible to players" : "Token hidden from players");
             });
             visibilityRow.addEventListener("click", (e2) => {
               if (e2.target !== visibilityToggle) {
@@ -90100,7 +90854,7 @@ async function renderMapView(plugin, source, el, ctx) {
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-              new import_obsidian94.Notice(`Token resized to ${((_a3 = CREATURE_SIZE_OPTIONS.find((opt) => opt.value === sizeSelect.value)) == null ? void 0 : _a3.label) || sizeSelect.value}`);
+              new import_obsidian96.Notice(`Token resized to ${((_a3 = CREATURE_SIZE_OPTIONS.find((opt) => opt.value === sizeSelect.value)) == null ? void 0 : _a3.label) || sizeSelect.value}`);
             });
             sizeSelect.addEventListener("click", (e2) => e2.stopPropagation());
           }
@@ -90132,7 +90886,7 @@ async function renderMapView(plugin, source, el, ctx) {
                     plugin.saveMapAnnotations(config, el);
                     updateGridToolsVisibility();
                     if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                    new import_obsidian94.Notice("AoE effect removed");
+                    new import_obsidian96.Notice("AoE effect removed");
                     return;
                   }
                 }
@@ -90145,7 +90899,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 pendingAoeAnchorMarkerId = m.id;
                 setActiveTool("aoe");
                 if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                new import_obsidian94.Notice(`Place ${label}: move mouse to set size, click to confirm`);
+                new import_obsidian96.Notice(`Place ${label}: move mouse to set size, click to confirm`);
               });
             });
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
@@ -90173,7 +90927,7 @@ async function renderMapView(plugin, source, el, ctx) {
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               refreshVisionSelector();
               if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-              new import_obsidian94.Notice("Light removed from token");
+              new import_obsidian96.Notice("Light removed from token");
             });
             lightOptions.forEach(({ type, icon, label }) => {
               const btn = lightRow.createEl("button", {
@@ -90196,7 +90950,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
                 refreshVisionSelector();
                 if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                new import_obsidian94.Notice(`${lightDef.name} attached to token`);
+                new import_obsidian96.Notice(`${lightDef.name} attached to token`);
               });
             });
             if (m.light) {
@@ -90217,7 +90971,7 @@ async function renderMapView(plugin, source, el, ctx) {
               mlColorPicker.addEventListener("change", () => {
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian94.Notice("Light colour updated");
+                new import_obsidian96.Notice("Light colour updated");
               });
               mlColorPicker.addEventListener("click", (e2) => e2.stopPropagation());
               const mlResetBtn = mlColorRow.createEl("button", { text: "Reset" });
@@ -90232,7 +90986,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 redrawAnnotations();
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian94.Notice("Light colour reset to default");
+                new import_obsidian96.Notice("Light colour reset to default");
               });
             }
             const darkRow = contextMenu.createDiv({ cls: "dnd-map-context-aoe-row" });
@@ -90261,7 +91015,7 @@ async function renderMapView(plugin, source, el, ctx) {
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               refreshVisionSelector();
-              new import_obsidian94.Notice(value > 0 ? `Darkvision set to ${value} ft` : "Darkvision removed");
+              new import_obsidian96.Notice(value > 0 ? `Darkvision set to ${value} ft` : "Darkvision removed");
             });
             darkInput.addEventListener("click", (e2) => e2.stopPropagation());
             darkInput.addEventListener("keydown", (e2) => {
@@ -90295,7 +91049,7 @@ async function renderMapView(plugin, source, el, ctx) {
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               refreshVisionSelector();
-              new import_obsidian94.Notice(value > 0 ? `Blindsight set to ${value} ft` : "Blindsight removed");
+              new import_obsidian96.Notice(value > 0 ? `Blindsight set to ${value} ft` : "Blindsight removed");
             });
             blindInput.addEventListener("click", (e2) => e2.stopPropagation());
             blindInput.addEventListener("keydown", (e2) => {
@@ -90329,7 +91083,7 @@ async function renderMapView(plugin, source, el, ctx) {
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               refreshVisionSelector();
-              new import_obsidian94.Notice(value > 0 ? `Tremorsense set to ${value} ft` : "Tremorsense removed");
+              new import_obsidian96.Notice(value > 0 ? `Tremorsense set to ${value} ft` : "Tremorsense removed");
             });
             tremInput.addEventListener("click", (e2) => e2.stopPropagation());
             tremInput.addEventListener("keydown", (e2) => {
@@ -90363,7 +91117,7 @@ async function renderMapView(plugin, source, el, ctx) {
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               refreshVisionSelector();
-              new import_obsidian94.Notice(value > 0 ? `Truesight set to ${value} ft` : "Truesight removed");
+              new import_obsidian96.Notice(value > 0 ? `Truesight set to ${value} ft` : "Truesight removed");
             });
             trueInput.addEventListener("click", (e2) => e2.stopPropagation());
             trueInput.addEventListener("keydown", (e2) => {
@@ -90393,7 +91147,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian94.Notice("Border color updated");
+              new import_obsidian96.Notice("Border color updated");
             });
             borderColorPicker.addEventListener("click", (e2) => e2.stopPropagation());
             const borderResetBtn = borderRow.createEl("button", {
@@ -90410,7 +91164,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian94.Notice("Border color reset to default");
+              new import_obsidian96.Notice("Border color reset to default");
             });
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
             const elevationHeader = contextMenu.createDiv({ cls: "dnd-map-context-menu-header" });
@@ -90463,7 +91217,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian94.Notice(value > 0 ? `Token flying at ${value} ft` : "Token returned to ground");
+              new import_obsidian96.Notice(value > 0 ? `Token flying at ${value} ft` : "Token returned to ground");
             });
             heightInput.addEventListener("click", (e2) => e2.stopPropagation());
             heightInput.addEventListener("keydown", (e2) => {
@@ -90529,7 +91283,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian94.Notice(value > 0 ? `Token at ${value} ft depth` : "Token surfaced");
+              new import_obsidian96.Notice(value > 0 ? `Token at ${value} ft depth` : "Token surfaced");
             });
             depthInput.addEventListener("click", (e2) => e2.stopPropagation());
             depthInput.addEventListener("keydown", (e2) => {
@@ -90571,10 +91325,10 @@ async function renderMapView(plugin, source, el, ctx) {
                 redrawAnnotations();
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian94.Notice("Burrowing enabled \u2014 tunnel path will be tracked");
+                new import_obsidian96.Notice("Burrowing enabled \u2014 tunnel path will be tracked");
               } else if (burrowCheckbox.checked && depthValue <= 0) {
                 burrowCheckbox.checked = false;
-                new import_obsidian94.Notice("Set depth first before enabling burrowing");
+                new import_obsidian96.Notice("Set depth first before enabling burrowing");
               } else {
                 delete m.elevation.isBurrowing;
                 delete m.elevation.leaveTunnel;
@@ -90595,7 +91349,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 redrawAnnotations();
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian94.Notice("Burrowing disabled \u2014 depth retained (diving/submerged)");
+                new import_obsidian96.Notice("Burrowing disabled \u2014 depth retained (diving/submerged)");
               }
             });
             burrowCheckbox.addEventListener("click", (e2) => e2.stopPropagation());
@@ -90624,17 +91378,17 @@ async function renderMapView(plugin, source, el, ctx) {
                     const tunnelCreatureSize = nearestTunnel.tunnel.creatureSize || "medium";
                     const tunnelSize = CREATURE_SIZE_SQUARES[tunnelCreatureSize] || 1;
                     if (tokenSize > tunnelSize) {
-                      new import_obsidian94.Notice(`This tunnel is too small! Created by ${tunnelCreatureSize} creature, token is ${tokenCreatureSize}`);
+                      new import_obsidian96.Notice(`This tunnel is too small! Created by ${tunnelCreatureSize} creature, token is ${tokenCreatureSize}`);
                       if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
                       return;
                     }
                     if (((_a3 = m.elevation) == null ? void 0 : _a3.height) && m.elevation.height > 0) {
-                      new import_obsidian94.Notice("Cannot enter tunnel while flying \u2014 land first");
+                      new import_obsidian96.Notice("Cannot enter tunnel while flying \u2014 land first");
                       if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
                       return;
                     }
                     if (!nearestTunnel.tunnel.path || nearestTunnel.tunnel.path.length === 0) {
-                      new import_obsidian94.Notice("This tunnel has no path yet");
+                      new import_obsidian96.Notice("This tunnel has no path yet");
                       if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
                       return;
                     }
@@ -90657,7 +91411,7 @@ async function renderMapView(plugin, source, el, ctx) {
                     plugin.saveMapAnnotations(config, el);
                     if (viewport._syncPlayerView) viewport._syncPlayerView();
                     if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                    new import_obsidian94.Notice("Entered tunnel - use arrow keys to navigate");
+                    new import_obsidian96.Notice("Entered tunnel - use arrow keys to navigate");
                   }
                 });
               }
@@ -90694,7 +91448,7 @@ async function renderMapView(plugin, source, el, ctx) {
                     plugin.saveMapAnnotations(config, el);
                     if (viewport._syncPlayerView) viewport._syncPlayerView();
                     if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                    new import_obsidian94.Notice("Exited tunnel");
+                    new import_obsidian96.Notice("Exited tunnel");
                   });
                 } else {
                   const statusText = tunnelActionsRow.createEl("span", {
@@ -90785,7 +91539,7 @@ async function renderMapView(plugin, source, el, ctx) {
             updateGridToolsVisibility();
             refreshVisionSelector();
             if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-            new import_obsidian94.Notice("Marker removed");
+            new import_obsidian96.Notice("Marker removed");
           });
           document.body.appendChild(contextMenu);
           const menuRect = contextMenu.getBoundingClientRect();
@@ -90846,7 +91600,7 @@ async function renderMapView(plugin, source, el, ctx) {
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-              new import_obsidian94.Notice(light.active ? `${light.name || "Light"} lit` : `${light.name || "Light"} extinguished`);
+              new import_obsidian96.Notice(light.active ? `${light.name || "Light"} lit` : `${light.name || "Light"} extinguished`);
             });
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
             if (light.type === "walllight") {
@@ -90914,7 +91668,7 @@ async function renderMapView(plugin, source, el, ctx) {
                   plugin.saveMapAnnotations(config, el);
                   if (viewport._syncPlayerView) viewport._syncPlayerView();
                   if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                  new import_obsidian94.Notice(`Changed to ${lightDef.name}`);
+                  new import_obsidian96.Notice(`Changed to ${lightDef.name}`);
                 });
               });
               if (light.cone) {
@@ -91009,7 +91763,7 @@ async function renderMapView(plugin, source, el, ctx) {
               colorPicker2.addEventListener("change", () => {
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian94.Notice(`Light colour set to ${light.customColor}`);
+                new import_obsidian96.Notice(`Light colour set to ${light.customColor}`);
               });
               colorPicker2.addEventListener("click", (e2) => e2.stopPropagation());
               const resetBtn = colorRow.createEl("button", { text: "Reset" });
@@ -91024,7 +91778,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 redrawAnnotations();
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
-                new import_obsidian94.Notice("Light colour reset to default");
+                new import_obsidian96.Notice("Light colour reset to default");
               });
             }
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
@@ -91044,7 +91798,7 @@ async function renderMapView(plugin, source, el, ctx) {
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-              new import_obsidian94.Notice("Light removed");
+              new import_obsidian96.Notice("Light removed");
             });
             document.body.appendChild(contextMenu);
             const menuRect = contextMenu.getBoundingClientRect();
@@ -91103,7 +91857,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
                 if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                new import_obsidian94.Notice(wall.open ? "Door opened" : "Door closed");
+                new import_obsidian96.Notice(wall.open ? "Door opened" : "Door closed");
               });
               if (isPivotType2(wallType)) {
                 const revOption = contextMenu.createDiv({ cls: "dnd-map-context-menu-item" });
@@ -91116,7 +91870,7 @@ async function renderMapView(plugin, source, el, ctx) {
                   plugin.saveMapAnnotations(config, el);
                   if (viewport._syncPlayerView) viewport._syncPlayerView();
                   if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                  new import_obsidian94.Notice("Open direction reversed");
+                  new import_obsidian96.Notice("Open direction reversed");
                 });
                 const hingeOption = contextMenu.createDiv({ cls: "dnd-map-context-menu-item" });
                 const curHinge = wall.pivotEnd || "start";
@@ -91128,7 +91882,7 @@ async function renderMapView(plugin, source, el, ctx) {
                   plugin.saveMapAnnotations(config, el);
                   if (viewport._syncPlayerView) viewport._syncPlayerView();
                   if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                  new import_obsidian94.Notice(`Hinge moved to ${wall.pivotEnd}`);
+                  new import_obsidian96.Notice(`Hinge moved to ${wall.pivotEnd}`);
                 });
               }
               contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
@@ -91171,7 +91925,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian94.Notice(wall.height ? `Wall height: ${wall.height} ft` : "Wall height: infinite");
+              new import_obsidian96.Notice(wall.height ? `Wall height: ${wall.height} ft` : "Wall height: infinite");
             });
             infiniteBtn.addEventListener("click", () => {
               saveToHistory();
@@ -91180,7 +91934,7 @@ async function renderMapView(plugin, source, el, ctx) {
               redrawAnnotations();
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
-              new import_obsidian94.Notice("Wall height: infinite");
+              new import_obsidian96.Notice("Wall height: infinite");
             });
             heightInput.addEventListener("click", (e2) => e2.stopPropagation());
             const typeHeader = contextMenu.createDiv({ cls: "dnd-map-context-menu-header" });
@@ -91205,7 +91959,7 @@ async function renderMapView(plugin, source, el, ctx) {
                 plugin.saveMapAnnotations(config, el);
                 if (viewport._syncPlayerView) viewport._syncPlayerView();
                 if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-                new import_obsidian94.Notice(`Changed to ${def.name}`);
+                new import_obsidian96.Notice(`Changed to ${def.name}`);
               });
             });
             contextMenu.createDiv({ cls: "dnd-map-context-menu-separator" });
@@ -91224,7 +91978,7 @@ async function renderMapView(plugin, source, el, ctx) {
               plugin.saveMapAnnotations(config, el);
               if (viewport._syncPlayerView) viewport._syncPlayerView();
               if (contextMenu.parentNode) contextMenu.parentNode.removeChild(contextMenu);
-              new import_obsidian94.Notice("Wall removed");
+              new import_obsidian96.Notice("Wall removed");
             });
             document.body.appendChild(contextMenu);
             const menuRect = contextMenu.getBoundingClientRect();
@@ -91368,7 +92122,7 @@ async function renderMapView(plugin, source, el, ctx) {
     });
     linkEncounterBtn.addEventListener("click", (evt) => {
       var _a2, _b2, _c2;
-      const menu = new import_obsidian94.Menu();
+      const menu = new import_obsidian96.Menu();
       const combatState = plugin.combatTracker.getState();
       if (combatState == null ? void 0 : combatState.encounterPath) {
         const label = combatState.encounterName || ((_a2 = combatState.encounterPath.split("/").pop()) == null ? void 0 : _a2.replace(".md", "")) || "Active Combat";
@@ -91378,7 +92132,7 @@ async function renderMapView(plugin, source, el, ctx) {
             plugin.saveMapAnnotations(config, el);
             linkEncounterBtn.textContent = `\u{1F517} ${label}`;
             linkEncounterBtn.title = combatState.encounterPath || "";
-            new import_obsidian94.Notice(`\u2705 Map linked to encounter "${label}"`);
+            new import_obsidian96.Notice(`\u2705 Map linked to encounter "${label}"`);
           })
         );
         menu.addSeparator();
@@ -91397,7 +92151,7 @@ async function renderMapView(plugin, source, el, ctx) {
             plugin.saveMapAnnotations(config, el);
             linkEncounterBtn.textContent = `\u{1F517} ${name}`;
             linkEncounterBtn.title = ef.path;
-            new import_obsidian94.Notice(`\u2705 Map linked to encounter "${name}"`);
+            new import_obsidian96.Notice(`\u2705 Map linked to encounter "${name}"`);
           })
         );
       }
@@ -91416,7 +92170,7 @@ async function renderMapView(plugin, source, el, ctx) {
             if (viewport._syncPlayerView) {
               viewport._syncPlayerView();
             }
-            new import_obsidian94.Notice("Encounter unlinked from map");
+            new import_obsidian96.Notice("Encounter unlinked from map");
           })
         );
       }
@@ -91481,7 +92235,7 @@ async function renderMapView(plugin, source, el, ctx) {
           tokenId: c.tokenId
         }));
       } else {
-        new import_obsidian94.Notice("\u26A0\uFE0F No active combat \u2014 run an encounter first");
+        new import_obsidian96.Notice("\u26A0\uFE0F No active combat \u2014 run an encounter first");
         return;
       }
       if (!Array.isArray(config.markers)) {
@@ -91644,7 +92398,7 @@ async function renderMapView(plugin, source, el, ctx) {
             let resolvedNoteFile = null;
             if (!markerDef && creaturePath && typeof creaturePath === "string") {
               const noteFile = plugin.app.vault.getAbstractFileByPath(creaturePath);
-              if (noteFile instanceof import_obsidian94.TFile) {
+              if (noteFile instanceof import_obsidian96.TFile) {
                 resolvedNoteFile = noteFile;
                 const noteCache = plugin.app.metadataCache.getFileCache(noteFile);
                 const noteTokenId = (_c2 = noteCache == null ? void 0 : noteCache.frontmatter) == null ? void 0 : _c2.token_id;
@@ -91772,7 +92526,7 @@ async function renderMapView(plugin, source, el, ctx) {
       if (skippedCount > 0) parts.push(`${skippedCount} skipped`);
       if (errorCount > 0) parts.push(`${errorCount} failed`);
       const msg = addedCount > 0 ? parts[0] + (parts.length > 1 ? ` (${parts.slice(1).join(", ")})` : "") : updatedCount > 0 ? `\u2705 Colored ${updatedCount} prepared encounter token${updatedCount > 1 ? "s" : ""}` + (parts.length > 1 ? ` (${parts.filter((p) => !p.startsWith("colored ")).join(", ")})` : "") : `\u2139\uFE0F All encounter tokens already on the map` + (parts.length > 0 ? ` (${parts.join(", ")})` : "");
-      new import_obsidian94.Notice(msg);
+      new import_obsidian96.Notice(msg);
       console.log(`[DnD-Map] Import complete: added=${addedCount}, colored=${updatedCount}, skipped=${skippedCount}, errors=${errorCount}`);
     });
     const clearBtn = controls.createEl("button", {
@@ -91786,7 +92540,7 @@ async function renderMapView(plugin, source, el, ctx) {
         redrawAnnotations();
         plugin.saveMapAnnotations(config, el);
         updateGridToolsVisibility();
-        new import_obsidian94.Notice("Drawings cleared");
+        new import_obsidian96.Notice("Drawings cleared");
       }).open();
     });
     const clearTokensBtn = controls.createEl("button", {
@@ -91796,7 +92550,7 @@ async function renderMapView(plugin, source, el, ctx) {
     clearTokensBtn.addEventListener("click", () => {
       const tokenCount = (config.markers || []).length;
       if (tokenCount === 0) {
-        new import_obsidian94.Notice("No tokens on the map");
+        new import_obsidian96.Notice("No tokens on the map");
         return;
       }
       new ClearTokensConfirmModal(plugin.app, () => {
@@ -91807,7 +92561,7 @@ async function renderMapView(plugin, source, el, ctx) {
         plugin.saveMapAnnotations(config, el);
         updateGridToolsVisibility();
         refreshVisionSelector();
-        new import_obsidian94.Notice(`${tokenCount} token${tokenCount > 1 ? "s" : ""} cleared`);
+        new import_obsidian96.Notice(`${tokenCount} token${tokenCount > 1 ? "s" : ""} cleared`);
       }).open();
     });
     const editButton = controls.createDiv({ cls: "dnd-map-edit-btn-container" });
@@ -92307,7 +93061,7 @@ function drawFilledHexPointyStretched(ctx, cx2, cy2, rx, ry) {
 }
 
 // src/srd/SRDImporter.ts
-var import_obsidian95 = require("obsidian");
+var import_obsidian97 = require("obsidian");
 async function importAllSRDData(plugin) {
   const categories = [
     { key: "ability-scores", folder: "z_AbilityScores", name: "Ability Scores" },
@@ -92329,14 +93083,14 @@ async function importAllSRDData(plugin) {
   let totalSuccess = 0;
   let totalErrors = 0;
   const startTime = Date.now();
-  new import_obsidian95.Notice("Starting full SRD data import...");
+  new import_obsidian97.Notice("Starting full SRD data import...");
   for (const category of categories) {
     const result = await importSRDCategory(plugin, category.key, category.folder, category.name, true);
     totalSuccess += result.success;
     totalErrors += result.errors;
   }
   const duration = Math.round((Date.now() - startTime) / 1e3);
-  new import_obsidian95.Notice(`\u2705 SRD import complete! ${totalSuccess} items imported, ${totalErrors} errors. (${duration}s)`);
+  new import_obsidian97.Notice(`\u2705 SRD import complete! ${totalSuccess} items imported, ${totalErrors} errors. (${duration}s)`);
 }
 async function importSRDCreatureTokens(plugin) {
   const SRD_BASE = "https://www.dnd5eapi.co";
@@ -92346,31 +93100,31 @@ async function importSRDCreatureTokens(plugin) {
   const BATCH_SIZE = 8;
   let imported = 0;
   let errors = 0;
-  new import_obsidian95.Notice("\u{1F409} Starting SRD creature token import\u2026");
+  new import_obsidian97.Notice("\u{1F409} Starting SRD creature token import\u2026");
   const startTime = Date.now();
   try {
     await plugin.ensureFolderExists(BESTIARY_FOLDER);
     await plugin.ensureFolderExists(IMAGE_FOLDER);
-    const listResponse = await (0, import_obsidian95.requestUrl)({ url: `${API_BASE}/monsters` });
+    const listResponse = await (0, import_obsidian97.requestUrl)({ url: `${API_BASE}/monsters` });
     const monsters = listResponse.json.results || [];
     if (monsters.length === 0) {
-      new import_obsidian95.Notice("\u26A0\uFE0F No monsters returned from the SRD API.");
+      new import_obsidian97.Notice("\u26A0\uFE0F No monsters returned from the SRD API.");
       return { imported: 0, errors: 0 };
     }
-    new import_obsidian95.Notice(`\u{1F4CB} Found ${monsters.length} SRD creatures. Importing\u2026`);
+    new import_obsidian97.Notice(`\u{1F4CB} Found ${monsters.length} SRD creatures. Importing\u2026`);
     for (let i = 0; i < monsters.length; i += BATCH_SIZE) {
       const batch = monsters.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.allSettled(
         batch.map(async (entry) => {
           var _a;
           try {
-            const detailRes = await (0, import_obsidian95.requestUrl)({ url: `${SRD_BASE}${entry.url}` });
+            const detailRes = await (0, import_obsidian97.requestUrl)({ url: `${SRD_BASE}${entry.url}` });
             const m = detailRes.json;
             let imagePath;
             if (m.image) {
               try {
                 const imgUrl = `${SRD_BASE}${m.image}`;
-                const imgRes = await (0, import_obsidian95.requestUrl)({ url: imgUrl });
+                const imgRes = await (0, import_obsidian97.requestUrl)({ url: imgUrl });
                 const ext = m.image.split(".").pop() || "png";
                 imagePath = `${IMAGE_FOLDER}/${m.index}.${ext}`;
                 if (await plugin.app.vault.adapter.exists(imagePath)) {
@@ -92435,16 +93189,16 @@ async function importSRDCreatureTokens(plugin) {
         })
       );
       if (i > 0 && i % 40 === 0) {
-        new import_obsidian95.Notice(`\u{1F409} Progress: ${i}/${monsters.length} creatures\u2026`);
+        new import_obsidian97.Notice(`\u{1F409} Progress: ${i}/${monsters.length} creatures\u2026`);
       }
     }
     const duration = Math.round((Date.now() - startTime) / 1e3);
-    new import_obsidian95.Notice(
+    new import_obsidian97.Notice(
       `\u2705 SRD creature import complete! ${imported} tokens imported, ${errors} errors. (${duration}s)`
     );
   } catch (error2) {
     console.error("[SRD Import] Fatal error during creature import:", error2);
-    new import_obsidian95.Notice("\u274C SRD creature import failed. Check the console for details.");
+    new import_obsidian97.Notice("\u274C SRD creature import failed. Check the console for details.");
   }
   return { imported, errors };
 }
@@ -92639,10 +93393,10 @@ creature: ${m.name}
 async function importSRDCategory(plugin, categoryKey, folderName, categoryName, isBulkImport = false) {
   try {
     if (!isBulkImport) {
-      new import_obsidian95.Notice(`Starting ${categoryName} import...`);
+      new import_obsidian97.Notice(`Starting ${categoryName} import...`);
     }
     await plugin.ensureFolderExists(folderName);
-    const listResponse = await (0, import_obsidian95.requestUrl)({
+    const listResponse = await (0, import_obsidian97.requestUrl)({
       url: `https://www.dnd5eapi.co/api/2014/${categoryKey}`,
       method: "GET"
     });
@@ -92658,7 +93412,7 @@ async function importSRDCategory(plugin, categoryKey, folderName, categoryName, 
           successCount++;
           continue;
         }
-        const detailResponse = await (0, import_obsidian95.requestUrl)({
+        const detailResponse = await (0, import_obsidian97.requestUrl)({
           url: `https://www.dnd5eapi.co${item.url}`,
           method: "GET"
         });
@@ -92674,11 +93428,11 @@ async function importSRDCategory(plugin, categoryKey, folderName, categoryName, 
       }
     }
     if (!isBulkImport) {
-      new import_obsidian95.Notice(`\u2705 ${categoryName} import complete! ${successCount} items imported, ${errorCount} errors.`);
+      new import_obsidian97.Notice(`\u2705 ${categoryName} import complete! ${successCount} items imported, ${errorCount} errors.`);
     }
     return { success: successCount, errors: errorCount };
   } catch (error2) {
-    new import_obsidian95.Notice(`\u274C Failed to import ${categoryName}: ${error2 instanceof Error ? error2.message : String(error2)}`);
+    new import_obsidian97.Notice(`\u274C Failed to import ${categoryName}: ${error2 instanceof Error ? error2.message : String(error2)}`);
     console.error(`${categoryName} import error:`, error2);
     return { success: 0, errors: 0 };
   }
@@ -93296,7 +94050,7 @@ function hasHandoutProjectionTarget(plugin) {
   var _a;
   return !!((_a = plugin.sessionProjectionManager) == null ? void 0 : _a.isActive()) || plugin.projectionManager.getLiveProjections().length > 0;
 }
-var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
+var DndCampaignHubPlugin = class extends import_obsidian101.Plugin {
   constructor() {
     super(...arguments);
     this.SessionCreationModal = SessionCreationModal;
@@ -93491,7 +94245,7 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
             editor.focus();
           }
         }
-        new import_obsidian99.Notice("Focus reset");
+        new import_obsidian101.Notice("Focus reset");
       }
     });
     this.addCommand({
@@ -93512,7 +94266,7 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
       name: "Initialize D&D Campaign Hub",
       callback: async () => {
         if (this.isVaultInitialized()) {
-          new import_obsidian99.Notice("D&D Campaign Hub is already initialized in this vault.");
+          new import_obsidian101.Notice("D&D Campaign Hub is already initialized in this vault.");
           return;
         }
         await this.initializeVault();
@@ -93523,7 +94277,7 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
       name: "Migrate D&D Hub Files",
       callback: () => {
         if (!this.isVaultInitialized()) {
-          new import_obsidian99.Notice("Initialize D&D Campaign Hub before migrating files.");
+          new import_obsidian101.Notice("Initialize D&D Campaign Hub before migrating files.");
           return;
         }
         this.migrateTemplates();
@@ -93535,9 +94289,14 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
       callback: () => this.openCampaignHome()
     });
     this.addCommand({
+      id: "find-campaign-content",
+      name: "D&D Hub: Find Campaign Content",
+      callback: () => this.openCampaignContentSearch()
+    });
+    this.addCommand({
       id: "workflow-start-session",
       name: "D&D Hub: Start Session",
-      callback: () => this.openSessionRunDashboard()
+      callback: () => this.openSessionRunDashboard(void 0, void 0, true)
     });
     this.addCommand({
       id: "workflow-prepare-next-session",
@@ -93581,11 +94340,26 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
         var _a, _b, _c;
         const file = this.app.workspace.getActiveFile();
         if (!file || ((_b = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.type) !== "session") {
-          new import_obsidian99.Notice("Open a session note first.");
+          new import_obsidian101.Notice("Open a session note first.");
           return;
         }
         new SessionCreationModal(this.app, this, void 0, (_c = file.parent) == null ? void 0 : _c.path, file.path).open();
       }
+    });
+    this.addCommand({
+      id: "archive-session",
+      name: "Archive Session",
+      callback: () => void this.archiveActiveSession(true)
+    });
+    this.addCommand({
+      id: "restore-session",
+      name: "Restore Archived Session",
+      callback: () => void this.archiveActiveSession(false)
+    });
+    this.addCommand({
+      id: "delete-session",
+      name: "Delete Session",
+      callback: () => void this.deleteActiveSession()
     });
     this.addCommand({
       id: "end-session-here",
@@ -93594,12 +94368,12 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
         var _a;
         const file = this.app.workspace.getActiveFile();
         if (!file) {
-          new import_obsidian99.Notice("No active file.");
+          new import_obsidian101.Notice("No active file.");
           return;
         }
         const cache = this.app.metadataCache.getFileCache(file);
         if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) !== "session") {
-          new import_obsidian99.Notice("Open a session note first.");
+          new import_obsidian101.Notice("Open a session note first.");
           return;
         }
         new EndSessionModal(this.app, this, file).open();
@@ -93612,12 +94386,12 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
         var _a;
         const file = this.app.workspace.getActiveFile();
         if (!file) {
-          new import_obsidian99.Notice("Open an encounter log first.");
+          new import_obsidian101.Notice("Open an encounter log first.");
           return;
         }
         const cache = this.app.metadataCache.getFileCache(file);
         if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) !== "initiative-encounter-log") {
-          new import_obsidian99.Notice("This is not an encounter log note.");
+          new import_obsidian101.Notice("This is not an encounter log note.");
           return;
         }
         await this.openCombatAwardsFromLog(file);
@@ -93649,10 +94423,10 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
           if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) === "npc") {
             this.editNpc(file.path);
           } else {
-            new import_obsidian99.Notice("This is not an NPC note");
+            new import_obsidian101.Notice("This is not an NPC note");
           }
         } else {
-          new import_obsidian99.Notice("Please open an NPC note first");
+          new import_obsidian101.Notice("Please open an NPC note first");
         }
       }
     });
@@ -93673,13 +94447,13 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
                 await this.markerLibrary.deleteMarker(tokenId);
               }
               await this.app.vault.delete(file);
-              new import_obsidian99.Notice(`\u2714 NPC "${npcName}" deleted`);
+              new import_obsidian101.Notice(`\u2714 NPC "${npcName}" deleted`);
             }
           } else {
-            new import_obsidian99.Notice("This is not an NPC note");
+            new import_obsidian101.Notice("This is not an NPC note");
           }
         } else {
-          new import_obsidian99.Notice("Please open an NPC note first");
+          new import_obsidian101.Notice("Please open an NPC note first");
         }
       }
     });
@@ -93704,10 +94478,10 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
           if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) === "player") {
             this.editPc(file.path);
           } else {
-            new import_obsidian99.Notice("This is not a PC note");
+            new import_obsidian101.Notice("This is not a PC note");
           }
         } else {
-          new import_obsidian99.Notice("Please open a PC note first");
+          new import_obsidian101.Notice("Please open a PC note first");
         }
       }
     });
@@ -93728,13 +94502,13 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
                 await this.markerLibrary.deleteMarker(tokenId);
               }
               await this.app.vault.delete(file);
-              new import_obsidian99.Notice(`\u2714 PC "${pcName}" deleted`);
+              new import_obsidian101.Notice(`\u2714 PC "${pcName}" deleted`);
             }
           } else {
-            new import_obsidian99.Notice("This is not a PC note");
+            new import_obsidian101.Notice("This is not a PC note");
           }
         } else {
-          new import_obsidian99.Notice("Please open a PC note first");
+          new import_obsidian101.Notice("Please open a PC note first");
         }
       }
     });
@@ -93756,10 +94530,10 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
               new PoiEditModal2(this.app, file.path).open();
             });
           } else {
-            new import_obsidian99.Notice("This is not a PoI note");
+            new import_obsidian101.Notice("This is not a PoI note");
           }
         } else {
-          new import_obsidian99.Notice("Please open a PoI note first");
+          new import_obsidian101.Notice("Please open a PoI note first");
         }
       }
     });
@@ -93776,13 +94550,13 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
             const confirmed = await this.confirmDelete(file.name);
             if (confirmed) {
               await this.app.vault.delete(file);
-              new import_obsidian99.Notice(`\u2714 Point of Interest "${poiName}" deleted`);
+              new import_obsidian101.Notice(`\u2714 Point of Interest "${poiName}" deleted`);
             }
           } else {
-            new import_obsidian99.Notice("This is not a PoI note");
+            new import_obsidian101.Notice("This is not a PoI note");
           }
         } else {
-          new import_obsidian99.Notice("Please open a PoI note first");
+          new import_obsidian101.Notice("Please open a PoI note first");
         }
       }
     });
@@ -93824,7 +94598,7 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
         if (file) {
           this.editAdventure(file.path);
         } else {
-          new import_obsidian99.Notice("Please open an adventure note first");
+          new import_obsidian101.Notice("Please open an adventure note first");
         }
       }
     });
@@ -93839,10 +94613,10 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
           if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) === "adventure") {
             await this.deleteAdventure(file);
           } else {
-            new import_obsidian99.Notice("Please open an adventure note first");
+            new import_obsidian101.Notice("Please open an adventure note first");
           }
         } else {
-          new import_obsidian99.Notice("Please open an adventure note first");
+          new import_obsidian101.Notice("Please open an adventure note first");
         }
       }
     });
@@ -93863,7 +94637,7 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
         Promise.resolve().then(() => (init_InlineMapBlock(), InlineMapBlock_exports)).then(({ InsertMapWidgetModal: InsertMapWidgetModal2 }) => {
           new InsertMapWidgetModal2(this.app, this, (config) => {
             editor.replaceSelection(buildMapInlineMarkdown(config) + " ");
-            new import_obsidian99.Notice("Inline map control inserted");
+            new import_obsidian101.Notice("Inline map control inserted");
           }).open();
         });
       }
@@ -93875,11 +94649,11 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
         const selected = editor.getSelection();
         const config = parseMapCodeblockMarkdown(selected) || parseMapInlineMarkdown(selected);
         if (!config) {
-          new import_obsidian99.Notice("Select a complete dnd-map block or inline map control first.");
+          new import_obsidian101.Notice("Select a complete dnd-map block or inline map control first.");
           return;
         }
         editor.replaceSelection(buildMapInlineMarkdown(config) + " ");
-        new import_obsidian99.Notice("Map converted to inline control");
+        new import_obsidian101.Notice("Map converted to inline control");
       }
     });
     this.addCommand({
@@ -93915,7 +94689,7 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
         if (file) {
           this.editScene(file.path);
         } else {
-          new import_obsidian99.Notice("Please open a scene note first");
+          new import_obsidian101.Notice("Please open a scene note first");
         }
       }
     });
@@ -93935,16 +94709,16 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
               await this.app.vault.delete(file);
               if (encounterName) {
                 await this.partyManager.deleteEncounter(encounterName);
-                new import_obsidian99.Notice(`\u2714 Scene "${sceneName}" and its encounter deleted`);
+                new import_obsidian101.Notice(`\u2714 Scene "${sceneName}" and its encounter deleted`);
               } else {
-                new import_obsidian99.Notice(`\u2714 Scene "${sceneName}" deleted from vault`);
+                new import_obsidian101.Notice(`\u2714 Scene "${sceneName}" deleted from vault`);
               }
             }
           } else {
-            new import_obsidian99.Notice("This is not a scene note");
+            new import_obsidian101.Notice("This is not a scene note");
           }
         } else {
-          new import_obsidian99.Notice("Please open a scene note first");
+          new import_obsidian101.Notice("Please open a scene note first");
         }
       }
     });
@@ -93961,7 +94735,7 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
         if (file) {
           this.editTrap(file.path);
         } else {
-          new import_obsidian99.Notice("Please open a trap note first");
+          new import_obsidian101.Notice("Please open a trap note first");
         }
       }
     });
@@ -93979,13 +94753,13 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
             if (confirmed) {
               await this.deleteTrapStatblocks(trapName);
               await this.app.vault.delete(file);
-              new import_obsidian99.Notice(`\u2714 Trap "${trapName}" deleted`);
+              new import_obsidian101.Notice(`\u2714 Trap "${trapName}" deleted`);
             }
           } else {
-            new import_obsidian99.Notice("This is not a trap note");
+            new import_obsidian101.Notice("This is not a trap note");
           }
         } else {
-          new import_obsidian99.Notice("Please open a trap note first");
+          new import_obsidian101.Notice("Please open a trap note first");
         }
       }
     });
@@ -94002,7 +94776,7 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
         if (file) {
           this.editItem(file.path);
         } else {
-          new import_obsidian99.Notice("Please open an item note first");
+          new import_obsidian101.Notice("Please open an item note first");
         }
       }
     });
@@ -94019,13 +94793,13 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
             const confirmed = await this.confirmDelete(file.name);
             if (confirmed) {
               await this.app.vault.delete(file);
-              new import_obsidian99.Notice(`\u2714 Item "${itemName}" deleted`);
+              new import_obsidian101.Notice(`\u2714 Item "${itemName}" deleted`);
             }
           } else {
-            new import_obsidian99.Notice("This is not an item note");
+            new import_obsidian101.Notice("This is not an item note");
           }
         } else {
-          new import_obsidian99.Notice("Please open an item note first");
+          new import_obsidian101.Notice("Please open an item note first");
         }
       }
     });
@@ -94042,7 +94816,7 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
         if (file) {
           this.editEvidence(file.path);
         } else {
-          new import_obsidian99.Notice("Please open an evidence note first");
+          new import_obsidian101.Notice("Please open an evidence note first");
         }
       }
     });
@@ -94059,13 +94833,13 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
             const confirmed = await this.confirmDelete(file.name);
             if (confirmed) {
               await this.app.vault.delete(file);
-              new import_obsidian99.Notice(`Evidence "${evidenceName}" deleted`);
+              new import_obsidian101.Notice(`Evidence "${evidenceName}" deleted`);
             }
           } else {
-            new import_obsidian99.Notice("This is not an evidence note");
+            new import_obsidian101.Notice("This is not an evidence note");
           }
         } else {
-          new import_obsidian99.Notice("Please open an evidence note first");
+          new import_obsidian101.Notice("Please open an evidence note first");
         }
       }
     });
@@ -94082,7 +94856,7 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
         if (file) {
           this.editCreature(file.path);
         } else {
-          new import_obsidian99.Notice("Please open a creature note first");
+          new import_obsidian101.Notice("Please open a creature note first");
         }
       }
     });
@@ -94100,13 +94874,13 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
             if (confirmed) {
               await this.app.vault.delete(file);
               await this.deleteCreatureStatblock(creatureName);
-              new import_obsidian99.Notice(`\u2714 Creature "${creatureName}" deleted`);
+              new import_obsidian101.Notice(`\u2714 Creature "${creatureName}" deleted`);
             }
           } else {
-            new import_obsidian99.Notice("This is not a creature note");
+            new import_obsidian101.Notice("This is not a creature note");
           }
         } else {
-          new import_obsidian99.Notice("Please open a creature note first");
+          new import_obsidian101.Notice("Please open a creature note first");
         }
       }
     });
@@ -94134,11 +94908,11 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
           new InsertEncounterWidgetModal2(this.app, this, (codeblock) => {
             const config = parseEncounterCodeblockMarkdown(codeblock);
             if (!config) {
-              new import_obsidian99.Notice("Could not create inline encounter control.");
+              new import_obsidian101.Notice("Could not create inline encounter control.");
               return;
             }
             editor.replaceSelection(buildEncounterInlineMarkdown(config) + " ");
-            new import_obsidian99.Notice("Inline encounter control inserted");
+            new import_obsidian101.Notice("Inline encounter control inserted");
           }).open();
         });
       }
@@ -94150,7 +94924,7 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
         Promise.resolve().then(() => (init_InlineHandoutBlock(), InlineHandoutBlock_exports)).then(({ InsertHandoutWidgetModal: InsertHandoutWidgetModal2 }) => {
           new InsertHandoutWidgetModal2(this.app, this, (config) => {
             editor.replaceSelection(buildHandoutInlineMarkdown(config) + " ");
-            new import_obsidian99.Notice("Inline handout control inserted");
+            new import_obsidian101.Notice("Inline handout control inserted");
           }).open();
         });
       }
@@ -94162,11 +94936,11 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
         const selected = editor.getSelection();
         const config = parseHandoutInlineMarkdown(selected);
         if (!config) {
-          new import_obsidian99.Notice("Select an inline handout control first.");
+          new import_obsidian101.Notice("Select an inline handout control first.");
           return;
         }
         editor.replaceSelection(buildHandoutInlineMarkdown(config) + " ");
-        new import_obsidian99.Notice("Handout control refreshed");
+        new import_obsidian101.Notice("Handout control refreshed");
       }
     });
     this.addCommand({
@@ -94176,11 +94950,11 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
         const selected = editor.getSelection();
         const config = parseEncounterCodeblockMarkdown(selected) || parseEncounterInlineMarkdown(selected);
         if (!config) {
-          new import_obsidian99.Notice("Select a complete dnd-encounter block or inline encounter control first.");
+          new import_obsidian101.Notice("Select a complete dnd-encounter block or inline encounter control first.");
           return;
         }
         editor.replaceSelection(buildEncounterInlineMarkdown(config) + " ");
-        new import_obsidian99.Notice("Encounter converted to inline control");
+        new import_obsidian101.Notice("Encounter converted to inline control");
       }
     });
     this.addCommand({
@@ -94191,7 +94965,7 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
         if (file) {
           this.editEncounter(file.path);
         } else {
-          new import_obsidian99.Notice("Please open an encounter note first");
+          new import_obsidian101.Notice("Please open an encounter note first");
         }
       }
     });
@@ -94212,7 +94986,7 @@ var DndCampaignHubPlugin = class extends import_obsidian99.Plugin {
             const name = cache.frontmatter.name || file.basename;
             this.combatTracker.resumeCombat(name);
           } else {
-            new import_obsidian99.Notice("Please open an encounter note first");
+            new import_obsidian101.Notice("Please open an encounter note first");
           }
         }
       }
@@ -94235,12 +95009,12 @@ This action cannot be undone.`,
               async (confirmed) => {
                 if (confirmed) {
                   await this.combatTracker.clearSavedState(name);
-                  new import_obsidian99.Notice(`Saved combat state for "${name}" cleared.`);
+                  new import_obsidian101.Notice(`Saved combat state for "${name}" cleared.`);
                 }
               }
             ).open();
           } else {
-            new import_obsidian99.Notice("Please open an encounter note first");
+            new import_obsidian101.Notice("Please open an encounter note first");
           }
         }
       }
@@ -94279,12 +95053,12 @@ This action cannot be undone.`,
           this.combatPursuitSync = null;
         }
         this.pursuitTracker.endChase("gm-ended");
-        new import_obsidian99.Notice("Pursuit ended.");
+        new import_obsidian101.Notice("Pursuit ended.");
       }
     });
     this.registerEvent(
       this.app.vault.on("modify", async (file) => {
-        if (file instanceof import_obsidian99.TFile && file.path.startsWith("z_Encounters/")) {
+        if (file instanceof import_obsidian101.TFile && file.path.startsWith("z_Encounters/")) {
           setTimeout(async () => {
             await this.syncEncounterToScenes(file);
           }, 100);
@@ -94293,7 +95067,7 @@ This action cannot be undone.`,
     );
     this.registerEvent(
       this.app.metadataCache.on("changed", async (file) => {
-        if (!(file instanceof import_obsidian99.TFile) || file.extension !== "md") return;
+        if (!(file instanceof import_obsidian101.TFile) || file.extension !== "md") return;
         const cache = this.app.metadataCache.getFileCache(file);
         const fm = cache == null ? void 0 : cache.frontmatter;
         if (!fm || !fm.token_id) return;
@@ -94331,7 +95105,7 @@ This action cannot be undone.`,
     this.registerEvent(
       this.app.vault.on("delete", async (file) => {
         var _a;
-        if (!(file instanceof import_obsidian99.TFile) || file.extension !== "md") return;
+        if (!(file instanceof import_obsidian101.TFile) || file.extension !== "md") return;
         await this.partyManager.removeMemberByPath(file.path);
         const basename = file.basename;
         const allMarkers = this.markerLibrary.getAllMarkers();
@@ -94354,7 +95128,7 @@ This action cannot be undone.`,
     );
     this.registerEvent(
       this.app.vault.on("rename", async (file, oldPath) => {
-        if (!(file instanceof import_obsidian99.TFile) || file.extension !== "md") return;
+        if (!(file instanceof import_obsidian101.TFile) || file.extension !== "md") return;
         await this.partyManager.updateMemberPath(oldPath, file.path);
         setTimeout(async () => {
           const cache = this.app.metadataCache.getFileCache(file);
@@ -94390,13 +95164,13 @@ This action cannot be undone.`,
             if (confirmed) {
               await this.app.vault.delete(file);
               await this.partyManager.deleteEncounter(encounterName);
-              new import_obsidian99.Notice(`\u2714 Encounter "${encounterName}" deleted`);
+              new import_obsidian101.Notice(`\u2714 Encounter "${encounterName}" deleted`);
             }
           } else {
-            new import_obsidian99.Notice("This is not an encounter note");
+            new import_obsidian101.Notice("This is not an encounter note");
           }
         } else {
-          new import_obsidian99.Notice("Please open an encounter note first");
+          new import_obsidian101.Notice("Please open an encounter note first");
         }
       }
     });
@@ -94446,7 +95220,7 @@ This action cannot be undone.`,
           (config) => {
             const codeblock = buildSceneMusicCodeblock(config);
             editor.replaceSelection(codeblock + "\n");
-            new import_obsidian99.Notice("Scene music block inserted");
+            new import_obsidian101.Notice("Scene music block inserted");
           }
         ).open();
       }
@@ -94462,7 +95236,7 @@ This action cannot be undone.`,
           (config) => {
             const inlineWidget = buildSceneMusicInlineMarkdown(config);
             editor.replaceSelection(inlineWidget + " ");
-            new import_obsidian99.Notice("Inline scene music inserted");
+            new import_obsidian101.Notice("Inline scene music inserted");
           }
         ).open();
       }
@@ -94474,11 +95248,11 @@ This action cannot be undone.`,
         const selected = editor.getSelection();
         const config = parseSceneMusicCodeblockMarkdown(selected) || parseSceneMusicInlineMarkdown(selected);
         if (!config) {
-          new import_obsidian99.Notice("Select a complete dnd-music block or inline scene music first");
+          new import_obsidian101.Notice("Select a complete dnd-music block or inline scene music first");
           return;
         }
         editor.replaceSelection(buildSceneMusicInlineMarkdown(config) + " ");
-        new import_obsidian99.Notice("Scene music converted to inline widget");
+        new import_obsidian101.Notice("Scene music converted to inline widget");
       }
     });
     this.addCommand({
@@ -94492,7 +95266,7 @@ This action cannot be undone.`,
           (config) => {
             const inlineWidget = buildSoundEffectInlineMarkdown(config);
             editor.replaceSelection(inlineWidget + " ");
-            new import_obsidian99.Notice("Inline sound effect inserted");
+            new import_obsidian101.Notice("Inline sound effect inserted");
           }
         ).open();
       }
@@ -94504,11 +95278,11 @@ This action cannot be undone.`,
         const selected = editor.getSelection();
         const config = parseSoundEffectCodeblockMarkdown(selected) || parseSoundEffectInlineMarkdown(selected);
         if (!config) {
-          new import_obsidian99.Notice("Select a complete dnd-sfx block or inline sound effect first");
+          new import_obsidian101.Notice("Select a complete dnd-sfx block or inline sound effect first");
           return;
         }
         editor.replaceSelection(buildSoundEffectInlineMarkdown(config) + " ");
-        new import_obsidian99.Notice("Sound effect converted to inline widget");
+        new import_obsidian101.Notice("Sound effect converted to inline widget");
       }
     });
     this.addCommand({
@@ -94522,7 +95296,7 @@ This action cannot be undone.`,
           (config) => {
             const codeblock = buildSoundEffectCodeblock(config);
             editor.replaceSelection("\n\n" + codeblock + "\n\n");
-            new import_obsidian99.Notice("Sound effect block inserted");
+            new import_obsidian101.Notice("Sound effect block inserted");
           }
         ).open();
       }
@@ -94533,7 +95307,7 @@ This action cannot be undone.`,
       callback: () => {
         const vol = Math.min(100, this.musicPlayer.primary.state.volume + 10);
         this.musicPlayer.primary.setVolume(vol);
-        new import_obsidian99.Notice(`\u{1F50A} Volume: ${vol}%`);
+        new import_obsidian101.Notice(`\u{1F50A} Volume: ${vol}%`);
       }
     });
     this.addCommand({
@@ -94542,7 +95316,7 @@ This action cannot be undone.`,
       callback: () => {
         const vol = Math.max(0, this.musicPlayer.primary.state.volume - 10);
         this.musicPlayer.primary.setVolume(vol);
-        new import_obsidian99.Notice(`\u{1F509} Volume: ${vol}%`);
+        new import_obsidian101.Notice(`\u{1F509} Volume: ${vol}%`);
       }
     });
     this.addCommand({
@@ -94552,7 +95326,7 @@ This action cannot be undone.`,
         this.musicPlayer.primary.toggleMute();
         this.musicPlayer.ambient.toggleMute();
         const muted = this.musicPlayer.primary.state.isMuted;
-        new import_obsidian99.Notice(muted ? "\u{1F507} Muted" : "\u{1F50A} Unmuted");
+        new import_obsidian101.Notice(muted ? "\u{1F507} Muted" : "\u{1F50A} Unmuted");
       }
     });
     this.addCommand({
@@ -94563,7 +95337,7 @@ This action cannot be undone.`,
           this.settings.musicSettings = updated;
           this.musicPlayer.reloadSettings(updated);
           await this.saveSettings();
-          new import_obsidian99.Notice("Music settings saved");
+          new import_obsidian101.Notice("Music settings saved");
         }).open();
       }
     });
@@ -94573,7 +95347,7 @@ This action cannot be undone.`,
       callback: () => {
         const key = this.settings.musicSettings.freesoundApiKey;
         if (!key) {
-          new import_obsidian99.Notice("Set a Freesound API Key in Music Settings \u2192 General first");
+          new import_obsidian101.Notice("Set a Freesound API Key in Music Settings \u2192 General first");
           return;
         }
         new FreesoundSearchModal(
@@ -94605,7 +95379,7 @@ This action cannot be undone.`,
       callback: async () => {
         const spm = this.sessionProjectionManager;
         if (spm.isActive()) {
-          new import_obsidian99.Notice("Session is already active");
+          new import_obsidian101.Notice("Session is already active");
           return;
         }
         const configs = this.settings.sessionProjection.managedScreens;
@@ -94657,12 +95431,12 @@ This action cannot be undone.`,
         var _a;
         const activeFile = this.app.workspace.getActiveFile();
         if (!activeFile) {
-          new import_obsidian99.Notice("Open an encounter table note first.");
+          new import_obsidian101.Notice("Open an encounter table note first.");
           return;
         }
         const cache = this.app.metadataCache.getFileCache(activeFile);
         if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) !== "encounter-table") {
-          new import_obsidian99.Notice("\u26A0\uFE0F This is not an encounter table note.");
+          new import_obsidian101.Notice("\u26A0\uFE0F This is not an encounter table note.");
           return;
         }
         Promise.resolve().then(() => (init_RerollEncounterModal(), RerollEncounterModal_exports)).then(({ RerollEncounterModal: RerollEncounterModal2 }) => {
@@ -94677,12 +95451,12 @@ This action cannot be undone.`,
         var _a;
         const file = this.app.workspace.getActiveFile();
         if (!file) {
-          new import_obsidian99.Notice("Please open an encounter table note first");
+          new import_obsidian101.Notice("Please open an encounter table note first");
           return;
         }
         const cache = this.app.metadataCache.getFileCache(file);
         if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) !== "encounter-table") {
-          new import_obsidian99.Notice("This is not an encounter table note");
+          new import_obsidian101.Notice("This is not an encounter table note");
           return;
         }
         Promise.resolve().then(() => (init_RerollEncounterModal(), RerollEncounterModal_exports)).then(({ RerollEncounterModal: RerollEncounterModal2 }) => {
@@ -94697,19 +95471,19 @@ This action cannot be undone.`,
         var _a;
         const file = this.app.workspace.getActiveFile();
         if (!file) {
-          new import_obsidian99.Notice("Please open an encounter table note first");
+          new import_obsidian101.Notice("Please open an encounter table note first");
           return;
         }
         const cache = this.app.metadataCache.getFileCache(file);
         if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) !== "encounter-table") {
-          new import_obsidian99.Notice("This is not an encounter table note");
+          new import_obsidian101.Notice("This is not an encounter table note");
           return;
         }
         const tableName = cache.frontmatter.name || file.basename;
         const confirmed = await this.confirmDelete(file.name);
         if (confirmed) {
           await this.app.vault.delete(file);
-          new import_obsidian99.Notice(`\u2714 Encounter table "${tableName}" deleted`);
+          new import_obsidian101.Notice(`\u2714 Encounter table "${tableName}" deleted`);
         }
       }
     });
@@ -94778,7 +95552,7 @@ This action cannot be undone.`,
     const savedVersion = this.settings.pluginVersion;
     if (savedVersion !== currentVersion) {
       if (savedVersion !== "0.0.0") {
-        new import_obsidian99.Notice(`D&D Campaign Hub updated to v${currentVersion}! Use "Migrate D&D Hub Files" to safely update your existing files.`, 1e4);
+        new import_obsidian101.Notice(`D&D Campaign Hub updated to v${currentVersion}! Use "Migrate D&D Hub Files" to safely update your existing files.`, 1e4);
       }
       this.settings.pluginVersion = currentVersion;
       await this.saveSettings();
@@ -94793,7 +95567,7 @@ This action cannot be undone.`,
   async openCombatAwardsFromLog(file) {
     const state = await this.combatTracker.readEncounterLogState(file);
     if (!state) {
-      new import_obsidian99.Notice("No awards replay data found in this log. New logs will include it automatically.");
+      new import_obsidian101.Notice("No awards replay data found in this log. New logs will include it automatically.");
       return;
     }
     new EndCombatSummaryModal(this.app, this.combatTracker, state, file).open();
@@ -94806,7 +95580,7 @@ This action cannot be undone.`,
   renderNoteActions(el, ctx) {
     var _a, _b, _c;
     const file = this.app.vault.getAbstractFileByPath(ctx.sourcePath);
-    if (!(file instanceof import_obsidian99.TFile)) return;
+    if (!(file instanceof import_obsidian101.TFile)) return;
     const cache = this.app.metadataCache.getFileCache(file);
     const type = (_c = (_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.plugin_type) != null ? _c : (_b = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _b.type;
     if (!type) return;
@@ -94889,10 +95663,17 @@ This action cannot be undone.`,
         break;
       case "session":
         createBtn("\u270F\uFE0F Edit Session", "dnd-hub-btn-edit", cmd("edit-session"));
-        createBtn("\u25B6\uFE0F Start Session", "dnd-hub-btn-extra", () => this.openSessionRunDashboard(campaignPathForNote()), "Open the session run dashboard");
-        createBtn("\u{1F9ED} Prep Dashboard", "dnd-hub-btn-extra", () => this.openSessionPrepDashboard(campaignPathForNote()), "Open the preparation dashboard");
-        createBtn("\u{1F3E0} Campaign Home", "dnd-hub-btn-extra", () => this.openCampaignHome(campaignPathForNote()), "Open this campaign in Campaign Home");
-        createBtn("\u{1F3C1} End Session", "dnd-hub-btn-extra", () => new EndSessionModal(this.app, this, file).open(), "Record the ending scene for this session");
+        if (String(frontmatter.status || "").toLowerCase() === "archived") {
+          createBtn("\u21A9\uFE0F Restore Session", "dnd-hub-btn-extra", () => this.setSessionArchived(file, false), "Restore this session to its previous status");
+          createBtn("\u{1F9ED} Prep Dashboard", "dnd-hub-btn-extra", () => this.openSessionPrepDashboard(campaignPathForNote(), file.path), "Explicitly open preparation for this archived session");
+        } else {
+          createBtn("\u{1F4E6} Archive Session", "dnd-hub-btn-extra", () => this.setSessionArchived(file, true), "Hide this session from current and preparation workflows");
+          createBtn("\u25B6\uFE0F Start Session", "dnd-hub-btn-extra", () => this.openSessionRunDashboard(campaignPathForNote(), file.path, true), "Mark this session in progress and open the run dashboard");
+          createBtn("\u{1F9ED} Prep Dashboard", "dnd-hub-btn-extra", () => this.openSessionPrepDashboard(campaignPathForNote(), file.path), "Open preparation for this session");
+          createBtn("\u{1F3E0} Campaign Home", "dnd-hub-btn-extra", () => this.openCampaignHome(campaignPathForNote()), "Open this campaign in Campaign Home");
+          createBtn("\u{1F3C1} End Session", "dnd-hub-btn-extra", () => new EndSessionModal(this.app, this, file).open(), "Record the ending scene for this session");
+        }
+        createBtn("\u{1F5D1}\uFE0F Delete Session", "dnd-hub-btn-delete", () => this.confirmAndDeleteSession(file), "Permanently delete this session note and remove its backlinks");
         break;
       case "adventure": {
         const adventurePath = ctx.sourcePath;
@@ -94993,10 +95774,10 @@ This action cannot be undone.`,
         await this.app.vault.modify(file, content);
         updated++;
       }
-      new import_obsidian99.Notice(`\u2705 Updated ${updated} PoI icons (${skipped} already correct)`);
+      new import_obsidian101.Notice(`\u2705 Updated ${updated} PoI icons (${skipped} already correct)`);
     } catch (error2) {
       console.error("Error updating PoI icons:", error2);
-      new import_obsidian99.Notice("\u274C Failed to update PoI icons");
+      new import_obsidian101.Notice("\u274C Failed to update PoI icons");
     }
   }
   /**
@@ -95019,7 +95800,7 @@ This action cannot be undone.`,
     ];
     return requiredFolders.every((folder) => {
       const folderExists = this.app.vault.getAbstractFileByPath(folder);
-      return folderExists instanceof import_obsidian99.TFolder;
+      return folderExists instanceof import_obsidian101.TFolder;
     });
   }
   /**
@@ -95061,7 +95842,7 @@ This action cannot be undone.`,
     for (const folderPath of foldersToRemove) {
       try {
         const folder = this.app.vault.getAbstractFileByPath(folderPath);
-        if (folder instanceof import_obsidian99.TFolder) {
+        if (folder instanceof import_obsidian101.TFolder) {
           await this.app.vault.delete(folder, true);
           removedCount++;
         }
@@ -95070,16 +95851,16 @@ This action cannot be undone.`,
       }
     }
     if (errors.length > 0) {
-      new import_obsidian99.Notice(`Purge completed with errors. Removed ${removedCount} folders. Errors: ${errors.join(", ")}`);
+      new import_obsidian101.Notice(`Purge completed with errors. Removed ${removedCount} folders. Errors: ${errors.join(", ")}`);
     } else {
-      new import_obsidian99.Notice(`Successfully purged ${removedCount} D&D Campaign Hub folders.`);
+      new import_obsidian101.Notice(`Successfully purged ${removedCount} D&D Campaign Hub folders.`);
     }
   }
   /**
    * Initialize the vault with the required folder structure and templates
    */
   async initializeVault() {
-    new import_obsidian99.Notice("Initializing D&D Campaign Hub vault structure...");
+    new import_obsidian101.Notice("Initializing D&D Campaign Hub vault structure...");
     const foldersToCreate = [
       "z_Templates",
       "z_Assets",
@@ -95102,7 +95883,7 @@ This action cannot be undone.`,
       }
     }
     await this.createTemplateFiles();
-    new import_obsidian99.Notice("Vault initialized successfully!");
+    new import_obsidian101.Notice("Vault initialized successfully!");
   }
   /**
    * Create template files in z_Templates folder
@@ -95122,7 +95903,7 @@ This action cannot be undone.`,
     for (const [path, content] of Object.entries(templates)) {
       try {
         const existingFile = this.app.vault.getAbstractFileByPath(path);
-        if (existingFile instanceof import_obsidian99.TFile) {
+        if (existingFile instanceof import_obsidian101.TFile) {
           await this.app.vault.modify(existingFile, content);
         } else {
           await this.app.vault.create(path, content);
@@ -95138,7 +95919,7 @@ This action cannot be undone.`,
   changeCampaignSystem(campaignPathOverride) {
     const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
     if (!campaignPath) {
-      new import_obsidian99.Notice("Create or select a campaign first.");
+      new import_obsidian101.Notice("Create or select a campaign first.");
       return;
     }
     new CampaignSystemModal(this.app, this, campaignPath).open();
@@ -95174,15 +95955,15 @@ This action cannot be undone.`,
       if (adventureFolder && adventureFolder.name === file.basename) {
         const children = [...adventureFolder.children];
         for (const child of children) {
-          if (child instanceof import_obsidian99.TFolder) {
+          if (child instanceof import_obsidian101.TFolder) {
             const subChildren = [...child.children];
             for (const subChild of subChildren) {
-              if (subChild instanceof import_obsidian99.TFile) {
+              if (subChild instanceof import_obsidian101.TFile) {
                 await this.app.vault.delete(subChild);
               }
             }
             await this.app.vault.delete(child);
-          } else if (child instanceof import_obsidian99.TFile) {
+          } else if (child instanceof import_obsidian101.TFile) {
             await this.app.vault.delete(child);
           }
         }
@@ -95191,10 +95972,10 @@ This action cannot be undone.`,
         const scenesFolder = this.app.vault.getAbstractFileByPath(
           `${(_c = file.parent) == null ? void 0 : _c.path}/${file.basename} - Scenes`
         );
-        if (scenesFolder instanceof import_obsidian99.TFolder) {
+        if (scenesFolder instanceof import_obsidian101.TFolder) {
           const children = [...scenesFolder.children];
           for (const child of children) {
-            if (child instanceof import_obsidian99.TFile) {
+            if (child instanceof import_obsidian101.TFile) {
               await this.app.vault.delete(child);
             }
           }
@@ -95202,9 +95983,9 @@ This action cannot be undone.`,
         }
         await this.app.vault.delete(file);
       }
-      new import_obsidian99.Notice(`\u2705 Adventure "${adventureName}" deleted!`);
+      new import_obsidian101.Notice(`\u2705 Adventure "${adventureName}" deleted!`);
     } catch (error2) {
-      new import_obsidian99.Notice(`\u274C Error deleting adventure: ${error2 instanceof Error ? error2.message : String(error2)}`);
+      new import_obsidian101.Notice(`\u274C Error deleting adventure: ${error2 instanceof Error ? error2.message : String(error2)}`);
       console.error("Adventure deletion error:", error2);
     }
   }
@@ -95226,7 +96007,7 @@ This action cannot be undone.`,
   async createEvidence(campaignPathOverride) {
     const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
     if (!this.isHowToBeAHeroCampaign(campaignPath)) {
-      new import_obsidian99.Notice("Evidences are only available in How to be a Hero campaigns.");
+      new import_obsidian101.Notice("Evidences are only available in How to be a Hero campaigns.");
       return;
     }
     await this.ensureFolderExists(`${campaignPath}/Evidences`);
@@ -95235,13 +96016,13 @@ This action cannot be undone.`,
   async editEvidence(evidencePath) {
     var _a;
     const file = this.app.vault.getAbstractFileByPath(evidencePath);
-    if (!(file instanceof import_obsidian99.TFile)) {
-      new import_obsidian99.Notice("Evidence note not found");
+    if (!(file instanceof import_obsidian101.TFile)) {
+      new import_obsidian101.Notice("Evidence note not found");
       return;
     }
     const cache = this.app.metadataCache.getFileCache(file);
     if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) !== "evidence") {
-      new import_obsidian99.Notice("This is not an evidence note");
+      new import_obsidian101.Notice("This is not an evidence note");
       return;
     }
     new EvidenceCreationModal(this.app, this, evidencePath).open();
@@ -95303,7 +96084,7 @@ This action cannot be undone.`,
   }
   async confirmDelete(fileName) {
     return new Promise((resolve) => {
-      const modal = new import_obsidian99.Modal(this.app);
+      const modal = new import_obsidian101.Modal(this.app);
       modal.titleEl.setText("Confirm Delete");
       modal.contentEl.createEl("p", { text: `Are you sure you want to delete "${fileName}"?` });
       modal.contentEl.createEl("p", {
@@ -95389,11 +96170,11 @@ This action cannot be undone.`,
       }
       await this.updateEncounterData(encounterName, encounterCreatures, includeParty ? selectedPartyId : null, useColorNames);
       if (scenesLinking.length > 0) {
-        new import_obsidian99.Notice(`\u2705 Encounter "${encounterName}" synced to ${scenesLinking.length} scene(s)`);
+        new import_obsidian101.Notice(`\u2705 Encounter "${encounterName}" synced to ${scenesLinking.length} scene(s)`);
       }
     } catch (error2) {
       console.error("[SyncEncounter] Error:", error2);
-      new import_obsidian99.Notice("\u26A0\uFE0F Error syncing encounter to scenes");
+      new import_obsidian101.Notice("\u26A0\uFE0F Error syncing encounter to scenes");
     }
   }
   /**
@@ -95479,7 +96260,7 @@ This action cannot be undone.`,
         creatures: allCombatants
       };
       await pm.saveEncounter(encounterName, updated);
-      new import_obsidian99.Notice(`\u2705 Encounter data updated`);
+      new import_obsidian101.Notice(`\u2705 Encounter data updated`);
     } catch (error2) {
       console.error("[UpdateEncounter] Error updating encounter:", error2);
     }
@@ -95487,6 +96268,9 @@ This action cannot be undone.`,
   async createSession(campaignPathOverride) {
     const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
     new SessionCreationModal(this.app, this, void 0, campaignPath).open();
+  }
+  openCampaignContentSearch(campaignPathOverride) {
+    new CampaignContentSearchModal(this.app, this, campaignPathOverride || this.getActiveCampaignPath()).open();
   }
   async openCampaignHome(campaignPathOverride) {
     const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
@@ -95534,7 +96318,7 @@ This action cannot be undone.`,
     ];
     for (const path of candidates) {
       const file = this.app.vault.getAbstractFileByPath(path);
-      if (file instanceof import_obsidian99.TFile) {
+      if (file instanceof import_obsidian101.TFile) {
         const system = (_b = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.system;
         if (system) return normalizeCampaignSystem(String(system));
       }
@@ -95633,12 +96417,12 @@ This action cannot be undone.`,
   async continueLastSession(campaignPathOverride) {
     const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
     if (!campaignPath) {
-      new import_obsidian99.Notice("No campaign found. Create or select a campaign first.");
+      new import_obsidian101.Notice("No campaign found. Create or select a campaign first.");
       return;
     }
     const sessionFile = this.getLatestSessionFile(campaignPath);
     if (!sessionFile) {
-      new import_obsidian99.Notice("No session note found for the selected campaign.");
+      new import_obsidian101.Notice("No session note found for the selected campaign.");
       return;
     }
     const sessionLeaf = this.app.workspace.getLeaf(false);
@@ -95654,7 +96438,7 @@ This action cannot be undone.`,
       var _a;
       if (!(file.path === campaignPath || file.path.startsWith(`${campaignPath}/`))) return false;
       const cache = this.app.metadataCache.getFileCache(file);
-      return ((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) === "session";
+      return ((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) === "session" && String(cache.frontmatter.status || "").toLowerCase() !== "archived";
     });
     sessions.sort((a, b) => {
       var _a, _b;
@@ -95689,7 +96473,7 @@ This action cannot be undone.`,
     const linkedScenes = [
       this.resolveFrontmatterLink(fm.starting_scene, sessionFile.path),
       this.resolveFrontmatterLink(fm.ending_scene, sessionFile.path)
-    ].filter((file) => file instanceof import_obsidian99.TFile);
+    ].filter((file) => file instanceof import_obsidian101.TFile);
     const inProgressLinked = linkedScenes.find((file) => this.getSceneStatus(file) === "in-progress");
     if (inProgressLinked) return inProgressLinked;
     const adventureInProgress = adventureFile ? this.getContinuationSceneForAdventure(adventureFile, "in-progress") : null;
@@ -95741,7 +96525,7 @@ This action cannot be undone.`,
     const linkpath = this.extractLinkPath(raw);
     if (!linkpath) return null;
     const linked = this.app.metadataCache.getFirstLinkpathDest(linkpath, sourcePath);
-    return linked instanceof import_obsidian99.TFile ? linked : null;
+    return linked instanceof import_obsidian101.TFile ? linked : null;
   }
   extractLinkPath(raw) {
     const trimmed = raw.trim();
@@ -95751,13 +96535,19 @@ This action cannot be undone.`,
     if (markdown == null ? void 0 : markdown[1]) return markdown[1].trim();
     return trimmed.replace(/^["']|["']$/g, "");
   }
-  async openSessionPrepDashboard(campaignPathOverride) {
+  async openSessionPrepDashboard(campaignPathOverride, sessionPath) {
+    var _a, _b;
     const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
+    if (!sessionPath) {
+      const active = this.app.workspace.getActiveFile();
+      if (active && ((_b = (_a = this.app.metadataCache.getFileCache(active)) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.type) === "session") sessionPath = active.path;
+    }
     const existing = this.app.workspace.getLeavesOfType(SESSION_PREP_VIEW_TYPE);
     if (existing.length > 0 && existing[0]) {
       this.app.workspace.revealLeaf(existing[0]);
       const view = existing[0].view;
       view.setCampaign(campaignPath);
+      view.setSession(sessionPath);
       return;
     }
     const leaf = this.app.workspace.getLeftLeaf(false);
@@ -95768,16 +96558,25 @@ This action cannot be undone.`,
       });
       const view = leaf.view;
       view.setCampaign(campaignPath);
+      view.setSession(sessionPath);
       this.app.workspace.revealLeaf(leaf);
     }
   }
-  async openSessionRunDashboard(campaignPathOverride) {
+  async openSessionRunDashboard(campaignPathOverride, sessionPath, markInProgress = false) {
+    var _a, _b;
     const campaignPath = campaignPathOverride || this.getActiveCampaignPath();
+    if (!sessionPath) {
+      const active = this.app.workspace.getActiveFile();
+      if (active && ((_b = (_a = this.app.metadataCache.getFileCache(active)) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.type) === "session") sessionPath = active.path;
+    }
+    if (markInProgress && sessionPath) await this.updateSessionLifecycleStatus(sessionPath, "in-progress");
     const existing = this.app.workspace.getLeavesOfType(SESSION_RUN_VIEW_TYPE);
     if (existing.length > 0 && existing[0]) {
       this.app.workspace.revealLeaf(existing[0]);
       const view = existing[0].view;
       view.setCampaign(campaignPath);
+      await view.setSession(sessionPath);
+      if (markInProgress && view.currentSessionFile) await this.updateSessionLifecycleStatus(view.currentSessionFile.path, "in-progress");
       await view.setupSessionLayout();
       await this.openDMScreen();
       return;
@@ -95790,9 +96589,102 @@ This action cannot be undone.`,
       });
       const view = dashboardLeaf.view;
       view.setCampaign(campaignPath);
+      await view.setSession(sessionPath);
+      if (markInProgress && view.currentSessionFile) await this.updateSessionLifecycleStatus(view.currentSessionFile.path, "in-progress");
       this.app.workspace.revealLeaf(dashboardLeaf);
       await view.setupSessionLayout();
       await this.openDMScreen();
+    }
+  }
+  async updateSessionLifecycleStatus(sessionPath, status) {
+    const file = this.app.vault.getAbstractFileByPath(sessionPath);
+    if (!(file instanceof import_obsidian101.TFile)) return;
+    const content = await this.app.vault.read(file);
+    const updated = updateYamlFrontmatter(content, (fm) => ({ ...fm, status }));
+    if (updated !== content) await this.app.vault.modify(file, updated);
+  }
+  getActiveSessionFile() {
+    var _a, _b;
+    const file = this.app.workspace.getActiveFile();
+    return file instanceof import_obsidian101.TFile && ((_b = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.type) === "session" ? file : null;
+  }
+  async archiveActiveSession(archive) {
+    var _a, _b;
+    const file = this.getActiveSessionFile();
+    if (!file) {
+      new import_obsidian101.Notice("Open a session note first.");
+      return;
+    }
+    const isArchived = String(((_b = (_a = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _a.frontmatter) == null ? void 0 : _b.status) || "").toLowerCase() === "archived";
+    if (archive === isArchived) {
+      new import_obsidian101.Notice(archive ? "This session is already archived." : "This session is not archived.");
+      return;
+    }
+    await this.setSessionArchived(file, archive);
+  }
+  async setSessionArchived(file, archive) {
+    if (archive) {
+      const confirmed = await new Promise((resolve) => new ConfirmModal(
+        this.app,
+        "Archive session?",
+        `Archive "${file.basename}"? It will be hidden from automatic current-session and prep selection. You can restore it from this note at any time.`,
+        resolve
+      ).open());
+      if (!confirmed) return;
+    }
+    const content = await this.app.vault.read(file);
+    const updated = updateYamlFrontmatter(content, (fm) => {
+      if (archive) {
+        return {
+          ...fm,
+          archived_from_status: String(fm.status || "completed"),
+          status: "archived"
+        };
+      }
+      const restoredStatus = ["planned", "in-progress", "completed"].includes(String(fm.archived_from_status)) ? String(fm.archived_from_status) : "completed";
+      delete fm.archived_from_status;
+      return { ...fm, status: restoredStatus };
+    });
+    if (updated !== content) await this.app.vault.modify(file, updated);
+    new import_obsidian101.Notice(archive ? `\u{1F4E6} Session "${file.basename}" archived.` : `\u21A9\uFE0F Session "${file.basename}" restored.`);
+  }
+  async deleteActiveSession() {
+    const file = this.getActiveSessionFile();
+    if (!file) {
+      new import_obsidian101.Notice("Open a session note first.");
+      return;
+    }
+    await this.confirmAndDeleteSession(file);
+  }
+  async confirmAndDeleteSession(file) {
+    var _a, _b;
+    const confirmed = await new Promise((resolve) => new ConfirmModal(
+      this.app,
+      "Permanently delete session?",
+      `Delete "${file.basename}" permanently?
+This removes only this session's backlinks from linked adventures and scenes. Those notes will not be deleted. This action cannot be undone.`,
+      resolve
+    ).open());
+    if (!confirmed) return;
+    try {
+      const sessionContent = await this.app.vault.read(file);
+      const { frontmatter } = parseYamlFrontmatter(sessionContent);
+      const relationshipPaths = collectSessionRelationshipPaths(frontmatter);
+      for (const relationshipPath of relationshipPaths) {
+        const linked = (_b = (_a = this.app.metadataCache.getFirstLinkpathDest(relationshipPath, file.path)) != null ? _a : this.app.vault.getAbstractFileByPath(relationshipPath)) != null ? _b : this.app.vault.getAbstractFileByPath(`${relationshipPath}.md`);
+        if (!(linked instanceof import_obsidian101.TFile) || linked.path === file.path) continue;
+        const content = await this.app.vault.read(linked);
+        const updated = updateYamlFrontmatter(content, (fm) => ({
+          ...fm,
+          sessions: removeSessionBacklink(fm.sessions, file.path)
+        }));
+        if (updated !== content) await this.app.vault.modify(linked, updated);
+      }
+      await this.app.vault.delete(file);
+      new import_obsidian101.Notice(`\u{1F5D1}\uFE0F Session "${file.basename}" deleted.`);
+    } catch (error2) {
+      console.error("Could not delete session:", error2);
+      new import_obsidian101.Notice(`Could not delete session: ${error2 instanceof Error ? error2.message : String(error2)}`);
     }
   }
   async openDMScreen() {
@@ -95840,7 +96732,7 @@ This action cannot be undone.`,
   startPursuitFromCombat() {
     const combatState = this.combatTracker.getState();
     if (!combatState) {
-      new import_obsidian99.Notice("No active combat to start a chase from.");
+      new import_obsidian101.Notice("No active combat to start a chase from.");
       return;
     }
     new PursuitSetupModal(this.app, this, combatState).open();
@@ -95916,7 +96808,7 @@ This action cannot be undone.`,
   registerHandoutProjectionMenus() {
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
-        if (!(file instanceof import_obsidian99.TFile)) return;
+        if (!(file instanceof import_obsidian101.TFile)) return;
         const contentType = detectHandoutContentType2(file.path);
         if (!contentType) return;
         if (!hasHandoutProjectionTarget(this)) return;
@@ -95944,7 +96836,7 @@ This action cannot be undone.`,
       const imageFile = resolveProjectedImageFile(this, target);
       if (!imageFile) return;
       evt.preventDefault();
-      const menu = new import_obsidian99.Menu();
+      const menu = new import_obsidian101.Menu();
       addHandoutProjectionItems(this, menu, imageFile.path, "image");
       menu.showAtMouseEvent(evt);
     });
@@ -96229,12 +97121,12 @@ This action cannot be undone.`,
     var _a, _b, _c, _d, _e;
     const activeFile = this.app.workspace.getActiveFile();
     if (!activeFile) {
-      new import_obsidian99.Notice("Open an encounter table note first.");
+      new import_obsidian101.Notice("Open an encounter table note first.");
       return;
     }
     const cache = this.app.metadataCache.getFileCache(activeFile);
     if (((_a = cache == null ? void 0 : cache.frontmatter) == null ? void 0 : _a.type) !== "encounter-table") {
-      new import_obsidian99.Notice("\u26A0\uFE0F This is not an encounter table note.");
+      new import_obsidian101.Notice("\u26A0\uFE0F This is not an encounter table note.");
       return;
     }
     const entries = cache.frontmatter.entries || 6;
@@ -96245,11 +97137,11 @@ This action cannot be undone.`,
     if (match) {
       const encounter = (_c = (_b = match[1]) == null ? void 0 : _b.trim()) != null ? _c : "Unknown";
       const difficulty = (_e = (_d = match[2]) == null ? void 0 : _d.trim()) != null ? _e : "";
-      new import_obsidian99.Notice(`\u{1F3B2} Rolled ${roll} on d${entries}:
+      new import_obsidian101.Notice(`\u{1F3B2} Rolled ${roll} on d${entries}:
 ${encounter}
 Difficulty: ${difficulty}`, 8e3);
     } else {
-      new import_obsidian99.Notice(`\u{1F3B2} Rolled ${roll} on d${entries}!`, 5e3);
+      new import_obsidian101.Notice(`\u{1F3B2} Rolled ${roll} on d${entries}!`, 5e3);
     }
   }
   async ensureFolderExists(path) {
@@ -96293,9 +97185,9 @@ Difficulty: ${difficulty}`, 8e3);
   getAllCampaigns() {
     const ttrpgsFolder = this.app.vault.getAbstractFileByPath("ttrpgs");
     const campaigns = [];
-    if (ttrpgsFolder instanceof import_obsidian99.TFolder) {
+    if (ttrpgsFolder instanceof import_obsidian101.TFolder) {
       ttrpgsFolder.children.forEach((child) => {
-        if (child instanceof import_obsidian99.TFolder) {
+        if (child instanceof import_obsidian101.TFolder) {
           campaigns.push({
             path: child.path,
             name: child.name
