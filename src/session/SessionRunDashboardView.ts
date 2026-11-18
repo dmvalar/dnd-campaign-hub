@@ -32,6 +32,20 @@ type RunScene = {
   partyId?: string;
 };
 
+type QuickNotesDraft = {
+  readonly file: TFile;
+  content: string;
+  savedContent: string;
+  save: Promise<boolean> | null;
+};
+
+type ContextRequest = {
+  campaignPath: string;
+  result: Promise<boolean>;
+};
+
+class QuickNotesConflict extends Error {}
+
 export class SessionRunDashboardView extends ItemView {
   plugin: DndCampaignHubPlugin;
   campaignPath: string;
@@ -39,9 +53,15 @@ export class SessionRunDashboardView extends ItemView {
   readOnlyMode: boolean = true;
   timers: Array<{id: string; name: string; startTime: number; paused: boolean; pausedAt: number; elapsed: number}> = [];
   diceHistory: Array<{roll: string; result: number; timestamp: number}> = [];
-  quickNotesContent: string = "";
   autoSaveInterval: number | null = null;
   timerUpdateInterval: number | null = null;
+  // A replacement view can recover a draft whose final save failed.
+  private static readonly closingDrafts = new WeakMap<TFile, QuickNotesDraft>();
+  private quickNotesDraft: QuickNotesDraft | null = null;
+  private contextRequest: ContextRequest | null = null;
+  private renderId = 0;
+  private closed = false;
+  private readOnlyTimeout: ReturnType<typeof setTimeout> | null = null;
   private readonly managedLeaves = new Set<WorkspaceLeaf>();
   private readonly priorLeafModes = new Map<WorkspaceLeaf, string>();
 
@@ -63,24 +83,77 @@ export class SessionRunDashboardView extends ItemView {
     return "play-circle";
   }
 
-  setCampaign(campaignPath: string) {
-    if (this.campaignPath === campaignPath) return;
-    this.campaignPath = campaignPath;
-    void this.detectCurrentSession().then(() => this.loadQuickNotes()).then(() => this.render());
+  setCampaign(campaignPath: string): Promise<boolean> {
+    if (this.closed) return Promise.resolve(false);
+    if (this.contextRequest?.campaignPath === campaignPath) return this.contextRequest.result;
+    if (!this.contextRequest && this.campaignPath === campaignPath) return Promise.resolve(true);
+    return this.setContext(campaignPath);
   }
 
-  async setSession(sessionPath: string | undefined) {
-    if (!sessionPath) {
-      await this.detectCurrentSession();
-    } else {
-      const file = this.app.vault.getAbstractFileByPath(sessionPath);
-      this.currentSessionFile = file instanceof TFile ? file : null;
+  setSession(sessionPath: string | undefined): Promise<boolean> {
+    return this.setContext(this.contextRequest?.campaignPath ?? this.campaignPath, sessionPath);
+  }
+
+  setContext(campaignPath: string, sessionPath?: string): Promise<boolean> {
+    if (this.closed) return Promise.resolve(false);
+    const request: ContextRequest = {
+      campaignPath,
+      result: Promise.resolve().then(() => this.applyContext(request, sessionPath)).finally(() => {
+        if (this.contextRequest === request) this.contextRequest = null;
+      }),
+    };
+    this.contextRequest = request;
+    return request.result;
+  }
+
+  private async applyContext(request: ContextRequest, sessionPath?: string): Promise<boolean> {
+    if (this.contextRequest !== request) return false;
+    if (!await this.saveQuickNotes(this.quickNotesDraft) || this.contextRequest !== request) return false;
+
+    const file = sessionPath ? this.app.vault.getAbstractFileByPath(sessionPath)
+      : this.findCurrentSession(request.campaignPath);
+    const session = file instanceof TFile ? file : null;
+    let draft = this.quickNotesDraft;
+    let recoveredDraft: QuickNotesDraft | undefined;
+    if (session !== draft?.file) {
+      draft = null;
+      if (session) {
+        recoveredDraft = SessionRunDashboardView.closingDrafts.get(session);
+        if (recoveredDraft?.save) await recoveredDraft.save;
+        if (this.contextRequest !== request) return false;
+        if (recoveredDraft && recoveredDraft.content !== recoveredDraft.savedContent) {
+          draft = recoveredDraft;
+        } else {
+          try {
+            const content = extractQuickNotes(await this.app.vault.read(session));
+            draft = { file: session, content, savedContent: content, save: null };
+          } catch (error) {
+            if (this.contextRequest !== request) return false;
+            console.error(`Error loading quick notes from ${session.path}:`, error);
+          }
+        }
+      }
     }
-    await this.loadQuickNotes();
+
+    // The outgoing editor can still accept input while the new file is loading.
+    do {
+      if (this.contextRequest !== request) return false;
+      if (!await this.saveQuickNotes(this.quickNotesDraft) || this.contextRequest !== request) return false;
+    } while (this.quickNotesDraft && (
+      this.quickNotesDraft.save || this.quickNotesDraft.content !== this.quickNotesDraft.savedContent
+    ));
+
+    if (session && recoveredDraft && recoveredDraft === SessionRunDashboardView.closingDrafts.get(session)) {
+      SessionRunDashboardView.closingDrafts.delete(session);
+    }
+    this.campaignPath = request.campaignPath;
+    this.currentSessionFile = session;
+    this.quickNotesDraft = draft;
     await this.render();
+    return this.contextRequest === request;
   }
 
-  private renderCampaignPicker(container: HTMLElement) {
+  private renderCampaignPicker(container: HTMLElement, renderId: number) {
     const wrapper = container.createEl("div", { cls: "dashboard-campaign-picker" });
     wrapper.createEl("h2", { text: "🎮 Session Control" });
     wrapper.createEl("p", { text: "Select a campaign to run your session." });
@@ -105,37 +178,26 @@ export class SessionRunDashboardView extends ItemView {
 
     const btn = wrapper.createEl("button", { text: "Start Session", cls: "mod-cta" });
     btn.addEventListener("click", async () => {
-      this.campaignPath = select.value;
-      await this.plugin.setActiveCampaignPath(select.value);
-      await this.detectCurrentSession();
-      this.render();
+      if (!this.isCurrentRender(renderId)) return;
+      const campaignPath = select.value;
+      if (await this.setCampaign(campaignPath)) await this.plugin.setActiveCampaignPath(campaignPath);
     });
   }
 
   async onOpen() {
-    this.campaignPath = this.plugin.getActiveCampaignPath();
-    // Find current session file
-    await this.detectCurrentSession();
-
-    // Load existing quick notes from the session file
-    await this.loadQuickNotes();
-    
-    await this.render();
-    
+    this.closed = false;
     // Enable read-only mode after a short delay to ensure workspace is ready
-    setTimeout(() => {
-      if (this.readOnlyMode) {
-        this.enableReadOnlyMode();
-      }
+    this.readOnlyTimeout = setTimeout(() => {
+      this.readOnlyTimeout = null;
+      if (!this.closed && this.readOnlyMode) this.enableReadOnlyMode();
     }, 300);
-
-    // Start auto-save for quick notes
     this.startAutoSave();
+    await this.setContext(this.plugin.getActiveCampaignPath());
   }
 
-  async detectCurrentSession() {
+  private findCurrentSession(campaignPath: string): TFile | null {
     // First try Sessions subfolder
-    const sessionsFolder = this.app.vault.getAbstractFileByPath(`${this.campaignPath}/Sessions`);
+    const sessionsFolder = this.app.vault.getAbstractFileByPath(`${campaignPath}/Sessions`);
     const sessionFiles: TFile[] = [];
 
     if (sessionsFolder instanceof TFolder) {
@@ -147,7 +209,7 @@ export class SessionRunDashboardView extends ItemView {
       }
     } else {
       // Sessions are at campaign root level (same level as world.md)
-      const campaignFolder = this.app.vault.getAbstractFileByPath(this.campaignPath);
+      const campaignFolder = this.app.vault.getAbstractFileByPath(campaignPath);
       if (campaignFolder instanceof TFolder) {
         for (const item of campaignFolder.children) {
           if (item instanceof TFile && item.extension === "md") {
@@ -165,7 +227,7 @@ export class SessionRunDashboardView extends ItemView {
       }
     }
 
-    this.currentSessionFile = selectCurrentSession(sessionFiles.map((file) => {
+    return selectCurrentSession(sessionFiles.map((file) => {
       const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
       return {
         value: file,
@@ -239,34 +301,46 @@ export class SessionRunDashboardView extends ItemView {
     
     // Auto-save every 30 seconds
     this.autoSaveInterval = window.setInterval(() => {
-      this.saveQuickNotes();
+      if (!this.closed) void this.saveQuickNotes(this.quickNotesDraft);
     }, 30000);
   }
 
-  async saveQuickNotes() {
-    if (!this.currentSessionFile) return;
-
-    try {
-      const content = await this.app.vault.read(this.currentSessionFile);
-      
-      const newContent = updateQuickNotesSection(content, this.quickNotesContent);
-      if (newContent !== content) {
-        await this.app.vault.modify(this.currentSessionFile, newContent);
-      }
-    } catch (error) {
-      console.error("Error saving quick notes:", error);
-    }
+  private saveQuickNotes(draft: QuickNotesDraft | null): Promise<boolean> {
+    if (!draft) return Promise.resolve(true);
+    if (draft.save) return draft.save;
+    if (draft.content === draft.savedContent) return Promise.resolve(true);
+    draft.save = this.writeQuickNotes(draft).finally(() => {
+      draft.save = null;
+    });
+    return draft.save;
   }
 
-  /** Load existing quick notes from the session file on startup. */
-  async loadQuickNotes() {
-    if (!this.currentSessionFile) return;
-
+  private async writeQuickNotes(draft: QuickNotesDraft): Promise<boolean> {
+    const { file } = draft;
     try {
-      const content = await this.app.vault.read(this.currentSessionFile);
-      this.quickNotesContent = extractQuickNotes(content);
+      while (draft.content !== draft.savedContent) {
+        const notes = draft.content;
+        const previouslySaved = draft.savedContent;
+        await this.app.vault.process(file, (document) => {
+          const currentNotes = extractQuickNotes(document);
+          if (currentNotes === notes.trim()) return document;
+          if (currentNotes !== previouslySaved.trim()) throw new QuickNotesConflict();
+          return updateQuickNotesSection(document, notes);
+        });
+        draft.savedContent = notes;
+      }
+      return true;
     } catch (error) {
-      console.error("Error loading quick notes:", error);
+      const recovery = SessionRunDashboardView.closingDrafts.get(file) === draft
+        ? " Reopen this session during this Obsidian run to recover your draft."
+        : " Your draft is still in the dashboard.";
+      if (error instanceof QuickNotesConflict) {
+        new Notice(`Quick Notes changed in ${file.basename}. Copy your changes into the session note or restore its previous Quick Notes before retrying.${recovery}`, 12000);
+      } else {
+        console.error(`Error saving quick notes to ${file.path}:`, error);
+        new Notice(`Could not save Quick Notes to ${file.basename}.${recovery}`, 10000);
+      }
+      return false;
     }
   }
 
@@ -333,7 +407,13 @@ export class SessionRunDashboardView extends ItemView {
     this.render();
   }
 
+  private isCurrentRender(renderId: number): boolean {
+    return !this.closed && this.renderId === renderId;
+  }
+
   async render() {
+    if (this.closed) return;
+    const renderId = ++this.renderId;
     const container = this.containerEl.children[1];
     if (!container) return;
     
@@ -341,16 +421,9 @@ export class SessionRunDashboardView extends ItemView {
     container.addClass("session-run-dashboard");
     container.addClass("session-run-compact");
 
-    const activeCampaignPath = this.plugin.getActiveCampaignPath();
-    if (activeCampaignPath && activeCampaignPath !== this.campaignPath) {
-      this.campaignPath = activeCampaignPath;
-      await this.detectCurrentSession();
-      await this.loadQuickNotes();
-    }
-
     // If no campaign resolved, show picker
     if (!this.campaignPath) {
-      this.renderCampaignPicker(container as HTMLElement);
+      this.renderCampaignPicker(container as HTMLElement, renderId);
       return;
     }
 
@@ -398,23 +471,28 @@ export class SessionRunDashboardView extends ItemView {
 
     // Timers section
     await this.renderTimers(controlPanel);
+    if (!this.isCurrentRender(renderId)) return;
     
     // Dice roller section
     this.renderDiceRoller(controlPanel);
 
     await this.renderLiveSceneControl(controlPanel);
+    if (!this.isCurrentRender(renderId)) return;
 
     // Scene music detection – scan active scene for dnd-music codeblock
     await this.renderSceneMusicDetector(controlPanel);
+    if (!this.isCurrentRender(renderId)) return;
     
     // Quick notes section
-    await this.renderQuickNotes(controlPanel);
+    this.renderQuickNotes(controlPanel, renderId);
     
     // SRD Quick Search section
     await this.renderSRDQuickSearch(controlPanel);
+    if (!this.isCurrentRender(renderId)) return;
     
     // Quick actions section
     await this.renderQuickActions(controlPanel);
+    if (!this.isCurrentRender(renderId)) return;
 
     // Setup Layout button
     const layoutSection = container.createEl("div", { cls: "dashboard-section" });
@@ -1102,26 +1180,47 @@ export class SessionRunDashboardView extends ItemView {
     return result;
   }
 
-  async renderQuickNotes(container: HTMLElement) {
+  private renderQuickNotes(container: HTMLElement, renderId: number) {
     const section = container.createEl("div", { cls: "dashboard-section" });
     section.createEl("h3", { text: "📝 Quick Notes" });
-    
+
+    const draft = this.quickNotesDraft;
+    if (!draft) {
+      const file = this.currentSessionFile;
+      if (file) {
+        section.createEl("p", { text: "Quick Notes could not be loaded from this session." });
+        const retry = section.createEl("button", { text: "Retry" });
+        retry.addEventListener("click", () => {
+          if (this.isCurrentRender(renderId) && !this.contextRequest) {
+            void this.setSession(file.path);
+          }
+        });
+      } else {
+        section.createEl("p", { text: "Select a session to write Quick Notes." });
+      }
+      return;
+    }
+
+    const isCurrent = () => this.isCurrentRender(renderId) && this.quickNotesDraft === draft;
     const textarea = section.createEl("textarea", {
       cls: "quick-notes-textarea",
       placeholder: "Jot down quick notes... (Auto-saves every 30s)"
     });
-    textarea.value = this.quickNotesContent;
-    textarea.addEventListener("input", (e) => {
-      this.quickNotesContent = (e.target as HTMLTextAreaElement).value;
+    textarea.value = draft.content;
+    textarea.addEventListener("input", () => {
+      if (isCurrent()) draft.content = textarea.value;
     });
 
     const saveBtn = section.createEl("button", {
       text: "💾 Save Now",
       cls: "mod-cta"
     });
-    saveBtn.addEventListener("click", () => {
-      this.saveQuickNotes();
-      new Notice("Quick notes saved to session!");
+    saveBtn.addEventListener("click", async () => {
+      if (!isCurrent() || (!draft.save && draft.content === draft.savedContent)) return;
+      const saved = await this.saveQuickNotes(draft);
+      if (saved && isCurrent() && draft.content === draft.savedContent) {
+        new Notice("Quick notes saved to session!");
+      }
     });
   }
 
@@ -1649,6 +1748,13 @@ export class SessionRunDashboardView extends ItemView {
   }
 
   async onClose() {
+    this.closed = true;
+    this.contextRequest = null;
+    if (this.readOnlyTimeout !== null) {
+      clearTimeout(this.readOnlyTimeout);
+      this.readOnlyTimeout = null;
+    }
+
     // Stop auto-save
     if (this.autoSaveInterval) {
       window.clearInterval(this.autoSaveInterval);
@@ -1661,11 +1767,19 @@ export class SessionRunDashboardView extends ItemView {
       this.timerUpdateInterval = null;
     }
     
-    // Save any unsaved notes
-    await this.saveQuickNotes();
-    
     // Disable read-only mode
     this.disableReadOnlyMode();
     this.managedLeaves.clear();
+
+    const draft = this.quickNotesDraft;
+    this.quickNotesDraft = null;
+    this.currentSessionFile = null;
+    if (draft && (draft.save || draft.content !== draft.savedContent)) {
+      SessionRunDashboardView.closingDrafts.set(draft.file, draft);
+      const saved = await this.saveQuickNotes(draft);
+      if (saved && SessionRunDashboardView.closingDrafts.get(draft.file) === draft) {
+        SessionRunDashboardView.closingDrafts.delete(draft.file);
+      }
+    }
   }
 }

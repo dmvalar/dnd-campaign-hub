@@ -19,6 +19,7 @@ Own campaign/session lifecycle, adventure and scene relationships, session prep/
 - `planned_scenes` records the session's explicit scene plan. Keep it distinct from `starting_scene`; retain compatibility for sessions whose adventure/scene information is legacy or absent.
 - Session creation/edit unsaved-state comparison includes scene planning as well as other fields. When adding editable state, include it in the guard's snapshot so closing with unsaved changes is handled consistently.
 - The run dashboard owns its quick-note updates and timer/display intervals, and tracks workspace leaves it manages. Clean up timers and restore only managed leaf state during teardown; avoid touching unrelated workspace leaves.
+- Quick-note saves must capture the original file and draft, update only their section atomically, and finish outgoing edits before switching context. Reject stale loads and detached input callbacks; a failed save must retain a recoverable draft and must not report success. Dashboard opening awaits `setContext` before lifecycle/layout work.
 - The hub may coordinate workflows across campaign/session views, but session lifecycle and note relationship rules should remain in their domain modules. Avoid adding combat behavior here.
 - Session UI owns when and what to project; the [maps specialist](maps-projection.md) owns projection screen/view lifecycle. Keep that orchestration boundary explicit when changing session startup or handout controls.
 - Template/schema changes that add persisted note fields still follow the migration and data-preservation rules in the shared guidance.
@@ -31,6 +32,7 @@ Run only tests relevant to the change; these commands target existing tests:
 npm run test -- tests/session/sessionLifecycle.test.ts
 npm run test -- tests/session/SessionBacklinks.test.ts
 npm run test -- tests/session/quickNotes.test.ts
+npm run test -- tests/session/SessionRunDashboardView.test.ts
 npm run test -- tests/migration/session-lifecycle.test.ts
 npm run test -- tests/migration/session-multiple-adventures.test.ts
 npm run test -- tests/migration/session-scene-plan.test.ts

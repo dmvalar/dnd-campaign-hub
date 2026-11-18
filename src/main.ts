@@ -3064,7 +3064,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 	private syncCampaignAwareViews(campaignPath: string) {
 		for (const leaf of this.app.workspace.getLeavesOfType(SESSION_RUN_VIEW_TYPE)) {
 			const view = leaf.view as SessionRunDashboardView;
-			view.setCampaign(campaignPath);
+			void view.setCampaign(campaignPath);
 		}
 		for (const leaf of this.app.workspace.getLeavesOfType(SESSION_PREP_VIEW_TYPE)) {
 			const view = leaf.view as SessionPrepDashboardView;
@@ -3345,15 +3345,13 @@ export default class DndCampaignHubPlugin extends Plugin {
 			const active = this.app.workspace.getActiveFile();
 			if (active && this.app.metadataCache.getFileCache(active)?.frontmatter?.type === "session") sessionPath = active.path;
 		}
-		if (markInProgress && sessionPath) await this.updateSessionLifecycleStatus(sessionPath, "in-progress");
 		
 		// Check if dashboard view is already open
 		const existing = this.app.workspace.getLeavesOfType(SESSION_RUN_VIEW_TYPE);
 		if (existing.length > 0 && existing[0]) {
 			this.app.workspace.revealLeaf(existing[0]);
 			const view = existing[0].view as SessionRunDashboardView;
-			view.setCampaign(campaignPath);
-			await view.setSession(sessionPath);
+			if (!(await view.setContext(campaignPath, sessionPath))) return;
 			if (markInProgress && view.currentSessionFile) await this.updateSessionLifecycleStatus(view.currentSessionFile.path, "in-progress");
 			// Setup the session layout even if already open
 			await view.setupSessionLayout();
@@ -3371,8 +3369,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 				active: true,
 			});
 			const view = dashboardLeaf.view as SessionRunDashboardView;
-			view.setCampaign(campaignPath);
-			await view.setSession(sessionPath);
+			if (!(await view.setContext(campaignPath, sessionPath))) return;
 			if (markInProgress && view.currentSessionFile) await this.updateSessionLifecycleStatus(view.currentSessionFile.path, "in-progress");
 			this.app.workspace.revealLeaf(dashboardLeaf);
 			
