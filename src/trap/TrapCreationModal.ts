@@ -3,7 +3,21 @@ import type DndCampaignHubPlugin from "../main";
 import { TrapElement, TrapCountermeasure } from "../encounter/EncounterBuilder";
 import { TRAP_TEMPLATE } from "../templates";
 import { TEMPLATE_VERSIONS } from "../migration";
-import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
+import { parseYamlFrontmatter, updateYamlFrontmatter } from "../utils/YamlFrontmatter";
+import {
+  EncounterTrapNoteSaveError, ensureNotePathAvailable, isNoteMapping, pathForEditedNote, preserveNoteRowFields,
+  replaceGeneratedNotePrefix, saveEncounterTrapEdits, updateGeneratedNoteTitle, validateNoteName,
+} from "../encounter/EncounterTrapNote";
+
+type TrapOverview = Pick<TrapCreationModal,
+  "trapName" | "trapType" | "threatLevel" | "minLevel" | "maxLevel" | "trigger" | "elements" | "countermeasures">;
+
+const TRAP_ELEMENT_FIELDS = [
+  "name", "element_type", "initiative", "attack_bonus", "save_dc", "save_ability", "damage", "additional_damage",
+  "range", "on_success", "on_failure", "effect", "condition",
+];
+const TRAP_COUNTERMEASURE_FIELDS = ["method", "description", "dc", "checks_needed", "effect"];
+const TRAP_ELEMENTS_HEADING = "## Trap Elements & Effects";
 
 export class TrapCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -29,7 +43,9 @@ export class TrapCreationModal extends Modal {
   isEdit = false;
   originalTrapPath = "";
   originalTrapName = "";
-  originalElements: TrapElement[] = [];
+  private saving = false;
+  private originalElementNames = new WeakMap<TrapElement, string>();
+  private originalCountermeasureMethods = new WeakMap<TrapCountermeasure, string>();
 
   constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, scenePath?: string, trapPath?: string, campaignPath?: string) {
     super(app);
@@ -616,8 +632,7 @@ export class TrapCreationModal extends Modal {
           effect: e.effect || "",
           condition: e.condition
         }));
-        // Store original elements to track deletions
-        this.originalElements = JSON.parse(JSON.stringify(this.elements));
+        for (const element of this.elements) this.originalElementNames.set(element, element.name);
       }
 
       // Load countermeasures
@@ -629,6 +644,7 @@ export class TrapCreationModal extends Modal {
           checks_needed: cm.checks_needed || 1,
           effect: cm.effect
         }));
+        for (const cm of this.countermeasures) this.originalCountermeasureMethods.set(cm, cm.method);
       }
 
     } catch (error) {
@@ -638,7 +654,8 @@ export class TrapCreationModal extends Modal {
   }
 
   async createTrap() {
-    if (!this.trapName) {
+    if (this.saving) return;
+    if (!this.trapName.trim()) {
       new Notice("Please enter a trap name");
       return;
     }
@@ -648,133 +665,109 @@ export class TrapCreationModal extends Modal {
       return;
     }
 
+    this.saving = true;
     try {
-      // Get campaign and world info
-      let campaignName = "";
-      let worldName = "";
-
-      if (this.adventurePath) {
-        const adventureFile = this.app.vault.getAbstractFileByPath(this.adventurePath);
-        if (adventureFile instanceof TFile) {
-          const content = await this.app.vault.read(adventureFile);
-          const campaignMatch = content.match(/^campaign:\s*(.+)$/m);
-          const worldMatch = content.match(/^world:\s*(.+)$/m);
-          
-          if (campaignMatch && campaignMatch[1]) campaignName = campaignMatch[1].trim();
-          if (worldMatch && worldMatch[1]) worldName = worldMatch[1].trim();
-        }
-      }
-      if (!campaignName && this.campaignPath) {
-        campaignName = this.campaignPath.split("/").pop() || "";
-      }
-
-      let trapPath: string;
-      let trapFile: TFile | null = null;
-
+      const name = this.trapName;
+      validateNoteName(name);
+      let trapFile: TFile;
       if (this.isEdit) {
-        // Editing existing trap
-        trapFile = this.app.vault.getAbstractFileByPath(this.originalTrapPath) as TFile;
-        if (!trapFile) {
-          new Notice("Original trap file not found!");
-          return;
-        }
-        trapPath = this.originalTrapPath;
+        const original = this.app.vault.getAbstractFileByPath(this.originalTrapPath);
+        if (!(original instanceof TFile)) throw new EncounterTrapNoteSaveError("Original trap file not found.");
 
-        // If trap name changed, handle file rename and statblock updates
-        if (this.trapName !== this.originalTrapName) {
-          // Delete old statblocks
-          await this.plugin.deleteTrapStatblocks(this.originalTrapName);
-          
-          // Rename file if name changed
-          const folder = trapPath.substring(0, trapPath.lastIndexOf('/'));
-          const newPath = `${folder}/${this.trapName}.md`;
-          
-          // Check if new name conflicts
-          if (await this.app.vault.adapter.exists(newPath)) {
-            new Notice(`A trap named "${this.trapName}" already exists!`);
-            return;
-          }
-          
-          await this.app.fileManager.renameFile(trapFile, newPath);
-          trapPath = newPath;
-          trapFile = this.app.vault.getAbstractFileByPath(newPath) as TFile;
-        } else {
-          // Same name - delete old statblocks and we'll recreate
-          await this.plugin.deleteTrapStatblocks(this.originalTrapName);
-        }
-
-        // Track removed elements for complex traps
-        if (this.trapType === 'complex') {
-          // Find elements that were removed
-          const currentElementNames = new Set(this.elements.map(e => e.name));
-          const removedElements = this.originalElements.filter(e => !currentElementNames.has(e.name));
-          
-          if (removedElements.length > 0) {
-            // Note: We already deleted all statblocks above, so this is just logging
-          }
-        }
+        const originalName = this.originalTrapName || original.basename;
+        const path = pathForEditedNote(original, originalName, name);
+        await this.updateTrapNote(original, path, name);
+        this.originalTrapPath = original.path;
+        this.originalTrapName = name;
+        trapFile = original;
+        await this.plugin.deleteTrapStatblocks(originalName);
+        new Notice(`Trap "${name}" updated!`);
       } else {
-        // Creating new trap
-        // Create trap file path in z_Traps folder
-        let trapsFolder = "z_Traps";
-        
-        // If we have a campaign, create in campaign's z_Traps folder
-        if (this.campaignPath) {
-          trapsFolder = `${this.campaignPath}/z_Traps`;
-        } else if (campaignName) {
-          trapsFolder = `ttrpgs/${campaignName}/z_Traps`;
-        }
-        
-        // Ensure z_Traps folder exists
-        if (!(await this.app.vault.adapter.exists(trapsFolder))) {
-          await this.app.vault.createFolder(trapsFolder);
-        }
-        
-        trapPath = `${trapsFolder}/${this.trapName}.md`;
-
-        // Check if file already exists
-        if (await this.app.vault.adapter.exists(trapPath)) {
-          new Notice(`A trap named "${this.trapName}" already exists!`);
-          return;
-        }
-      }
-
-      // Create trap content with statblocks
-      const trapContent = this.createTrapContent(campaignName, worldName);
-
-      // Create or update the file
-      if (this.isEdit && trapFile) {
-        await this.app.vault.modify(trapFile, trapContent);
-        new Notice(`Trap "${this.trapName}" updated!`);
-      } else {
-        await this.app.vault.create(trapPath, trapContent);
+        trapFile = await this.createTrapNote();
         new Notice(`Trap "${this.trapName}" created!`);
-        trapFile = this.app.vault.getAbstractFileByPath(trapPath) as TFile;
       }
 
       // Save statblocks to Fantasy Statblocks plugin
       await this.saveStatblocks();
 
       this.close();
-
-      // Open the trap file
-      if (trapFile) {
-        await this.app.workspace.getLeaf().openFile(trapFile);
-      }
+      await this.app.workspace.getLeaf().openFile(trapFile);
     } catch (error) {
       console.error("Error creating/editing trap:", error);
-      new Notice("Failed to save trap. Check console for details.");
+      new Notice(error instanceof EncounterTrapNoteSaveError ? error.message : "Failed to save trap. Check console for details.");
+    } finally {
+      this.saving = false;
     }
+  }
+
+  private async createTrapNote(): Promise<TFile> {
+    let campaignName = "";
+    let worldName = "";
+    if (this.adventurePath) {
+      const adventureFile = this.app.vault.getAbstractFileByPath(this.adventurePath);
+      if (adventureFile instanceof TFile) {
+        const content = await this.app.vault.read(adventureFile);
+        campaignName = content.match(/^campaign:\s*(.+)$/m)?.[1]?.trim() || "";
+        worldName = content.match(/^world:\s*(.+)$/m)?.[1]?.trim() || "";
+      }
+    }
+    if (!campaignName && this.campaignPath) {
+      campaignName = this.campaignPath.split("/").pop() || "";
+    }
+
+    let folder = "z_Traps";
+    if (this.campaignPath) folder = `${this.campaignPath}/z_Traps`;
+    else if (campaignName) folder = `ttrpgs/${campaignName}/z_Traps`;
+
+    const path = `${folder}/${this.trapName}.md`;
+    await ensureNotePathAvailable(this.app, path);
+    if (!(await this.app.vault.adapter.exists(folder))) await this.app.vault.createFolder(folder);
+    return this.app.vault.create(path, this.createTrapContent(campaignName, worldName));
+  }
+
+  private async updateTrapNote(file: TFile, path: string, name: string): Promise<void> {
+    const elements = this.elements.map((element) => ({ source: element, value: { ...element } }));
+    const countermeasures = this.countermeasures.map((cm) => ({ source: cm, value: { ...cm } }));
+    const trap: TrapOverview = {
+      trapName: name,
+      trapType: this.trapType,
+      threatLevel: this.threatLevel,
+      minLevel: this.minLevel,
+      maxLevel: this.maxLevel,
+      trigger: this.trigger,
+      elements: elements.map(({ value }) => value),
+      countermeasures: countermeasures.map(({ value }) => value),
+    };
+    const initiative = this.trapInitiative;
+    await saveEncounterTrapEdits(this.app, file, path, "trap", (frontmatter, body) => ({
+      frontmatter: {
+        ...frontmatter,
+        trap_name: trap.trapName,
+        trap_type: trap.trapType,
+        threat_level: trap.threatLevel,
+        min_level: trap.minLevel,
+        max_level: trap.maxLevel,
+        trigger: trap.trigger,
+        trap_initiative: initiative,
+        elements: preserveNoteRowFields(frontmatter.elements, elements.map(({ value }) => value),
+          (row) => String(row.name ?? ""), TRAP_ELEMENT_FIELDS,
+          (row, index) => this.originalElementNames.get(elements[index]!.source) ?? String(row.name ?? "")),
+        countermeasures: preserveNoteRowFields(frontmatter.countermeasures, countermeasures.map(({ value }) => value),
+          (row) => String(row.method ?? ""), TRAP_COUNTERMEASURE_FIELDS,
+          (row, index) => this.originalCountermeasureMethods.get(countermeasures[index]!.source) ?? String(row.method ?? "")),
+      },
+      body: this.updateTrapBody(frontmatter, body, trap),
+    }), () => {
+      for (const { source, value } of elements) this.originalElementNames.set(source, value.name);
+      for (const { source, value } of countermeasures) this.originalCountermeasureMethods.set(source, value.method);
+    });
   }
 
   createTrapContent(campaignName: string, worldName: string): string {
     const now = new Date().toISOString().split('T')[0] || new Date().toISOString().substring(0, 10);
     const trapTemplateVersion = TEMPLATE_VERSIONS.trap || "1.3.0";
     
-    // Generate statblock content
-    const statblockContent = this.generateStatblockContent();
-    
-    let content = updateYamlFrontmatter(TRAP_TEMPLATE, (fm) => ({
+    const content = updateYamlFrontmatter(TRAP_TEMPLATE, (fm) => ({
       ...fm,
       type: 'trap',
       template_version: trapTemplateVersion,
@@ -792,23 +785,59 @@ export class TrapCreationModal extends Modal {
       elements: this.elements,
       countermeasures: this.countermeasures,
       date: now,
-    }))
-      .replace(/{{trap_name}}/g, this.trapName)
-      .replace(/{{trap_type}}/g, this.trapType)
-      .replace(/{{threat_level}}/g, this.threatLevel)
-      .replace(/{{min_level}}/g, this.minLevel.toString())
-      .replace(/{{max_level}}/g, this.maxLevel.toString())
-      .replace(/{{trigger}}/g, this.trigger || "Not specified")
-      .replace(/{{DATE}}/g, now);
+    }));
+    const { body } = parseYamlFrontmatter(content);
+    const headingStart = body.indexOf(TRAP_ELEMENTS_HEADING);
+    return content.slice(0, content.length - body.length)
+      + this.renderTrapTemplate(body.slice(0, headingStart), this, now)
+      + this.trapStatblockSection(this)
+      + this.renderTrapTemplate(body.slice(headingStart), this, now);
+  }
 
-    // Keep generated statblock output for GM reference while action/elements rendering
-    // is handled by dnd-hub and dnd-hub-view blocks from the canonical trap template.
-    content = content.replace(
-      "## Trap Elements & Effects",
-      `## Statblocks\n\n${statblockContent}\n\n---\n\n## Trap Elements & Effects`
-    );
+  private renderTrapTemplate(template: string, trap: TrapOverview, date = ""): string {
+    const replacements: Record<string, string> = {
+      trap_name: trap.trapName,
+      trap_type: trap.trapType,
+      threat_level: trap.threatLevel,
+      min_level: String(trap.minLevel),
+      max_level: String(trap.maxLevel),
+      trigger: trap.trigger || "Not specified",
+      DATE: date,
+    };
+    return template.replace(/{{(trap_name|trap_type|threat_level|min_level|max_level|trigger|DATE)}}/g,
+      (_, key: string) => replacements[key]!);
+  }
 
-    return content;
+  private trapStatblockSection(trap: TrapOverview): string {
+    return `## Statblocks\n\n${this.generateStatblockContent(trap)}\n\n---\n\n`;
+  }
+
+  private updateTrapBody(frontmatter: Record<string, unknown>, body: string, trap: TrapOverview): string {
+    const previous: TrapOverview = {
+      trapName: String(frontmatter.trap_name ?? ""),
+      trapType: frontmatter.trap_type as TrapOverview["trapType"],
+      threatLevel: frontmatter.threat_level as TrapOverview["threatLevel"],
+      minLevel: Number(frontmatter.min_level),
+      maxLevel: Number(frontmatter.max_level),
+      trigger: String(frontmatter.trigger ?? ""),
+      elements: Array.isArray(frontmatter.elements) ? frontmatter.elements.filter(isNoteMapping) as unknown as TrapElement[] : [],
+      countermeasures: Array.isArray(frontmatter.countermeasures) ? frontmatter.countermeasures.filter(isNoteMapping) as unknown as TrapCountermeasure[] : [],
+    };
+    // Compare against the previous generated overview from the start of the note.
+    // A changed or relocated region can contain GM-authored Markdown.
+    const lead = TRAP_TEMPLATE.slice(TRAP_TEMPLATE.indexOf("# {{trap_name}}"), TRAP_TEMPLATE.indexOf(TRAP_ELEMENTS_HEADING));
+    const oldDetails = this.renderTrapTemplate(lead, previous);
+    const newDetails = this.renderTrapTemplate(lead, trap);
+    const elementsHeading = `${TRAP_ELEMENTS_HEADING}\n`;
+    const statblocksHeading = "## Statblocks\n";
+    const oldOverview = oldDetails + this.trapStatblockSection(previous) + elementsHeading;
+    const newOverview = newDetails + this.trapStatblockSection(trap) + elementsHeading;
+    const refreshed = replaceGeneratedNotePrefix(body, oldOverview, newOverview);
+    if (refreshed !== body) return refreshed;
+
+    const refreshedDetails = replaceGeneratedNotePrefix(body, oldDetails + statblocksHeading, newDetails + statblocksHeading);
+    const withoutStatblocks = replaceGeneratedNotePrefix(refreshedDetails, oldDetails + elementsHeading, newDetails + elementsHeading);
+    return updateGeneratedNoteTitle(withoutStatblocks, frontmatter.trap_name, trap.trapName);
   }
 
   async saveStatblocks() {
@@ -1129,14 +1158,14 @@ export class TrapCreationModal extends Modal {
     return statblocks;
   }
 
-  calculateTrapCR(): number {
+  calculateTrapCR(trap: TrapOverview = this): number {
     // Calculate average damage per activation
     let totalDamage = 0;
     let maxDC = 0;
     let maxAttackBonus = 0;
     let elementCount = 0;
 
-    for (const element of this.elements) {
+    for (const element of trap.elements) {
       if (element.damage) {
         // Parse damage string to get average (e.g., "4d10" -> 22, "2d6+3" -> 10)
         const avgDamage = this.parseDamageAverage(element.damage);
@@ -1160,10 +1189,10 @@ export class TrapCreationModal extends Modal {
 
     // For complex traps, consider how many elements activate per round
     let dpr = totalDamage;
-    if (this.trapType === 'complex') {
+    if (trap.trapType === 'complex') {
       // Count unique initiatives (elements that can activate in same round)
       const initiatives = new Set(
-        this.elements
+        trap.elements
           .filter(e => e.element_type === 'active' && e.initiative !== undefined)
           .map(e => e.initiative)
       );
@@ -1187,17 +1216,17 @@ export class TrapCreationModal extends Modal {
     }
 
     // Apply threat level modifier
-    if (this.threatLevel === 'dangerous') {
+    if (trap.threatLevel === 'dangerous') {
       estimatedCR = Math.ceil(estimatedCR * 1.25);
-    } else if (this.threatLevel === 'deadly') {
+    } else if (trap.threatLevel === 'deadly') {
       estimatedCR = Math.ceil(estimatedCR * 1.5);
-    } else if (this.threatLevel === 'setback') {
+    } else if (trap.threatLevel === 'setback') {
       estimatedCR = Math.max(0, Math.floor(estimatedCR * 0.75));
     }
 
     // Clamp to reasonable range based on level range
-    const minCR = Math.max(0, Math.floor(this.minLevel / 4));
-    const maxCR = Math.ceil(this.maxLevel / 2);
+    const minCR = Math.max(0, Math.floor(trap.minLevel / 4));
+    const maxCR = Math.ceil(trap.maxLevel / 2);
     estimatedCR = Math.max(minCR, Math.min(maxCR, estimatedCR));
 
     return estimatedCR;
@@ -1207,7 +1236,7 @@ export class TrapCreationModal extends Modal {
     // Parse damage strings like "4d10", "2d6+3", "22", etc.
     if (!damageStr) return 0;
     
-    let cleanDamage = damageStr.trim().toLowerCase();
+    let cleanDamage = String(damageStr).trim().toLowerCase();
     
     // Remove damage type (e.g., "4d10 fire" -> "4d10")
     const parts = cleanDamage.split(' ');
@@ -1342,17 +1371,14 @@ export class TrapCreationModal extends Modal {
     return Math.floor(closestCR);
   }
 
-  generateStatblockContent(): string {
-    if (this.trapType === 'simple') {
-      return this.generateSimpleStatblockContent();
-    } else {
-      return this.generateComplexStatblockContent();
-    }
+  generateStatblockContent(trap: TrapOverview = this): string {
+    if (trap.trapType === 'simple') return this.generateSimpleStatblockContent(trap);
+    return this.generateComplexStatblockContent(trap);
   }
 
-  generateSimpleStatblockContent(): string {
-    const element = this.elements[0];
-    const homebrewSource = `Trap: ${this.trapName}`;
+  generateSimpleStatblockContent(trap: TrapOverview): string {
+    const element = trap.elements[0];
+    const homebrewSource = `Trap: ${trap.trapName}`;
 
     let actionsContent = '';
     if (element) {
@@ -1407,9 +1433,9 @@ export class TrapCreationModal extends Modal {
     }
 
     let traitsContent = '';
-    if (this.countermeasures.length > 0) {
+    if (trap.countermeasures.length > 0) {
       traitsContent = 'traits:\n';
-      for (const cm of this.countermeasures) {
+      for (const cm of trap.countermeasures) {
         const dcText = cm.dc ? ` (DC ${cm.dc})` : '';
         const checksText = cm.checks_needed && cm.checks_needed > 1 ? ` Requires ${cm.checks_needed} successful checks.` : '';
         const traitDesc = `${cm.description || cm.method}${dcText}${checksText} ${cm.effect || ''}`;
@@ -1420,7 +1446,7 @@ export class TrapCreationModal extends Modal {
     return `\`\`\`statblock
 layout: Basic 5e Layout
 source: "${homebrewSource}"
-name: "${this.trapName}"
+name: "${trap.trapName}"
 type: trap
 size: Large
 alignment: unaligned
@@ -1430,13 +1456,13 @@ speed: "0 ft."
 stats: [10, 10, 10, 10, 10, 10]
 senses: "—"
 languages: "—"
-cr: ${this.calculateTrapCR()}
+cr: ${this.calculateTrapCR(trap)}
 ${traitsContent}${actionsContent}
 \`\`\``;
   }
 
-  generateComplexStatblockContent(): string {
-    const homebrewSource = `Trap: ${this.trapName}`;
+  generateComplexStatblockContent(trap: TrapOverview): string {
+    const homebrewSource = `Trap: ${trap.trapName}`;
     let statblockContent = '';
 
     // Group elements by initiative
@@ -1444,7 +1470,7 @@ ${traitsContent}${actionsContent}
     const constantElements: TrapElement[] = [];
     const dynamicElements: TrapElement[] = [];
 
-    for (const element of this.elements) {
+    for (const element of trap.elements) {
       if (element.element_type === 'constant') {
         constantElements.push(element);
       } else if (element.element_type === 'dynamic') {
@@ -1523,7 +1549,7 @@ ${traitsContent}${actionsContent}
       statblockContent += `\n\`\`\`statblock
 layout: Basic 5e Layout
 source: "${homebrewSource}"
-name: "${this.trapName} (Initiative ${initiative})"
+name: "${trap.trapName} (Initiative ${initiative})"
 type: trap
 size: Large
 alignment: unaligned
@@ -1549,7 +1575,7 @@ ${traitsContent}${actionsContent}\`\`\`\n`;
       statblockContent += `\n\`\`\`statblock
 layout: Basic 5e Layout
 source: "${homebrewSource}"
-name: "${this.trapName} (Constant)"
+name: "${trap.trapName} (Constant)"
 type: trap
 size: Large
 alignment: unaligned
@@ -1574,7 +1600,7 @@ ${traitsContent}\`\`\`\n`;
       statblockContent += `\n\`\`\`statblock
 layout: Basic 5e Layout
 source: "${homebrewSource}"
-name: "${this.trapName} (Dynamic)"
+name: "${trap.trapName} (Dynamic)"
 type: trap
 size: Large
 alignment: unaligned
@@ -1589,9 +1615,9 @@ ${traitsContent}\`\`\`\n`;
     }
 
     // Add countermeasures to first statblock or as separate section
-    if (this.countermeasures.length > 0) {
+    if (trap.countermeasures.length > 0) {
       statblockContent += '\n## Countermeasures\n\n';
-      for (const cm of this.countermeasures) {
+      for (const cm of trap.countermeasures) {
         const dcText = cm.dc ? ` (DC ${cm.dc})` : '';
         const checksText = cm.checks_needed && cm.checks_needed > 1 ? ` Requires ${cm.checks_needed} successful checks.` : '';
         const cmDesc = `${cm.description || cm.method}${dcText}${checksText} ${cm.effect || ''}`;

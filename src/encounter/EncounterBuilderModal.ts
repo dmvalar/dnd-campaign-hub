@@ -4,7 +4,23 @@ import { EncounterBuilder, EncounterCreature } from "./EncounterBuilder";
 import { RenameCreatureModal } from "../utils/CreatureModals";
 import { MarkerDefinition, CreatureSize } from "../marker/MarkerTypes";
 import { PartySelector } from "../party/PartySelector";
-import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
+import { parseYamlFrontmatter, updateYamlFrontmatter } from "../utils/YamlFrontmatter";
+import {
+  EncounterTrapNoteSaveError, ensureNotePathAvailable, isNoteMapping, pathForEditedNote, preserveNoteRowFields,
+  saveEncounterTrapEdits, updateGeneratedNoteTitle, validateNoteName,
+} from "./EncounterTrapNote";
+
+const ENCOUNTER_CREATURE_FIELDS = [
+  "name", "count", "initiative", "initiative_counts", "initiativeCounts", "fixed_initiative", "fixedInitiative",
+  "hp", "ac", "cr", "source", "path", "is_trap", "isTrap", "trap_path", "trapPath", "is_friendly", "is_hidden",
+];
+const ENCOUNTER_PARTY_MEMBER_FIELDS = [
+  "name", "level", "hp", "ac", "combat_dpr", "combat_attack_bonus", "note_path", "token_id", "init_bonus", "thp",
+];
+
+function encounterCreatureKey(row: Record<string, unknown>): string {
+  return JSON.stringify([row.name, row.trap_path ?? row.trapPath ?? row.path]);
+}
 
 export class EncounterBuilderModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -23,6 +39,9 @@ export class EncounterBuilderModal extends Modal {
   // For editing existing encounters
   isEdit = false;
   originalEncounterPath = "";
+  private originalEncounterName = "";
+  private saving = false;
+  private originalCreatureKeys = new WeakMap<EncounterCreature, string>();
   
   // UI containers
   creatureListContainer: HTMLElement | null = null;
@@ -156,11 +175,11 @@ export class EncounterBuilderModal extends Modal {
       const file = this.app.vault.getAbstractFileByPath(this.originalEncounterPath);
       if (!(file instanceof TFile)) return;
 
-      const content = await this.app.vault.read(file);
       const cache = this.app.metadataCache.getFileCache(file);
       
       if (cache?.frontmatter) {
         this.encounterName = cache.frontmatter.name || "";
+        this.originalEncounterName = this.encounterName;
         this.includeParty = cache.frontmatter.include_party !== false;
         this.useColorNames = cache.frontmatter.use_color_names || false;
         this.adventurePath = cache.frontmatter.adventure_path || "";
@@ -170,6 +189,11 @@ export class EncounterBuilderModal extends Modal {
         this.selectedPartyName = cache.frontmatter.selected_party_name || "";
         if (!this.selectedPartyId && this.selectedPartyName) {
           this.selectedPartyId = this.selectedPartyName;
+        }
+        if (Array.isArray(cache.frontmatter.party_members)) {
+          this.selectedPartyMembers = cache.frontmatter.party_members.filter(isNoteMapping)
+            .map((member: Record<string, unknown>) => member.name)
+            .filter((name: unknown): name is string => typeof name === "string");
         }
         
         // Load creatures
@@ -190,6 +214,9 @@ export class EncounterBuilderModal extends Modal {
             isFriendly: c.is_friendly === true || c.is_friendly === "true",
             isHidden: c.is_hidden === true || c.is_hidden === "true"
           }));
+          this.creatures.forEach((creature, index) => {
+            this.originalCreatureKeys.set(creature, encounterCreatureKey(cache.frontmatter!.creatures[index]));
+          });
         }
       }
 
@@ -1371,6 +1398,7 @@ export class EncounterBuilderModal extends Modal {
   }
 
   async saveEncounter() {
+    if (this.saving) return;
     if (!this.encounterName.trim()) {
       new Notice("Please enter an encounter name");
       return;
@@ -1381,54 +1409,49 @@ export class EncounterBuilderModal extends Modal {
       return;
     }
 
+    this.saving = true;
     try {
-      // Determine encounter folder path
+      const name = this.encounterName;
+      validateNoteName(name);
+      let originalFile: TFile | undefined;
       let encounterFolder = "z_Encounters";
-      
-      // Check if we're in a campaign context
-      const activeCampaignFile = this.app.workspace.getActiveFile();
-      if (activeCampaignFile) {
-        const campaignFolder = this.findCampaignFolder(activeCampaignFile.path);
+      let encounterPath: string;
+      if (this.isEdit) {
+        const file = this.app.vault.getAbstractFileByPath(this.originalEncounterPath);
+        if (!(file instanceof TFile)) throw new EncounterTrapNoteSaveError("Original encounter file not found.");
+        originalFile = file;
+        encounterPath = pathForEditedNote(file, this.originalEncounterName || file.basename, name);
+      } else {
+        const activeFile = this.app.workspace.getActiveFile();
+        const campaignFolder = activeFile && this.findCampaignFolder(activeFile.path);
         if (campaignFolder) {
           encounterFolder = `${campaignFolder}/z_Encounters`;
           this.campaignPath = campaignFolder;
         }
-      }
-
-      // Create folder if it doesn't exist
-      const folderExists = this.app.vault.getAbstractFileByPath(encounterFolder);
-      if (!folderExists) {
-        await this.app.vault.createFolder(encounterFolder);
+        encounterPath = `${encounterFolder}/${name}.md`;
+        await ensureNotePathAvailable(this.app, encounterPath);
       }
 
       // Generate encounter file content
       this.syncEncounterBuilder();
       const diffResult = await this.encounterBuilder.calculateEncounterDifficulty();
       this.creatures = [...this.encounterBuilder.creatures];
-      const encounterContent = await this.generateEncounterContent(diffResult);
+      const creatures = [...this.creatures];
+      const encounterContent = await this.generateEncounterContent(diffResult, name);
 
-      // Save or update encounter file
-      const fileName = `${this.encounterName}.md`;
-      const encounterPath = `${encounterFolder}/${fileName}`;
-
-      if (this.isEdit && this.originalEncounterPath !== encounterPath) {
-        // If name changed, delete old file and create new one
-        const oldFile = this.app.vault.getAbstractFileByPath(this.originalEncounterPath);
-        if (oldFile instanceof TFile) {
-          await this.app.vault.delete(oldFile);
-        }
-      }
-
-      const existingFile = this.app.vault.getAbstractFileByPath(encounterPath);
       let fileToOpen: TFile;
-      if (existingFile instanceof TFile) {
-        await this.app.vault.modify(existingFile, encounterContent);
-        new Notice(`Encounter "${this.encounterName}" updated!`);
-        fileToOpen = existingFile;
+      if (originalFile) {
+        await this.updateEncounterNote(originalFile, encounterPath, encounterContent, creatures);
+        this.originalEncounterPath = originalFile.path;
+        this.originalEncounterName = name;
+        fileToOpen = originalFile;
+        new Notice(`Encounter "${name}" updated!`);
       } else {
-        const newFile = await this.app.vault.create(encounterPath, encounterContent);
-        new Notice(`Encounter "${this.encounterName}" created!`);
-        fileToOpen = newFile;
+        if (!this.app.vault.getAbstractFileByPath(encounterFolder)) {
+          await this.app.vault.createFolder(encounterFolder);
+        }
+        fileToOpen = await this.app.vault.create(encounterPath, encounterContent);
+        new Notice(`Encounter "${name}" created!`);
       }
 
       // Save to Party Manager
@@ -1441,8 +1464,44 @@ export class EncounterBuilderModal extends Modal {
       await leaf.openFile(fileToOpen);
     } catch (error) {
       console.error("Error saving encounter:", error);
-      new Notice("Error saving encounter");
+      new Notice(error instanceof EncounterTrapNoteSaveError ? error.message : "Error saving encounter");
+    } finally {
+      this.saving = false;
     }
+  }
+
+  private async updateEncounterNote(
+    file: TFile, path: string, generatedContent: string, creatures: EncounterCreature[],
+  ): Promise<void> {
+    const { frontmatter: generated } = parseYamlFrontmatter(generatedContent);
+    const generatedCreatures = generated.creatures as Record<string, unknown>[];
+    await saveEncounterTrapEdits(this.app, file, path, "encounter", (frontmatter, body) => {
+      const updated: Record<string, unknown> = {
+        ...frontmatter,
+        name: generated.name,
+        include_party: generated.include_party,
+        use_color_names: generated.use_color_names,
+        creatures: preserveNoteRowFields(frontmatter.creatures, generatedCreatures, encounterCreatureKey,
+          ENCOUNTER_CREATURE_FIELDS, (row, index) => this.originalCreatureKeys.get(creatures[index]!) ?? encounterCreatureKey(row)),
+        difficulty: {
+          ...(isNoteMapping(frontmatter.difficulty) ? frontmatter.difficulty : {}),
+          ...(isNoteMapping(generated.difficulty) ? generated.difficulty : {}),
+        },
+      };
+      for (const field of ["selected_party_id", "selected_party_name"]) {
+        if (generated[field] === undefined) delete updated[field];
+        else updated[field] = generated[field];
+      }
+      if (Array.isArray(generated.party_members)) {
+        updated.party_members = preserveNoteRowFields(frontmatter.party_members, generated.party_members,
+          (row) => JSON.stringify([row.note_path ?? row.name]), ENCOUNTER_PARTY_MEMBER_FIELDS);
+      } else {
+        delete updated.party_members;
+      }
+      return { frontmatter: updated, body: updateGeneratedNoteTitle(body, frontmatter.name, String(generated.name)) };
+    }, () => {
+      creatures.forEach((creature, index) => this.originalCreatureKeys.set(creature, encounterCreatureKey(generatedCreatures[index]!)));
+    });
   }
 
   findCampaignFolder(filePath: string): string | null {
@@ -1470,13 +1529,13 @@ export class EncounterBuilderModal extends Modal {
     return "'" + str + "'";
   }
 
-  async generateEncounterContent(diffResult: any): Promise<string> {
+  async generateEncounterContent(diffResult: any, name = this.encounterName): Promise<string> {
     const currentDate = window.moment().format("YYYY-MM-DD");
 
     let frontmatter = `---
 type: encounter
 template_version: 1.2.0
-name: ${this.escapeYamlString(this.encounterName)}
+name: ${this.escapeYamlString(name)}
 creatures:`;
 
     for (const creature of this.creatures) {
@@ -1489,7 +1548,7 @@ creatures:`;
       if (creature.fixedInitiative) frontmatter += `\n    fixed_initiative: true`;
       if (creature.hp) frontmatter += `\n    hp: ${creature.hp}`;
       if (creature.ac) frontmatter += `\n    ac: ${creature.ac}`;
-      if (creature.cr) frontmatter += `\n    cr: ${this.escapeYamlString(creature.cr)}`;
+      if (creature.cr) frontmatter += `\n    cr: ${this.escapeYamlString(String(creature.cr))}`;
       if (creature.source) frontmatter += `\n    source: ${this.escapeYamlString(creature.source)}`;
       if (creature.path) frontmatter += `\n    path: ${this.escapeYamlString(creature.path)}`;
       if (creature.isTrap) frontmatter += `\n    is_trap: true`;
@@ -1579,7 +1638,7 @@ date: ${currentDate}
 
     const content = `${frontmatter}
 
-# ${this.encounterName}
+# ${name}
 
 \`\`\`dnd-hub
 \`\`\`

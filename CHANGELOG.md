@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve authored content when editing encounters and traps, and prevent renames or duplicate names from overwriting another note.
 - Keep live-session quick notes bound to their original session during asynchronous saves and campaign/session switching; preserve outgoing edits and unrelated note content instead of writing a stale document to another session.
 
 ## [0.15.0-beta.2] - 2026-11-17
