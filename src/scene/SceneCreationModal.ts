@@ -8,6 +8,7 @@ import { PartySelector } from '../party/PartySelector';
 import { parseYamlFrontmatter, updateYamlFrontmatter } from '../utils/YamlFrontmatter';
 import { serializeUnsavedState, UnsavedChangesGuard } from '../utils/UnsavedChangesGuard';
 import { readSceneNote, updateSceneNote } from './sceneNote';
+import { planSceneRenames, runSceneRenames, type SceneRename } from './sceneRenames';
 
 const EDITABLE_CREATURE_FIELDS = ["name", "count", "hp", "ac", "cr", "source", "path", "isTrap", "isFriendly", "isHidden"] as const;
 const LEGACY_CREATURE_FLAGS = { isTrap: "is_trap", isFriendly: "is_friendly", isHidden: "is_hidden" } as const;
@@ -369,13 +370,9 @@ export class SceneCreationModal extends Modal {
             return;
           }
 
-          if (!this.isEdit) {
-            this.unsavedGuard.allowClose();
-            this.close();
-          }
           btn.setDisabled(true);
           const previouslyInert = contentEl.inert;
-          if (this.isEdit) contentEl.inert = true;
+          contentEl.inert = true;
           try {
             await this.createSceneFile();
           } finally {
@@ -575,60 +572,23 @@ export class SceneCreationModal extends Modal {
       let scenesFolder: string;
 
       if (isFolderStructure) {
-        // Folder structure: Adventures/Adventure Name/
-        const newScenesFolder = `${adventureFolder.path}/Scenes`;
-        const newScenesExists = this.app.vault.getAbstractFileByPath(newScenesFolder) instanceof TFolder;
-        
-        if (newScenesExists) {
-          // New structure: Adventures/Adventure Name/Scenes/
-          scenesFolder = newScenesFolder;
-        } else {
-          // Legacy: check for Act folders
-          const act1Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 1 - Setup`) instanceof TFolder;
-          const act2Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 2 - Rising Action`) instanceof TFolder;
-          const act3Exists = this.app.vault.getAbstractFileByPath(`${adventureFolder.path}/Act 3 - Climax`) instanceof TFolder;
-          
-          if (act1Exists || act2Exists || act3Exists) {
-            // Legacy act-based - put new scenes in Scenes folder going forward
-            scenesFolder = newScenesFolder;
-            await this.plugin.ensureFolderExists(scenesFolder);
-          } else {
-            // No Scenes or Act folders - create Scenes folder
-            scenesFolder = newScenesFolder;
-            await this.plugin.ensureFolderExists(scenesFolder);
-          }
-        }
-        scenePath = `${scenesFolder}/Scene ${sceneNum} - ${this.sceneName}.md`;
+        scenesFolder = `${adventureFolder.path}/Scenes`;
       } else {
         // Legacy flat structure: Adventures/Adventure Name - Scenes/
         const flatScenesFolder = `${adventureFolder.path}/${adventureFile.basename} - Scenes`;
-        const flatExists = this.app.vault.getAbstractFileByPath(flatScenesFolder) instanceof TFolder;
-        
-        if (flatExists) {
-          scenesFolder = flatScenesFolder;
-        } else {
-          // Create new Scenes folder inside adventure folder
-          // Need to create the adventure folder first
-          const advFolder = `${adventureFolder.path}/${adventureFile.basename}`;
-          await this.plugin.ensureFolderExists(advFolder);
-          scenesFolder = `${advFolder}/Scenes`;
-          await this.plugin.ensureFolderExists(scenesFolder);
-        }
-        scenePath = `${scenesFolder}/Scene ${sceneNum} - ${this.sceneName}.md`;
+        scenesFolder = this.app.vault.getAbstractFileByPath(flatScenesFolder) instanceof TFolder
+          ? flatScenesFolder : `${adventureFolder.path}/${adventureFile.basename}/Scenes`;
       }
+      scenePath = `${scenesFolder}/Scene ${sceneNum} - ${this.sceneName}.md`;
 
       // Check if we need to renumber existing scenes
       const existingScenes = await this.getExistingScenes(this.adventurePath);
       const scenesAtOrAfter = existingScenes.filter(s => s.number >= sceneNum);
 
-      if (scenesAtOrAfter.length > 0) {
-        // Renumber scenes
-        await this.renumberScenes(scenesAtOrAfter, sceneNum);
-      }
+      const renames = await planSceneRenames(this.app, this.getSceneRenumbers(scenesAtOrAfter), scenePath);
 
       // Ensure parent folder exists
-      const parentPath = scenePath.substring(0, scenePath.lastIndexOf('/'));
-      await this.plugin.ensureFolderExists(parentPath);
+      await this.plugin.ensureFolderExists(scenesFolder);
 
       // Create the scene file
       const currentDate: string = new Date().toISOString().split('T')[0] || new Date().toISOString().substring(0, 10);
@@ -651,7 +611,10 @@ export class SceneCreationModal extends Modal {
         }
       }
 
-      await this.createSceneNote(scenePath, sceneData, campaignName, worldName, adventureFile.basename, currentDate, encounterFilePath);
+      await runSceneRenames(
+        this.app, renames, paths => this.plugin.partyManager.remapEncounterNotePaths(paths),
+        () => this.createSceneNote(scenePath, sceneData, campaignName, worldName, adventureFile.basename, currentDate, encounterFilePath),
+      );
 
       // Save encounter via PartyManager after scene is created
       if (this.createEncounter && this.creatures.length > 0) {
@@ -659,6 +622,8 @@ export class SceneCreationModal extends Modal {
       }
 
       // Open the new scene
+      this.unsavedGuard.allowClose();
+      this.close();
       await this.app.workspace.openLinkText(scenePath, "", true);
 
       new Notice(`✅ Scene "${this.sceneName}" created!`);
@@ -684,10 +649,9 @@ export class SceneCreationModal extends Modal {
     const renumber = otherScenes.some(scene => scene.number === number)
       ? otherScenes.filter(scene => scene.number >= number) : [];
 
-    if (destination !== originalPath && this.app.vault.getAbstractFileByPath(destination)
-      && !renumber.some(scene => scene.path === destination)) {
-      throw new Error(`A file or folder already exists at "${destination}".`);
-    }
+    const renames = this.getSceneRenumbers(renumber);
+    if (destination !== originalPath) renames.push({ file: original, from: originalPath, to: destination });
+    const planned = await planSceneRenames(this.app, renames);
 
     const details = {
       name: this.sceneName, adventure: adventure.basename, campaign, world,
@@ -730,14 +694,13 @@ export class SceneCreationModal extends Modal {
       }
     }
 
-    if (destination !== originalPath) {
+    if (planned.length) {
       try {
-        if (renumber.length > 0) await this.renumberScenes(renumber, number);
-        if (this.app.vault.getAbstractFileByPath(destination)) throw new Error(`Destination already exists at "${destination}".`);
-        await this.app.vault.rename(original, destination);
-        this.originalScenePath = original.path;
+        await runSceneRenames(this.app, planned, paths => this.plugin.partyManager.remapEncounterNotePaths(paths));
       } catch (error) {
-        throw new Error(`Edits were saved to "${originalPath}". Could not rename the scene: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(`Edits were saved to "${original.path}". Could not rename the scene: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        this.originalScenePath = original.path;
       }
     }
 
@@ -828,58 +791,15 @@ export class SceneCreationModal extends Modal {
     });
   }
 
-  async renumberScenes(scenes: Array<{ path: string; number: number; name: string }>, insertAt: number) {
-    // Renumber scenes from highest to lowest to avoid conflicts during rename
-    const sorted = [...scenes].sort((a, b) => b.number - a.number);
-    
-    for (const scene of sorted) {
-      const oldFile = this.app.vault.getAbstractFileByPath(scene.path);
-      if (!(oldFile instanceof TFile)) continue;
-
-      const newNumber = scene.number + 1;
-      
-      // Construct new filename preserving exact scene name
-      const oldFilename = oldFile.basename; // e.g., "Scene 5 - Tavern Fight"
-      const sceneNameMatch = oldFilename.match(/^Scene\s+\d+\s+-\s+(.+)$/);
-      const sceneName = sceneNameMatch?.[1] || scene.name;
-      const newFilename = `Scene ${newNumber} - ${sceneName}`;
-      
-      // Build new path
-      const parentPath = oldFile.parent?.path || "";
-      const newPath = `${parentPath}/${newFilename}.md`;
-
-      // Skip if source and destination are the same (shouldn't happen, but safety check)
-      if (oldFile.path === newPath) {
-        continue;
-      }
-
-      // Read and update content
-      let content = await this.app.vault.read(oldFile);
-      
-      // Update scene_number in frontmatter
-      content = content.replace(
-        /^scene_number:\s*\d+$/m,
-        `scene_number: ${newNumber}`
-      );
-      
-      // Update the h1 header if it exists
-      content = content.replace(
-        /^# Scene\s+\d+:/m,
-        `# Scene ${newNumber}:`
-      );
-
-      try {
-        // Create new file with updated content
-        await this.app.vault.create(newPath, content);
-        
-        // Delete old file only after successful creation
-        await this.app.vault.delete(oldFile);
-        
-      } catch (error) {
-        console.error(`Error renumbering scene ${oldFile.path}:`, error);
-        new Notice(`⚠️ Could not renumber ${oldFilename}`);
-      }
-    }
+  private getSceneRenumbers(scenes: Array<{ path: string; number: number; name: string }>): SceneRename[] {
+    // Start with later scenes so repeated names can move into paths vacated by preceding renames.
+    return [...scenes].sort((a, b) => b.number - a.number).map(scene => {
+      const file = this.app.vault.getAbstractFileByPath(scene.path);
+      if (!(file instanceof TFile)) throw new Error(`The scene at "${scene.path}" was moved or removed.`);
+      const folder = scene.path.slice(0, scene.path.lastIndexOf('/') + 1);
+      const number = scene.number + 1;
+      return { file, from: scene.path, to: `${folder}Scene ${number} - ${scene.name}.md`, number };
+    });
   }
 
   async createSceneNote(

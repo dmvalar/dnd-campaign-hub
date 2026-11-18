@@ -1,8 +1,10 @@
-import { Notice, type TFile } from "obsidian";
+import { posix } from "node:path";
+import { Notice, TFile, type TFolder } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EncounterBuilder } from "../../src/encounter/EncounterBuilder";
 import { SceneCreationModal } from "../../src/scene/SceneCreationModal";
 import { readSceneNote } from "../../src/scene/sceneNote";
+import { planSceneRenames, runSceneRenames } from "../../src/scene/sceneRenames";
 import { noteVaultFixture } from "../encounter/noteVaultFixture";
 
 vi.mock("obsidian", async (importOriginal) => ({
@@ -11,7 +13,9 @@ vi.mock("obsidian", async (importOriginal) => ({
 }));
 
 const adventureFolder = "ttrpgs/North/Adventures/The Keep";
-const scenePath = `${adventureFolder}/Scenes/Scene 2 - The Gate.md`;
+const sceneFolder = `${adventureFolder}/Scenes`;
+const gatePath = (number: number) => `${sceneFolder}/Scene ${number} - The Gate.md`;
+const scenePath = gatePath(2);
 const frontmatter = `---
 type: scene
 template_version: 2.2.0
@@ -55,29 +59,47 @@ async function setup(options: { content?: string; scene?: boolean; adventureName
   const adventureName = options.adventureName ?? "The Keep";
   const adventure = vault.addNote(`${adventureFolder}/${adventureName}.md`, options.adventureYaml ?? "---\ncampaign: North\nworld: North\n---\n");
   const parent = vault.addFolder(adventureFolder).get(adventureFolder);
-  const scenes = vault.addFolder(`${adventureFolder}/Scenes`).get(`${adventureFolder}/Scenes`);
+  const scenes = vault.addFolder(sceneFolder).get(sceneFolder) as TFolder;
   Object.assign(parent!, { name: adventureName, children: [adventure, scenes] });
   Object.assign(adventure, { parent });
   const file = options.scene === false ? undefined : vault.addNote(scenePath, options.content ?? frontmatter + body);
   if (file) Object.assign(file, { parent: scenes });
-  Object.assign(scenes!, { name: "Scenes", children: file ? [file] : [] });
+  Object.assign(scenes, { name: "Scenes", children: file ? [file] : [] });
+  const addScene = (path: string, content: string) => {
+    const added = vault.addNote(path, content);
+    Object.assign(added, { parent: scenes });
+    scenes.children.push(added);
+    return added;
+  };
 
   const openLinkText = vi.fn();
   const modify = vi.fn(async (note: TFile, content: string) => vault.write(note, content));
-  Object.assign(vault.app.vault, { rename: vault.renameFile, modify });
+  const rawRename = vi.fn();
+  Object.assign(vault.app.vault, { cachedRead: vault.app.vault.read, rename: rawRename, modify });
   Object.assign(vault.app.workspace, { openLinkText });
   Object.assign(vault.app.metadataCache, {
     getFileCache: (note: TFile) => ({ frontmatter: readSceneNote(vault.read(note)).frontmatter }),
+    getFirstLinkpathDest: (target: string, source: string) => {
+      const md = /\.md$/i.test(target) ? target : `${target}.md`;
+      const relative = posix.normalize(posix.join(posix.dirname(source), md));
+      const candidate = vault.entries.get(target.startsWith(".") ? relative : md)
+        ?? (!target.includes("/") ? vault.entries.get(relative) : undefined)
+        ?? (!target.includes("/") ? [...vault.entries.values()].find(note => note instanceof TFile && note.name === md) : undefined);
+      return candidate instanceof TFile ? candidate : null;
+    },
   });
 
-  const partyManager = { generateId: vi.fn(() => "member-id"), buildEncounter: vi.fn(), saveEncounter: vi.fn() };
+  const partyManager = {
+    generateId: vi.fn(() => "member-id"), buildEncounter: vi.fn(), saveEncounter: vi.fn(),
+    remapEncounterNotePaths: vi.fn(async (_paths: ReadonlyMap<string, string>) => {}),
+  };
   const plugin = { partyManager, ensureFolderExists: vi.fn() } as unknown as SceneCreationModal["plugin"];
   const modal = new SceneCreationModal(vault.app, plugin, adventure.path, file?.path);
   const close = vi.fn();
   Object.assign(modal, { app: vault.app, close });
   if (file) await modal.loadSceneData();
 
-  return { ...vault, close, modal, file: file!, openLinkText, modify, partyManager, plugin };
+  return { ...vault, addScene, close, modal, file: file!, openLinkText, rawRename, modify, partyManager, plugin };
 }
 
 beforeEach(() => {
@@ -350,4 +372,252 @@ describe("EncounterBuilder scene linking", () => {
     expect(f.modify).toHaveBeenCalledTimes(1);
     expect(f.partyManager.saveEncounter).toHaveBeenCalledTimes(2);
   });
+});
+
+describe("scene rename and insertion", () => {
+  it("updates aliased reference fields without changing shared custom anchors", async () => {
+    const f = await setup();
+    const anchors = `scalar: &gate '[[${scenePath}#Arrival|Gate]]'\nlist: &plan ['[[${scenePath}]]', {path: '${scenePath}', label: Keep}]\nobject: &reference {path: '${scenePath}', label: Keep}\n`;
+    const session = f.addNote("Aliased session.md", `---\n${anchors}type: session\nstarting_scene: *gate\nplanned_scenes: *plan # ordered\nending_scene: *reference\ncustom: *plan\n---\n`);
+    const prior = readSceneNote(f.read(session)).frontmatter;
+    f.modal.sceneName = "North Gate";
+    await f.modal.createSceneFile();
+    const destination = `${sceneFolder}/Scene 2 - North Gate.md`;
+    expect(f.read(session)).toContain(anchors);
+    expect(f.read(session)).toContain(" # ordered\n");
+    expect(readSceneNote(f.read(session)).frontmatter).toMatchObject({
+      custom: prior.custom,
+      starting_scene: `[[${destination}#Arrival|Gate]]`,
+      planned_scenes: [`[[${destination}]]`, { path: destination, label: "Keep" }],
+      ending_scene: { path: destination, label: "Keep" },
+    });
+  });
+
+  it("preserves heading suffixes and encoded relative Markdown links in owned fields", async () => {
+    const f = await setup();
+    const session = f.addNote(`${adventureFolder}/Sessions/Session 9.md`, `---
+type: session
+starting_scene: '${scenePath}#Arrival'
+ending_scene: '[The gate](../Scenes/Scene%202%20-%20The%20Gate.md#Arrival)'
+---
+`);
+    f.modal.sceneName = "North Gate";
+    await f.modal.createSceneFile();
+    expect(readSceneNote(f.read(session)).frontmatter).toMatchObject({
+      starting_scene: `${sceneFolder}/Scene 2 - North Gate.md#Arrival`,
+      ending_scene: "[The gate](../Scenes/Scene%202%20-%20North%20Gate.md#Arrival)",
+    });
+  });
+
+  it("preserves linked scene identity with native link updating disabled", async () => {
+    const f = await setup();
+    const otherScene = "Elsewhere/Scene 2 - The Gate.md";
+    f.addNote(otherScene, frontmatter + body);
+    const otherSession = f.addNote("Elsewhere/Session 2.md", "---\ntype: session\nstarting_scene: '[[Scene 2 - The Gate]]'\n---\n");
+    const sessionContent = `---
+type: session
+planned_scenes:
+  - '[[${scenePath}#Read Aloud|Gate arrival]]' # table order
+  - {path: "../Scenes/Scene 2 - The Gate.md", label: Keep this}
+  - '[[${otherScene}|Elsewhere]]'
+starting_scene: "[[../Scenes/Scene 2 - The Gate#^arrival]]"
+ending_scene: ${scenePath}
+custom: '[[${scenePath}]]'
+---
+Keep this authored link as configured in Obsidian: [[${scenePath}]].
+`;
+    const toCrlf = (value: string) => "\uFEFF" + value.replace(/\n/g, "\r\n");
+    const session = f.addNote(`${adventureFolder}/Sessions/Session 1.md`, toCrlf(sessionContent));
+    const encounter = f.addNote("z_Encounters/Gate.md", `---\ntype: encounter\nscene_path: '${scenePath}' # keep\ncreatures: [{name: Guard, note_path: '${scenePath}'}]\n---\n`);
+    const legacy = f.addNote(`${sceneFolder}/Session legacy.md`, "---\ntype: session\nplanned_scenes: '[[Scene 2 - The Gate|The gate]]'\n---\n");
+    const trap = f.addNote(`${sceneFolder}/Gate trap.md`, "---\ntype: trap\nscene: Scene 2 - The Gate\n---\n");
+    const otherSessionContent = f.read(otherSession);
+    f.modal.sceneName = "North Gate";
+    const destination = `${sceneFolder}/Scene 2 - North Gate.md`;
+    await f.modal.createSceneFile();
+
+    expect(f.entries.get(destination)).toBe(f.file);
+    expect(f.renameFile).toHaveBeenCalledExactlyOnceWith(f.file, destination);
+    expect(f.rawRename).not.toHaveBeenCalled();
+    expect(f.partyManager.remapEncounterNotePaths).toHaveBeenCalledExactlyOnceWith(new Map([[scenePath, destination]]));
+    expect(f.read(session)).toBe(toCrlf(sessionContent
+      .replace(`${scenePath}#Read Aloud`, `${destination}#Read Aloud`)
+      .replace('path: "../Scenes/Scene 2 - The Gate.md"', 'path: "../Scenes/Scene 2 - North Gate.md"')
+      .replace("Scene 2 - The Gate#^arrival", "Scene 2 - North Gate#^arrival")
+      .replace(`ending_scene: ${scenePath}`, `ending_scene: "${destination}"`)));
+    expect(f.read(otherSession)).toBe(otherSessionContent);
+    expect(f.read(encounter)).toContain(`scene_path: '${destination}' # keep\ncreatures: [{name: Guard, note_path: '${scenePath}'}]`);
+    expect(readSceneNote(f.read(legacy)).frontmatter.planned_scenes).toBe(`[[${destination.slice(0, -3)}|The gate]]`);
+    expect(readSceneNote(f.read(trap)).frontmatter.scene).toBe(destination.slice(0, -3));
+  });
+
+  async function insertion() {
+    const f = await setup({ scene: false });
+    const paths = [2, 3, 4, 5].map(gatePath);
+    const start = [2, 3, 4].map(number => {
+      const content = frontmatter.replace("scene_number: 2", `scene_number: ${number} # order`)
+        + (number === 3 ? "# Scene 3: Author's own heading\n" + body : body.replace("# Scene 2", `# Scene ${number}`));
+      return "\uFEFF" + content.replace(/\n/g, "\r\n");
+    });
+    const files = start.map((content, index) => f.addScene(paths[index]!, content));
+    const sessionContent = `---\ntype: session\nplanned_scenes: ['[[${paths[0]}]]', '[[${paths[1]}]]', '[[${paths[2]}]]']\nending_scene: "${paths[2]}"\n---\n`;
+    const session = f.addNote("Session 5.md", sessionContent);
+    f.modal.sceneNumber = "2";
+    f.modal.sceneName = "The Gate";
+    return { ...f, paths, files, start, session, sessionContent };
+  }
+
+  it("moves each link once when inserting a new scene reuses old paths", async () => {
+    const f = await insertion();
+    const adventure = f.entries.get(`${adventureFolder}/The Keep.md`) as TFile;
+    f.write(adventure, f.read(adventure) + `\nLater: [[${f.paths[2]}|last gate]].\n`);
+    const rename = f.renameFile.getMockImplementation()!;
+    // Represent edits made by the platform before its rename promise resolves.
+    f.renameFile.mockImplementationOnce(async (file, destination) => {
+      const old = file.path;
+      await rename(file, destination);
+      f.write(adventure, f.read(adventure).replace(old, destination));
+      f.write(f.session, f.read(f.session).replace(`[[${old}]]`, `[[${destination}]]`));
+    });
+    await f.modal.createSceneFile();
+
+    expect(f.renameFile.mock.calls.map(([, destination]) => destination)).toEqual([f.paths[3], f.paths[2], f.paths[1]]);
+    expect(f.rawRename).not.toHaveBeenCalled();
+    expect(f.create).toHaveBeenCalledTimes(1);
+    expect(f.remove).not.toHaveBeenCalled();
+    expect(f.entries.get(f.paths[0]!)).not.toBe(f.files[0]);
+    f.files.forEach((file, index) => {
+      expect(f.entries.get(f.paths[index + 1]!)).toBe(file);
+      const content = f.start[index]!.replace(`scene_number: ${index + 2}`, `scene_number: ${index + 3}`);
+      expect(f.read(file)).toBe(index === 1 ? content : content.replace(`# Scene ${index + 2}`, `# Scene ${index + 3}`));
+    });
+    expect(readSceneNote(f.read(f.session)).frontmatter).toMatchObject({
+      planned_scenes: f.paths.slice(1).map(path => `[[${path}]]`), ending_scene: f.paths[3],
+    });
+    expect(f.read(adventure)).toContain(`Later: [[${f.paths[3]}|last gate]].`);
+    expect(f.partyManager.remapEncounterNotePaths).toHaveBeenCalledExactlyOnceWith(
+      new Map(f.paths.slice(0, 3).map((path, index) => [path, f.paths[index + 1]])),
+    );
+  });
+
+  it("rejects an occupied destination before changing any note", async () => {
+    const f = await insertion();
+    f.addFolder(f.paths[3]!);
+    await f.modal.createSceneFile();
+
+    expect(f.renameFile).not.toHaveBeenCalled();
+    expect(f.create).not.toHaveBeenCalled();
+    expect(f.process).not.toHaveBeenCalled();
+    expect(f.partyManager.remapEncounterNotePaths).not.toHaveBeenCalled();
+    expect(Notice).toHaveBeenCalledWith(expect.stringContaining(`already exists at "${f.paths[3]}"`));
+  });
+
+  it("repairs references added before a later move in the batch", async () => {
+    const f = await insertion();
+    const rename = f.renameFile.getMockImplementation()!;
+    let lateSession: TFile | undefined;
+    f.renameFile.mockImplementationOnce(async (file, destination) => {
+      await rename(file, destination);
+      lateSession = f.addNote("Late Session.md", `---\ntype: session\nstarting_scene: '[[${f.paths[1]}]]'\n---\n`);
+    });
+    await f.modal.createSceneFile();
+    expect(readSceneNote(f.read(lateSession!)).frontmatter.starting_scene).toBe(`[[${f.paths[2]}]]`);
+  });
+
+  it("rejects duplicate sources and cyclic destinations before mutations", async () => {
+    const f = await setup();
+    const another = f.addScene(gatePath(3), frontmatter.replace("scene_number: 2", "scene_number: 3") + body);
+    await expect(planSceneRenames(f.app, [
+      { file: f.file, from: scenePath, to: gatePath(3) },
+      { file: f.file, from: scenePath, to: gatePath(4) },
+    ])).rejects.toThrow("moved twice");
+    await expect(planSceneRenames(f.app, [
+      { file: f.file, from: scenePath, to: gatePath(3) },
+      { file: another, from: gatePath(3), to: scenePath },
+    ])).rejects.toThrow("conflicting destinations");
+    expect(f.renameFile).not.toHaveBeenCalled();
+    expect(f.process).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["type: scene\nscene_number: '2' # order\ncustom: [A, B]\n", "type: scene\nscene_number: 3 # order\ncustom: [A, B]\n"],
+    ["type: scene\ncustom: [A, B]\n", "type: scene\ncustom: [A, B]\nscene_number: 3\n"],
+    ["{type: scene, custom: [A, B]}\n", "{type: scene, custom: [A, B], scene_number: 3}\n"],
+  ])("renumbers legacy YAML while preserving unrelated bytes (%s)", async (yaml, expected) => {
+    const makeNote = (fm: string, number: number) => `\uFEFF---\r\n${fm.replace(/\n/g, "\r\n")}---\r\n\r\n# Scene ${number}: The Gate\r\n\r\nKeep [[Session 1]].\r\n`;
+    const f = await setup({ content: makeNote(yaml, 2) });
+    const plan = await planSceneRenames(f.app, [{ file: f.file, from: scenePath, to: gatePath(3), number: 3 }]);
+    await runSceneRenames(f.app, plan, f.partyManager.remapEncounterNotePaths);
+    expect(f.read(f.file)).toBe(makeNote(expected, 3));
+  });
+
+  it("restores identity when a platform rename moves a file and then rejects", async () => {
+    const f = await setup();
+    const rename = f.renameFile.getMockImplementation()!;
+    f.renameFile.mockImplementationOnce(async (file, destination) => {
+      await rename(file, destination);
+      throw new Error("Native link update failed");
+    });
+    f.modal.sceneName = "North Gate";
+    await f.modal.createSceneFile();
+    expect(f.entries.get(scenePath)).toBe(f.file);
+    expect(f.file.path).toBe(scenePath);
+    expect(f.renameFile).toHaveBeenCalledTimes(2);
+    expect(f.partyManager.remapEncounterNotePaths).not.toHaveBeenCalled();
+    expect(f.close).not.toHaveBeenCalled();
+  });
+
+  it("retains concurrent authored edits when rollback cannot restore all note bytes", async () => {
+    const f = await insertion();
+    const rename = f.renameFile.getMockImplementation()!;
+    f.renameFile.mockImplementationOnce(rename).mockImplementationOnce(async () => {
+      f.write(f.files[2]!, f.read(f.files[2]!) + "\r\nA concurrent GM note.\r\n");
+      throw new Error("Second move failed");
+    });
+    await f.modal.createSceneFile();
+    expect(f.read(f.files[2]!)).toContain("A concurrent GM note.");
+    expect(f.entries.get(f.paths[2]!)).toBe(f.files[2]);
+    expect(f.create).not.toHaveBeenCalled();
+    expect(f.remove).not.toHaveBeenCalled();
+    expect(f.close).not.toHaveBeenCalled();
+    expect(Notice).toHaveBeenCalledWith(expect.stringContaining("Could not fully restore"));
+  });
+
+  it.each(["rename", "number write", "reference write", "stored path write", "scene creation"])(
+    "restores shifted scenes and references after a failure during %s, then retries",
+    async stage => {
+      const f = await insertion();
+      if (stage === "rename") {
+        const rename = f.renameFile.getMockImplementation()!;
+        f.renameFile.mockImplementationOnce(rename).mockRejectedValueOnce(new Error("move failed"));
+      } else if (stage === "number write" || stage === "reference write") {
+        const process = f.process.getMockImplementation()!;
+        f.process.mockImplementationOnce(process);
+        if (stage === "number write") f.process.mockImplementationOnce(process);
+        f.process.mockRejectedValueOnce(new Error("write failed"));
+      } else if (stage === "stored path write") {
+        f.partyManager.remapEncounterNotePaths.mockRejectedValueOnce(new Error("stored path write failed"));
+      } else {
+        f.create.mockRejectedValueOnce(new Error("scene create failed"));
+      }
+      await f.modal.createSceneFile();
+
+      expect(f.entries.has(f.paths[3]!)).toBe(false);
+      f.files.forEach((file, index) => {
+        expect(f.entries.get(f.paths[index]!)).toBe(file);
+        expect(f.read(file)).toBe(f.start[index]);
+      });
+      expect(f.read(f.session)).toBe(f.sessionContent);
+      expect(f.openLinkText).not.toHaveBeenCalled();
+      expect(f.close).not.toHaveBeenCalled();
+      if (stage === "scene creation") {
+        expect(f.partyManager.remapEncounterNotePaths).toHaveBeenNthCalledWith(2,
+          new Map(f.paths.slice(1).map((path, index) => [path, f.paths[index]])));
+      }
+
+      await f.modal.createSceneFile();
+      f.files.forEach((file, index) => expect(f.entries.get(f.paths[index + 1]!)).toBe(file));
+      expect(f.close).toHaveBeenCalledTimes(1);
+    },
+  );
 });
