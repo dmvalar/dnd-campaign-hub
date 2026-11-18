@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve handout links, custom properties, and existing metadata when editing a scene.
 - Serialize saves for each map and retain newer pending edits when an earlier write completes or fails.
 - Remove only the matching map code blocks when deleting a map from a note, preserving other maps and surrounding content.
 - Preserve authored content when editing encounters and traps, and prevent renames or duplicate names from overwriting another note.

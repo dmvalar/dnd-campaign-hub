@@ -1564,7 +1564,7 @@ export class EncounterBuilder {
     return creatures;
   }
 
-  async createEncounter(scenePath: string) {
+  async createEncounter(scenePath: string, linkToScene = true) {
     if (this.creatures.length === 0) return;
 
     try {
@@ -1638,7 +1638,7 @@ export class EncounterBuilder {
       new Notice(`✅ Encounter "${this.encounterName}" saved!`);
 
       // Link encounter to scene
-      await this.linkEncounterToScene(scenePath);
+      if (linkToScene) await this.linkEncounterToScene(scenePath);
 
     } catch (error) {
       console.error("Error creating encounter:", error);

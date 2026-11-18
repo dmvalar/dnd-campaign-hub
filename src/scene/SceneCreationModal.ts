@@ -5,8 +5,12 @@ import { RenameCreatureModal } from "../utils/CreatureModals";
 import { MarkerDefinition } from "../marker/MarkerTypes";
 import { SCENE_TEMPLATE } from '../templates';
 import { PartySelector } from '../party/PartySelector';
-import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
-import { UnsavedChangesGuard } from '../utils/UnsavedChangesGuard';
+import { parseYamlFrontmatter, updateYamlFrontmatter } from '../utils/YamlFrontmatter';
+import { serializeUnsavedState, UnsavedChangesGuard } from '../utils/UnsavedChangesGuard';
+import { readSceneNote, updateSceneNote } from './sceneNote';
+
+const EDITABLE_CREATURE_FIELDS = ["name", "count", "hp", "ac", "cr", "source", "path", "isTrap", "isFriendly", "isHidden"] as const;
+const LEGACY_CREATURE_FLAGS = { isTrap: "is_trap", isFriendly: "is_friendly", isHidden: "is_hidden" } as const;
 
 export class SceneCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -28,17 +32,7 @@ export class SceneCreationModal extends Modal {
   selectedPartyMembers: string[] = [];  // Selected party member names
   selectedPartyId = "";
   selectedPartyName = "";
-  creatures: Array<{
-    name: string;
-    count: number;
-    hp?: number;
-    ac?: number;
-    cr?: string;
-    source?: string;
-    path?: string;  // Path to creature file for statblock plugin
-    isFriendly?: boolean;
-    isHidden?: boolean;
-  }> = [];
+  creatures: EncounterCreature[] = [];
   
   // UI state
   encounterSection: HTMLElement | null = null;
@@ -52,6 +46,10 @@ export class SceneCreationModal extends Modal {
   isEdit = false;
   originalScenePath = "";
   private readonly unsavedGuard: UnsavedChangesGuard;
+  private initialEncounterState = structuredClone(this.getEncounterState());
+  private originalCreatureRows: Record<string, unknown>[] = [];
+  private originalCreatureIndexes = new WeakMap<EncounterCreature, number>();
+  private encounterRegistrationPending = false;
 
   constructor(app: App, plugin: DndCampaignHubPlugin, adventurePath?: string, scenePath?: string, campaignPath?: string) {
     super(app);
@@ -72,7 +70,13 @@ export class SceneCreationModal extends Modal {
     return {
       adventurePath: this.adventurePath, sceneName: this.sceneName, act: this.act,
       sceneNumber: this.sceneNumber, duration: this.duration, type: this.type,
-      difficulty: this.difficulty, createEncounter: this.createEncounter,
+      difficulty: this.difficulty, ...this.getEncounterState(),
+    };
+  }
+
+  private getEncounterState() {
+    return {
+      createEncounter: this.createEncounter,
       encounterName: this.encounterName, useColorNames: this.useColorNames,
       includeParty: this.includeParty, selectedPartyMembers: this.selectedPartyMembers,
       selectedPartyId: this.selectedPartyId, creatures: this.creatures,
@@ -111,7 +115,7 @@ export class SceneCreationModal extends Modal {
       this.act = String(frontmatter.act || "1");
       this.sceneNumber = String(frontmatter.scene_number || "1");
       this.duration = frontmatter.duration || "30min";
-      this.type = frontmatter.scene_type || frontmatter.type || "exploration";
+      this.type = frontmatter.scene_type || (frontmatter.type !== "scene" ? frontmatter.type : "") || "exploration";
       this.difficulty = frontmatter.difficulty || "medium";
 
       // Load encounter properties if combat scene
@@ -122,7 +126,10 @@ export class SceneCreationModal extends Modal {
         // Load creatures from encounter_creatures or YAML field
         const creaturesData = frontmatter.encounter_creatures;
         if (creaturesData && Array.isArray(creaturesData)) {
-          this.creatures = await Promise.all(creaturesData.map(async (c: any) => {
+          this.originalCreatureRows = structuredClone(creaturesData);
+          this.creatures = await Promise.all(creaturesData.map(async (c: any, index) => {
+            const friendly = c.isFriendly ?? c.is_friendly;
+            const hidden = c.isHidden ?? c.is_hidden;
             const creature: any = {
               name: c.name || "Unknown",
               count: c.count || 1,
@@ -131,9 +138,9 @@ export class SceneCreationModal extends Modal {
               cr: c.cr,
               source: c.source || "vault",
               path: c.path,
-              isTrap: c.is_trap || false,
-              isFriendly: c.is_friendly === true || c.is_friendly === "true",
-              isHidden: c.is_hidden === true || c.is_hidden === "true"
+              isTrap: c.isTrap ?? c.is_trap ?? false,
+              isFriendly: friendly === true || friendly === "true",
+              isHidden: hidden === true || hidden === "true"
             };
             
             // If it's a trap, load the trap data from the trap file
@@ -157,6 +164,7 @@ export class SceneCreationModal extends Modal {
               }
             }
             
+            this.originalCreatureIndexes.set(creature, index);
             return creature;
           }));
         }
@@ -209,6 +217,8 @@ export class SceneCreationModal extends Modal {
           }
         }
       }
+
+      this.initialEncounterState = structuredClone(this.getEncounterState());
 
     } catch (error) {
       console.error("Error loading scene data:", error);
@@ -359,9 +369,19 @@ export class SceneCreationModal extends Modal {
             return;
           }
 
-          this.unsavedGuard.allowClose();
-          this.close();
-          await this.createSceneFile();
+          if (!this.isEdit) {
+            this.unsavedGuard.allowClose();
+            this.close();
+          }
+          btn.setDisabled(true);
+          const previouslyInert = contentEl.inert;
+          if (this.isEdit) contentEl.inert = true;
+          try {
+            await this.createSceneFile();
+          } finally {
+            contentEl.inert = previouslyInert;
+            btn.setDisabled(false);
+          }
         }));
     this.unsavedGuard.captureInitialState();
   }
@@ -517,8 +537,11 @@ export class SceneCreationModal extends Modal {
       const adventureContent = await this.app.vault.read(adventureFile);
       const campaignMatch = adventureContent.match(/^campaign:\s*([^\r\n]+)$/m);
       const worldMatch = adventureContent.match(/^world:\s*([^\r\n]+)$/m);
-      const campaignName = (campaignMatch?.[1]?.trim() || "Unknown").replace(/^["']|["']$/g, '');
-      const worldName = (worldMatch?.[1]?.trim() || campaignName).replace(/^["']|["']$/g, '');
+      const context = this.isEdit ? parseYamlFrontmatter(adventureContent.replace(/^\uFEFF/, "")).frontmatter : {};
+      const campaignName = typeof context.campaign === "string" ? context.campaign
+        : (campaignMatch?.[1]?.trim() || "Unknown").replace(/^["']|["']$/g, '');
+      const worldName = typeof context.world === "string" ? context.world
+        : (worldMatch?.[1]?.trim() || campaignName).replace(/^["']|["']$/g, '');
       
       // Set campaignPath for party resolution
       this.campaignPath = `ttrpgs/${campaignName}`;
@@ -527,170 +550,7 @@ export class SceneCreationModal extends Modal {
       // EDIT MODE: Update existing scene
       // ====================
       if (this.isEdit && this.originalScenePath) {
-        new Notice(`Updating scene "${this.sceneName}"...`);
-        
-        const originalFile = this.app.vault.getAbstractFileByPath(this.originalScenePath);
-        if (!(originalFile instanceof TFile)) {
-          new Notice("❌ Original scene file not found!");
-          return;
-        }
-
-        // Get original scene number from filename or frontmatter
-        const originalBasename = originalFile.basename;
-        const originalNumberMatch = originalBasename.match(/^Scene\s+(\d+)\s+-/);
-        const originalSceneNum = (originalNumberMatch && originalNumberMatch[1]) ? parseInt(originalNumberMatch[1]) : sceneNum;
-
-        // Check if scene number changed
-        const numberChanged = originalSceneNum !== sceneNum;
-
-        // Determine the target path
-        const adventureFolder = adventureFile.parent;
-        if (!adventureFolder) {
-          new Notice("❌ Adventure folder not found!");
-          return;
-        }
-
-        let targetPath: string;
-        
-        if (numberChanged) {
-          // Scene number changed - determine new path using the scene's current folder
-          // Scenes stay in their current folder (Scenes/, legacy Act folders, or legacy flat structure)
-          const parentPath = originalFile.parent?.path || "";
-          targetPath = `${parentPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
-
-          // Check if new number conflicts with existing scenes (excluding the current scene)
-          const existingScenes = await this.getExistingScenes(this.adventurePath);
-          const conflictingScenes = existingScenes.filter(s => 
-            s.number === sceneNum && s.path !== this.originalScenePath
-          );
-
-          if (conflictingScenes.length > 0) {
-            // Renumber conflicting scenes
-            const scenesToRenumber = existingScenes.filter(s => 
-              s.number >= sceneNum && s.path !== this.originalScenePath
-            );
-            await this.renumberScenes(scenesToRenumber, sceneNum);
-          }
-        } else {
-          // Scene number didn't change - update in place, but handle name/act changes
-          const parentPath = originalFile.parent?.path || "";
-          targetPath = `${parentPath}/Scene ${sceneNum} - ${this.sceneName}.md`;
-        }
-
-        // Handle encounter file
-        let encounterFilePath = "";
-        if (this.createEncounter && this.creatures.length > 0) {
-          const savedPath = await this.saveEncounterFile();
-          if (savedPath) {
-            encounterFilePath = savedPath;
-          }
-        }
-
-        // Preserve existing scene body content while updating frontmatter + header
-        const existingContent = await this.app.vault.read(originalFile);
-
-        // Build updated frontmatter
-        const currentDate: string = new Date().toISOString().split('T')[0] || new Date().toISOString().substring(0, 10);
-        const trackerEncounter = this.encounterName || "";
-        const encounterFile = encounterFilePath ? `"[[${encounterFilePath}]]"` : '""';
-        const encounterCreaturesJson = this.creatures.length > 0 
-          ? JSON.stringify(this.creatures) 
-          : "[]";
-        
-        let encounterDifficultyJson = "null";
-        if (this.creatures.length > 0) {
-          const diffResult = await this.calculateEncounterDifficulty();
-          encounterDifficultyJson = JSON.stringify({
-            difficulty: diffResult.analysis.difficulty,
-            roundsToDefeat: diffResult.analysis.roundsToDefeatEnemies,
-            survivalRatio: Math.round(diffResult.analysis.survivalRatio * 100) / 100,
-            partyHP: diffResult.partyStats.totalHP,
-            partyEffectiveDPR: Math.round(diffResult.analysis.partyEffectiveDPR),
-            enemyHP: diffResult.enemyStats.totalHP,
-            enemyEffectiveDPR: Math.round(diffResult.analysis.enemyEffectiveDPR),
-            enemyCount: diffResult.enemyStats.creatureCount,
-            partyCount: diffResult.partyStats.memberCount
-          });
-        }
-
-        const existingFm = this.app.metadataCache.getFileCache(originalFile)?.frontmatter;
-        const existingStatus = existingFm?.status || 'not-started';
-        const existingSessions = (() => {
-          const raw = existingFm?.sessions;
-          if (!raw) return '[]';
-          const arr: string[] = Array.isArray(raw) ? raw.map(String) : [String(raw)];
-          return `[${arr.map(s => { const n = s.startsWith('[[') ? s : `[[${s}]]`; return `"${n}"`; }).join(', ')}]`;
-        })();
-        const existingTemplateVersion = existingFm?.template_version || '2.2.0';
-
-        const updatedFrontmatter = `---
-type: scene
-template_version: ${existingTemplateVersion}
-adventure: "${adventureFile.basename}"
-campaign: "${campaignName}"
-world: "${worldName}"
-act: ${this.act}
-scene_number: ${sceneNum}
-duration: ${this.duration}
-scene_type: ${this.type}
-difficulty: ${this.difficulty}
-status: ${existingStatus}
-sessions: ${existingSessions}
-tracker_encounter: ${trackerEncounter}
-encounter_file: ${encounterFile}
-encounter_creatures: ${encounterCreaturesJson}
-encounter_difficulty: ${encounterDifficultyJson}
-selected_party_id: "${this.selectedPartyId || ''}"
-selected_party_members: ${JSON.stringify(this.selectedPartyMembers)}
-date: ${currentDate}
----`;
-
-        // Extract body content (everything after frontmatter)
-        // Find the end of frontmatter
-        const fmEndMatch = existingContent.match(/^---\n[\s\S]*?\n---\n?/);
-        let bodyContent = "";
-        if (fmEndMatch) {
-          bodyContent = existingContent.substring(fmEndMatch[0].length);
-        } else {
-          bodyContent = existingContent;
-        }
-
-        // Update the header line in body content if scene name/number changed
-        bodyContent = bodyContent.replace(
-          /^# Scene\s+\d+:\s+.+$/m,
-          `# Scene ${sceneNum}: ${this.sceneName}`
-        );
-
-        // Update the metadata line if present
-        bodyContent = bodyContent.replace(
-          /^\*\*Duration:\*\*.*\|.*\*\*Difficulty:\*\*.*$/m,
-          `**Duration:** ${this.duration} | **Type:** ${this.type.charAt(0).toUpperCase() + this.type.slice(1)} | **Difficulty:** ${this.difficulty}`
-        );
-        bodyContent = bodyContent.replace(
-          /^\*\*Act:\*\*.*\|.*\*\*Adventure:\*\*.*$/m,
-          `**Act:** ${this.act} | **Adventure:** [[${adventureFile.basename}]]`
-        );
-
-        const updatedContent = updatedFrontmatter + "\n" + bodyContent;
-
-        if (originalFile.path === targetPath) {
-          // Same path - just update content
-          await this.app.vault.modify(originalFile, updatedContent);
-        } else {
-          // Path changed - create new and delete old
-          await this.app.vault.create(targetPath, updatedContent);
-          await this.app.vault.delete(originalFile);
-        }
-
-        // Save encounter via PartyManager
-        if (this.createEncounter && this.creatures.length > 0) {
-          await this.saveEncounterData(targetPath);
-        }
-
-        // Open the updated scene
-        await this.app.workspace.openLinkText(targetPath, "", true);
-
-        new Notice(`✅ Scene "${this.sceneName}" updated!`);
+        await this.updateSceneFile(adventureFile, campaignName, worldName, sceneNum);
         return;
       }
 
@@ -803,9 +663,169 @@ date: ${currentDate}
 
       new Notice(`✅ Scene "${this.sceneName}" created!`);
     } catch (error) {
-      new Notice(`❌ Error creating scene: ${error instanceof Error ? error.message : String(error)}`);
-      console.error("Scene creation error:", error);
+      new Notice(`❌ Error ${this.isEdit ? "updating" : "creating"} scene: ${error instanceof Error ? error.message : String(error)}`);
+      console.error("Scene save error:", error);
     }
+  }
+
+  private async updateSceneFile(adventure: TFile, campaign: string, world: string, number: number) {
+    const original = this.app.vault.getAbstractFileByPath(this.originalScenePath);
+    if (!(original instanceof TFile)) throw new Error("Original scene file not found.");
+    if (!adventure.parent) throw new Error("Adventure folder not found.");
+
+    const originalPath = original.path;
+    const originalTitle = original.basename;
+    const folder = originalPath.slice(0, originalPath.lastIndexOf('/') + 1);
+    const destination = `${folder}Scene ${number} - ${this.sceneName}.md`;
+    const originalNumber = originalTitle.match(/^Scene\s+(\d+)\s+-/)?.[1];
+    const otherScenes = originalNumber && Number(originalNumber) !== number
+      ? (await this.getExistingScenes(this.adventurePath)).filter(scene => scene.path !== originalPath)
+      : [];
+    const renumber = otherScenes.some(scene => scene.number === number)
+      ? otherScenes.filter(scene => scene.number >= number) : [];
+
+    if (destination !== originalPath && this.app.vault.getAbstractFileByPath(destination)
+      && !renumber.some(scene => scene.path === destination)) {
+      throw new Error(`A file or folder already exists at "${destination}".`);
+    }
+
+    const details = {
+      name: this.sceneName, adventure: adventure.basename, campaign, world,
+      act: /^\d+$/.test(this.act) ? Number(this.act) : this.act,
+      scene_number: number, duration: this.duration, scene_type: this.type, difficulty: this.difficulty,
+    };
+    const state = this.getEncounterState();
+    const encounterChanged = serializeUnsavedState(state) !== serializeUnsavedState(this.initialEncounterState);
+    const saveEncounter = encounterChanged && state.createEncounter && !!state.encounterName && state.creatures.length > 0;
+    const editCreatureRows = state.createEncounter
+      && serializeUnsavedState(state.creatures) !== serializeUnsavedState(this.initialEncounterState.creatures);
+    if (saveEncounter) {
+      // Validate before writing the encounter note, then validate the latest scene again in process().
+      const { frontmatter } = readSceneNote(await this.app.vault.read(original));
+      if (editCreatureRows) this.mergeEditedCreatureRows(frontmatter.encounter_creatures);
+    }
+    const encounterFields = encounterChanged ? await this.getEditedEncounterFields(saveEncounter) : {};
+    const written = await this.app.vault.process(original, current => updateSceneNote(current, details, originalTitle, frontmatter => {
+      const fields = { ...encounterFields };
+      if (editCreatureRows) fields.encounter_creatures = this.mergeEditedCreatureRows(frontmatter.encounter_creatures);
+      const previous = frontmatter.encounter_difficulty;
+      const difficulty = fields.encounter_difficulty;
+      if (previous && typeof previous === "object" && !Array.isArray(previous) && difficulty && typeof difficulty === "object") {
+        fields.encounter_difficulty = { ...previous, ...difficulty };
+      }
+      return fields;
+    }));
+
+    if (encounterChanged) {
+      this.initialEncounterState = structuredClone(state);
+      this.encounterRegistrationPending = state.createEncounter && !!state.encounterName && state.creatures.length > 0
+        && (saveEncounter || this.encounterRegistrationPending);
+      if (editCreatureRows) {
+        const { encounter_creatures } = readSceneNote(written).frontmatter;
+        this.originalCreatureRows = Array.isArray(encounter_creatures) ? encounter_creatures : [];
+        this.originalCreatureIndexes = new WeakMap(this.creatures.map((creature, index) => [creature, index]));
+      } else if (!state.createEncounter) {
+        this.originalCreatureRows = [];
+        this.originalCreatureIndexes = new WeakMap();
+      }
+    }
+
+    if (destination !== originalPath) {
+      try {
+        if (renumber.length > 0) await this.renumberScenes(renumber, number);
+        if (this.app.vault.getAbstractFileByPath(destination)) throw new Error(`Destination already exists at "${destination}".`);
+        await this.app.vault.rename(original, destination);
+        this.originalScenePath = original.path;
+      } catch (error) {
+        throw new Error(`Edits were saved to "${originalPath}". Could not rename the scene: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    if (this.encounterRegistrationPending) {
+      await this.saveEncounterData(destination, false);
+      this.encounterRegistrationPending = false;
+    }
+
+    this.unsavedGuard.allowClose();
+    this.close();
+    await this.app.workspace.openLinkText(destination, "", true);
+    new Notice(`✅ Scene "${details.name}" updated!`);
+  }
+
+  private async getEditedEncounterFields(saveEncounter: boolean): Promise<Record<string, unknown>> {
+    if (!this.createEncounter) {
+      return {
+        tracker_encounter: "", encounter_file: "", encounter_creatures: [], encounter_difficulty: null,
+        selected_party_id: "", selected_party_members: [],
+      };
+    }
+
+    const initial = this.initialEncounterState;
+    const fields: Record<string, unknown> = {
+      tracker_encounter: this.encounterName, encounter_file: "", encounter_difficulty: null,
+    };
+    if (this.selectedPartyId !== initial.selectedPartyId) fields.selected_party_id = this.selectedPartyId;
+    if (serializeUnsavedState(this.selectedPartyMembers) !== serializeUnsavedState(initial.selectedPartyMembers)) {
+      fields.selected_party_members = this.selectedPartyMembers;
+    }
+
+    if (this.creatures.length > 0) {
+      const { analysis, partyStats, enemyStats } = await this.calculateEncounterDifficulty();
+      fields.encounter_difficulty = {
+        difficulty: analysis.difficulty,
+        roundsToDefeat: analysis.roundsToDefeatEnemies,
+        survivalRatio: Math.round(analysis.survivalRatio * 100) / 100,
+        partyHP: partyStats.totalHP,
+        partyEffectiveDPR: Math.round(analysis.partyEffectiveDPR),
+        enemyHP: enemyStats.totalHP,
+        enemyEffectiveDPR: Math.round(analysis.enemyEffectiveDPR),
+        enemyCount: enemyStats.creatureCount,
+        partyCount: partyStats.memberCount,
+      };
+    }
+
+    if (saveEncounter) {
+      const path = await this.saveEncounterFile();
+      if (!path) throw new Error("Could not save the scene's encounter.");
+      fields.encounter_file = `[[${path}]]`;
+    }
+    return fields;
+  }
+
+  private mergeEditedCreatureRows(current: unknown) {
+    const latest = current ?? [];
+    const original = this.originalCreatureRows;
+    const identity = (row: Record<string, unknown>) => serializeUnsavedState([row.name, row.path, row.trap_path, row.trapPath]);
+    const identities = original.map(identity);
+    if (!Array.isArray(latest) || latest.length !== original.length || latest.some((row, index) => {
+      if (!row || typeof row !== "object" || Array.isArray(row)) return true;
+      const key = identity(row);
+      if (key !== identities[index]) return true;
+      // Uniquely identifiable rows can inherit current custom metadata. Duplicates cannot
+      // be matched safely if their saved rows have changed since the modal loaded them.
+      return identities.indexOf(key) !== identities.lastIndexOf(key)
+        && serializeUnsavedState(row) !== serializeUnsavedState(original[index]);
+    })) {
+      throw new Error("The scene's encounter list changed while this editor was open. Reopen the scene to edit the current list.");
+    }
+
+    return this.creatures.map(creature => {
+      const index = this.originalCreatureIndexes.get(creature);
+      if (index === undefined) return creature;
+
+      const row: Record<string, unknown> = { ...latest[index] };
+      const initial = this.initialEncounterState.creatures[index]!;
+      for (const field of EDITABLE_CREATURE_FIELDS) {
+        if (creature[field] !== initial[field]) row[field] = creature[field];
+      }
+      for (const flag of Object.keys(LEGACY_CREATURE_FLAGS) as Array<keyof typeof LEGACY_CREATURE_FLAGS>) {
+        const legacy = LEGACY_CREATURE_FLAGS[flag];
+        if (creature[flag] !== initial[flag] && Object.prototype.hasOwnProperty.call(row, legacy)) {
+          row[legacy] = !!creature[flag];
+        }
+      }
+      return row;
+    });
   }
 
   async renumberScenes(scenes: Array<{ path: string; number: number; name: string }>, insertAt: number) {
@@ -2142,12 +2162,12 @@ date: ${currentDate}
    * Save encounter via PartyManager and link to scene
    * Note: The encounter file is saved earlier in createSceneFile
    */
-  async saveEncounterData(scenePath: string) {
+  async saveEncounterData(scenePath: string, linkToScene = true) {
     if (!this.createEncounter || this.creatures.length === 0) return;
 
     this.syncEncounterBuilder();
     
-    await this.encounterBuilder.createEncounter(scenePath);
+    await this.encounterBuilder.createEncounter(scenePath, linkToScene);
   }
 
   /**
