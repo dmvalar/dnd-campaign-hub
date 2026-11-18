@@ -18,6 +18,7 @@ Own encounter construction/difficulty, combat state and views, traps, and combat
 - Turns skip disabled and defeated hostile combatants, while friendly/player combatants at zero HP are not classified as defeated hostiles by that predicate. Preserve eligibility semantics in turn advancement.
 - Traps can supply fixed initiative values. Keep fixed initiative values distinct from rolled initiative when importing trap combatants; trap state also carries hidden/enabled/defeated visibility/turn behavior through combatant fields.
 - Encounter and trap notes are user data. When persisting changes, preserve unrelated note content/frontmatter; schema additions must follow shared migration guidance.
+- Encounter/trap edits update owned fields against the latest document and preserve authored sections. Check destination collisions before changing notes or statblocks, use `fileManager.renameFile` for renames, and never delete the source note to rename it. Keep the original edit path usable after a failed save.
 - Combat owns awards data and content; the [maps specialist](maps-projection.md) owns projection lifecycle. Route display through `ProjectionManager` interfaces instead of reaching into projection view/leaf internals.
 - Keep encounter calculations in `DifficultyMath`/builder interfaces and map operations behind `MapController`; avoid cross-system closure access or importing map-view internals.
 - PartyManager treats PC note frontmatter as the source of truth for stats and also stores party/encounter data. Coordinate any party schema change with that ownership boundary.
@@ -29,6 +30,7 @@ Run only tests relevant to the change; these commands target existing tests:
 ```powershell
 npm run test -- tests/combat/CombatTracker.test.ts
 npm run test -- tests/encounter/DifficultyMath.test.ts
+npm run test -- tests/encounter/EncounterBuilderModal.test.ts tests/trap/TrapCreationModal.test.ts
 npm run test -- tests/migration/encounter-migration.test.ts
 ```
 
