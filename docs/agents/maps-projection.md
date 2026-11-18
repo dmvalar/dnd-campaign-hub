@@ -15,6 +15,7 @@ Own map rendering, map persistence, player visibility, markers, projection scree
 ## Invariants and boundaries
 
 - `MapController` represents one currently active map. Consumers must handle no active map and must not retain assumptions about a handle after its view closes.
+- Map saves serialize per plugin/map, capture each write before asynchronous I/O, and acknowledge only that pending revision. Drain newer edits after an older attempt; retain the latest failed revision for retry. Flush-all joins active writes with bounded retry attempts and leaves persistent failures to their retry timers.
 - Removing a map code block must stay within a complete fenced block whose parsed top-level `mapId` matches exactly. Preserve other maps, examples, and surrounding note bytes; apply removal against the latest document with `vault.process`.
 - Player visibility depends on map state beyond token positions: fog regions/settings, walls and door state, lights, vision settings, elevation, and tunnels feed rendering/digests. Include visibility-relevant fields when changing state or cache keys; stale digests can preserve an old fog frame.
 - Token groups render as a collapsed visible token for vision calculations; do not let hidden group members grant sight from positions the visible group marker has not reached.
