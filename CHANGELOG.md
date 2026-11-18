@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep session plans and stored scene references aligned when scenes are renamed or renumbered, using Obsidian's link-aware rename operation.
 - Preserve handout links, custom properties, and existing metadata when editing a scene.
 - Serialize saves for each map and retain newer pending edits when an earlier write completes or fails.
 - Remove only the matching map code blocks when deleting a map from a note, preserving other maps and surrounding content.

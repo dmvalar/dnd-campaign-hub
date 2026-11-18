@@ -34,6 +34,7 @@ export class PartyManager {
   private filePath: string;
   private data: PartyManagerData;
   private listeners = new Set<PartyChangeListener>();
+  private persistenceQueue: Promise<void> = Promise.resolve();
 
   constructor(app: App, pluginId: string) {
     this.app = app;
@@ -75,11 +76,18 @@ export class PartyManager {
 
   async save(): Promise<void> {
     try {
-      const adapter = this.app.vault.adapter;
-      await adapter.write(this.filePath, JSON.stringify(this.data, null, 2));
+      await this.queuePersistence(async () => {
+        await this.app.vault.adapter.write(this.filePath, JSON.stringify(this.data, null, 2));
+      });
     } catch (error) {
       console.error("[PartyManager] Failed to save:", error);
     }
+  }
+
+  private queuePersistence(write: () => Promise<void>): Promise<void> {
+    const result = this.persistenceQueue.then(write);
+    this.persistenceQueue = result.catch(() => {});
+    return result;
   }
 
   /* ────────────────── Listeners ────────────────── */
@@ -606,6 +614,34 @@ export class PartyManager {
 
   getAllEncounters(): Record<string, StoredEncounter> {
     return { ...this.data.encounters };
+  }
+
+  /** Update encounter source notes after a scene move, applying each mapping once. */
+  async remapEncounterNotePaths(paths: ReadonlyMap<string, string>): Promise<void> {
+    if (paths.size === 0) return;
+    let changed = false;
+    await this.queuePersistence(async () => {
+      const encounters = { ...this.data.encounters };
+      const updates: Array<{ name: string; before: string; after: string }> = [];
+      for (const [name, encounter] of Object.entries(this.data.encounters)) {
+        if (!encounter.notePath) continue;
+        const after = paths.get(encounter.notePath);
+        if (after === undefined || after === encounter.notePath) continue;
+        if (!after) throw new Error("An encounter note path cannot be empty.");
+        updates.push({ name, before: encounter.notePath, after });
+        encounters[name] = { ...encounter, notePath: after };
+      }
+      if (updates.length === 0) return;
+
+      // Stage paths until persistence succeeds so a failed scene batch can roll back.
+      await this.app.vault.adapter.write(this.filePath, JSON.stringify({ ...this.data, encounters }, null, 2));
+      for (const { name, before, after } of updates) {
+        const current = this.data.encounters[name];
+        if (current?.notePath === before) current.notePath = after;
+      }
+      changed = true;
+    });
+    if (changed) this.emit();
   }
 
   async saveEncounter(name: string, encounter: StoredEncounter): Promise<void> {

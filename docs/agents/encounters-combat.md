@@ -22,6 +22,7 @@ Own encounter construction/difficulty, combat state and views, traps, and combat
 - Combat owns awards data and content; the [maps specialist](maps-projection.md) owns projection lifecycle. Route display through `ProjectionManager` interfaces instead of reaching into projection view/leaf internals.
 - Keep encounter calculations in `DifficultyMath`/builder interfaces and map operations behind `MapController`; avoid cross-system closure access or importing map-view internals.
 - PartyManager treats PC note frontmatter as the source of truth for stats and also stores party/encounter data. Coordinate any party schema change with that ownership boundary.
+- Stored encounters can use a scene as their source `notePath`. `remapEncounterNotePaths` updates only those source paths, applies each mapping once, and propagates persistence failure; combatant and party-member note paths remain separate. Party persistence writes share one queue.
 
 ## Focused verification
 
@@ -31,6 +32,7 @@ Run only tests relevant to the change; these commands target existing tests:
 npm run test -- tests/combat/CombatTracker.test.ts
 npm run test -- tests/encounter/DifficultyMath.test.ts
 npm run test -- tests/encounter/EncounterBuilderModal.test.ts tests/trap/TrapCreationModal.test.ts
+npm run test -- tests/party/PartyManager.test.ts
 npm run test -- tests/migration/encounter-migration.test.ts
 ```
 
