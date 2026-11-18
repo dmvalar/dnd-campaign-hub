@@ -9,14 +9,25 @@
  */
 
 /**
- * Content-based walls fingerprint using djb2 over ALL wall endpoints + open
+ * Content-based walls fingerprint over ALL wall endpoints + open
  * states.  Replaces the old WeakMap approach which missed across frames
  * because the walls array is rebuilt (filter + push) every render.
- * A Map<walls ref → hash> still short-circuits within the same frame.
+ * A WeakMap<walls ref → hash> still short-circuits within the same frame.
  */
 const _wallsHashCache = new WeakMap<any[], string>();
 let _wallsHashStr: string | null = null;
 let _wallsHashRef: any[] | null = null;
+const _numberBits = new DataView(new ArrayBuffer(8));
+
+function mixWord(hash: number, word: number): number {
+  return Math.imul(hash ^ word, 16777619);
+}
+
+function mixNumber(hash: number, value: number): number {
+  // Preserve fractional geometry; signed zero describes the same point.
+  _numberBits.setFloat64(0, value === 0 ? 0 : value, true);
+  return mixWord(mixWord(hash, _numberBits.getUint32(0, true)), _numberBits.getUint32(4, true));
+}
 
 export function getWallsHash(walls: any[]): string {
   // Fast path: same array reference as last call (same frame)
@@ -25,21 +36,24 @@ export function getWallsHash(walls: any[]): string {
   const wm = _wallsHashCache.get(walls);
   if (wm !== undefined) { _wallsHashRef = walls; _wallsHashStr = wm; return wm; }
 
-  // Content-based djb2 hash over every wall
-  let h = 5381;
+  // Wall arrays and their geometry are immutable within a render pass.
+  // Consumers materialize a fresh array when blocker state changes.
+  let h = 2166136261;
   const n = walls.length;
-  h = ((h << 5) + h + n) | 0;
+  h = mixWord(h, n);
   for (let i = 0; i < n; i++) {
     const w = walls[i];
     if (w?.start && w?.end) {
-      h = ((h << 5) + h + (w.start.x | 0)) | 0;
-      h = ((h << 5) + h + (w.start.y | 0)) | 0;
-      h = ((h << 5) + h + (w.end.x | 0)) | 0;
-      h = ((h << 5) + h + (w.end.y | 0)) | 0;
+      h = mixNumber(h, w.start.x);
+      h = mixNumber(h, w.start.y);
+      h = mixNumber(h, w.end.x);
+      h = mixNumber(h, w.end.y);
     }
     // Open/close state and wall height affect visibility
-    h = ((h << 5) + h + (w?.open ? 1 : 0)) | 0;
-    h = ((h << 5) + h + (w?.height || 0)) | 0;
+    h = mixWord(h, w?.open ? 1 : 0);
+    const bounded = w?.height !== undefined && w?.height !== null;
+    h = mixWord(h, bounded ? 1 : 0);
+    if (bounded) h = mixNumber(h, w.height);
   }
   const hashStr = String(h);
   _wallsHashCache.set(walls, hashStr);

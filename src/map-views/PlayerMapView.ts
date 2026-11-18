@@ -6,7 +6,8 @@ import { computeLightFlicker, computeNeonBuzz, hexToRgb, getFlickerSeedForKey, F
 import { getDefaultLightColor } from "../map/LightTypes";
 import { versionMapResourcePath } from "../map/resourcePath";
 import { getWallsHash as _getWallsHash, visCacheKey as _visCacheKey, visCacheMap as _visCacheMap, VIS_CACHE_MAX as _VIS_CACHE_MAX, visCacheEvict as _visCacheEvict } from "../utils/VisibilityCache";
-import { mixWallVisibilityDigest } from "./playerMapDigest";
+import { mixScatterVisibilityDigest, mixWallVisibilityDigest } from "./playerMapDigest";
+import { buildSightBlockingWalls, getPivotDoorEndpoints } from "./playerMapWalls";
 import { canvasPool as _canvasPool } from "../utils/CanvasPool";
 import type { MarkerReference, MarkerDefinition } from "../marker/MarkerTypes";
 import { CREATURE_SIZE_SQUARES } from "../marker/MarkerTypes";
@@ -29,31 +30,7 @@ export interface PlayerMapCameraState {
   targetViewportY: number | null;
 }
 
-/** Returns true for wall types that use pivot-hinge rotation. */
-function isPivotType(t: string): boolean { return t === 'pivotDoor' || t === 'secretPivot'; }
-
-/** Compute effective endpoints for an open pivot door (rotates around hinge). */
-function getPivotDoorEndpoints(wall: any): { start: { x: number; y: number }; end: { x: number; y: number } } {
-  if (!wall.open || !isPivotType(wall.type)) {
-    return { start: wall.start, end: wall.end };
-  }
-  const hingeIsStart = (wall.pivotEnd || 'start') === 'start';
-  const hinge = hingeIsStart ? wall.start : wall.end;
-  const free = hingeIsStart ? wall.end : wall.start;
-  const dir = wall.openDirection || 1;
-  const angle = dir * (Math.PI / 2); // 90 degrees
-  const dx = free.x - hinge.x;
-  const dy = free.y - hinge.y;
-  const cosA = Math.cos(angle);
-  const sinA = Math.sin(angle);
-  const rotated = {
-    x: hinge.x + dx * cosA - dy * sinA,
-    y: hinge.y + dx * sinA + dy * cosA,
-  };
-  return hingeIsStart
-    ? { start: hinge, end: rotated }
-    : { start: rotated, end: hinge };
-}
+type SightBlockingWalls = ReturnType<typeof buildSightBlockingWalls>;
 
 export class PlayerMapView extends ItemView {
   plugin: DndCampaignHubPlugin;
@@ -567,13 +544,8 @@ export class PlayerMapView extends ItemView {
     n(c.tunnels?.length || 0);
     n(c.poiReferences?.length || 0);
 
-    // Env assets — include scatter vision state in digest
-    const envAssets: any[] = c.envAssets || [];
-    n(envAssets.length);
-    for (let i = 0; i < envAssets.length; i++) {
-      const ea = envAssets[i];
-      if (ea.scatterConfig?.blocksVision) n(1);
-    }
+    n(c.envAssets?.length || 0);
+    mixScatterVisibilityDigest(c.envAssets || [], n, s);
 
     // Fog-of-war
     n(c.fogOfWar?.enabled ? 1 : 0);
@@ -2282,48 +2254,11 @@ export class PlayerMapView extends ItemView {
   private drawWallDoorIcons(
     ctx: CanvasRenderingContext2D,
     config: any,
-    visionRelevantTokens: any[]
+    visionRelevantTokens: any[],
+    getBlockingWalls: () => SightBlockingWalls
   ) {
     if (!config.walls || config.walls.length === 0) return;
 
-    // Build sight-blocking walls (same filter as drawFogOfWar / wall-occlusion)
-    const sightBlockingWalls: any[] = (config.walls || []).filter((wall: any) => {
-      const type = wall.type || 'wall';
-      if ((type === 'door' || type === 'secret') && wall.open) return false;
-      if (type === 'window') return false;
-      if (type === 'terrain') return false;
-      return true;
-    }).map((wall: any) => {
-      if (isPivotType(wall.type) && wall.open) {
-        const pts = getPivotDoorEndpoints(wall);
-        return { ...wall, start: pts.start, end: pts.end };
-      }
-      return wall;
-    });
-    // Add env-asset vision-blocking walls (scatter only)
-    if (config.envAssets && config.envAssets.length > 0) {
-      for (const inst of config.envAssets as EnvAssetInstance[]) {
-        if (inst.scatterConfig && inst.scatterConfig.blocksVision) {
-          const cx = inst.position.x, cy = inst.position.y;
-          const hw = inst.width / 2, hh = inst.height / 2;
-          const rad = (inst.rotation || 0) * Math.PI / 180;
-          const cosR = Math.cos(rad), sinR = Math.sin(rad);
-          const corners = [
-            { x: cx + (-hw) * cosR - (-hh) * sinR, y: cy + (-hw) * sinR + (-hh) * cosR },
-            { x: cx + ( hw) * cosR - (-hh) * sinR, y: cy + ( hw) * sinR + (-hh) * cosR },
-            { x: cx + ( hw) * cosR - ( hh) * sinR, y: cy + ( hw) * sinR + ( hh) * cosR },
-            { x: cx + (-hw) * cosR - ( hh) * sinR, y: cy + (-hw) * sinR + ( hh) * cosR },
-          ];
-          for (let ei = 0; ei < 4; ei++) {
-            const s = corners[ei]!;
-            const e = corners[(ei + 1) % 4]!;
-            sightBlockingWalls.push({ type: 'wall', start: s, end: e, open: false });
-          }
-        }
-      }
-    }
-
-    const hasWalls = sightBlockingWalls.length > 0;
     const hasFog = config.fogOfWar && config.fogOfWar.enabled;
 
     for (const wall of config.walls) {
@@ -2331,6 +2266,8 @@ export class PlayerMapView extends ItemView {
       if (wallType !== 'door' && wallType !== 'pivotDoor') continue;
       if (!wall.start || !wall.end) continue;
 
+      const sightBlockingWalls = getBlockingWalls();
+      const hasWalls = sightBlockingWalls.length > 0;
       const midX = (wall.start.x + wall.end.x) / 2;
       const midY = (wall.start.y + wall.end.y) / 2;
 
@@ -2394,6 +2331,10 @@ export class PlayerMapView extends ItemView {
     // The cache evicts automatically when it hits VIS_CACHE_MAX.
 
     const config = this.mapConfig;
+    // Reuse a fresh wall list across this redraw, including any in-place map edits.
+    let sightBlockingWalls: SightBlockingWalls | undefined;
+    const getBlockingWalls = () => sightBlockingWalls ??= buildSightBlockingWalls(config.walls || [], config.envAssets || []);
+
     // Clear at physical resolution, then switch to logical (scaled) coords
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -2858,48 +2799,8 @@ export class PlayerMapView extends ItemView {
       // In daylight (no fog) you can see far, but not through solid walls.
       // When fog IS enabled the fog-of-war polygon already handles this, so
       // we only need the explicit check when fog is OFF.
-      // Filter walls the same way drawFogOfWar does: open doors, windows,
-      // and terrain don't block line of sight.
-      if (!hasFog && ((config.walls && config.walls.length > 0) || (config.envAssets && config.envAssets.length > 0)) && visionRelevantTokens.length > 0) {
-        const sightBlockingWalls: any[] = (config.walls || []).filter((wall: any) => {
-          const type = wall.type || 'wall';
-          if ((type === 'door' || type === 'secret') && wall.open) return false;
-          if (type === 'window') return false;
-          if (type === 'terrain') return false;
-          return true;
-        }).map((wall: any) => {
-          // Pivot doors stay blocking but with rotated endpoints when open
-          if (isPivotType(wall.type) && wall.open) {
-            const pts = getPivotDoorEndpoints(wall);
-            return { ...wall, start: pts.start, end: pts.end };
-          }
-          return wall;
-        });
-        // Add env asset vision-blocking walls (scatter only)
-        if (config.envAssets && config.envAssets.length > 0) {
-          for (const inst of config.envAssets as EnvAssetInstance[]) {
-            if (inst.scatterConfig && inst.scatterConfig.blocksVision) {
-              const cx = inst.position.x;
-              const cy = inst.position.y;
-              const hw = inst.width / 2;
-              const hh = inst.height / 2;
-              const rad = (inst.rotation || 0) * Math.PI / 180;
-              const cosR = Math.cos(rad);
-              const sinR = Math.sin(rad);
-              const corners = [
-                { x: cx + (-hw) * cosR - (-hh) * sinR, y: cy + (-hw) * sinR + (-hh) * cosR },
-                { x: cx + ( hw) * cosR - (-hh) * sinR, y: cy + ( hw) * sinR + (-hh) * cosR },
-                { x: cx + ( hw) * cosR - ( hh) * sinR, y: cy + ( hw) * sinR + ( hh) * cosR },
-                { x: cx + (-hw) * cosR - ( hh) * sinR, y: cy + (-hw) * sinR + ( hh) * cosR },
-              ];
-              for (let ei = 0; ei < 4; ei++) {
-                const s = corners[ei]!;
-                const e = corners[(ei + 1) % 4]!;
-                sightBlockingWalls.push({ type: 'wall', start: s, end: e, open: false });
-              }
-            }
-          }
-        }
+      if (!hasFog && visionRelevantTokens.length > 0) {
+        const sightBlockingWalls = getBlockingWalls();
         if (sightBlockingWalls.length > 0) {
           let canBeSeenByAnyPlayer = false;
           for (const pt of visionRelevantTokens) {
@@ -2929,12 +2830,12 @@ export class PlayerMapView extends ItemView {
     const _logicalW = this.mapImage?.naturalWidth ?? (this.canvas!.width / this._canvasScale);
     const _logicalH = this.mapImage?.naturalHeight ?? (this.canvas!.height / this._canvasScale);
     if (hasFogGlobal) {
-      this.drawFogOfWar(ctx, _logicalW, _logicalH, config);
-    } else if (((config.walls && config.walls.length > 0) || (config.envAssets && config.envAssets.some((a: any) => (a.scatterConfig && a.scatterConfig.blocksVision)))) && visionRelevantTokens.length > 0) {
-      // No fog of war, but walls exist â€” draw wall-occlusion overlay.
-      // In daylight, players can see infinitely far EXCEPT through walls.
-      // Areas behind walls are darkened so the DM's hidden content stays hidden.
-      this.drawWallOcclusion(ctx, _logicalW, _logicalH, config, visionRelevantTokens);
+      this.drawFogOfWar(ctx, _logicalW, _logicalH, config, getBlockingWalls);
+    } else if (visionRelevantTokens.length > 0) {
+      const sightBlockingWalls = getBlockingWalls();
+      if (sightBlockingWalls.length > 0) {
+        this.drawWallOcclusion(ctx, _logicalW, _logicalH, config, visionRelevantTokens, sightBlockingWalls);
+      }
     }
 
     // Redraw tunnel paths ON TOP of fog for underground players
@@ -3068,7 +2969,7 @@ export class PlayerMapView extends ItemView {
     }
 
     // Draw door icons ON TOP of fog so players can identify doors in visible areas
-    this.drawWallDoorIcons(ctx, config, visionRelevantTokens);
+    this.drawWallDoorIcons(ctx, config, visionRelevantTokens, getBlockingWalls);
 
     // Draw player tokens on top of fog - they should always be visible
     // Separate tunnel players to draw them on top of tunnel paths
@@ -4633,7 +4534,8 @@ export class PlayerMapView extends ItemView {
     ctx: CanvasRenderingContext2D,
     w: number, h: number,
     config: any,
-    visionTokens: any[]
+    visionTokens: any[],
+    walls: SightBlockingWalls
   ) {
     const fogCanvas = _canvasPool.acquire(w, h);
     const fogCtx = fogCanvas.getContext('2d');
@@ -4643,62 +4545,8 @@ export class PlayerMapView extends ItemView {
     fogCtx.fillStyle = '#000000';
     fogCtx.fillRect(0, 0, w, h);
 
-    // Filter walls: open doors, windows, and terrain don't block vision
-    const walls = (config.walls || []).filter((wall: any) => {
-      const type = wall.type || 'wall';
-      if ((type === 'door' || type === 'secret') && wall.open) return false;
-      if (type === 'window') return false;
-      if (type === 'terrain') return false;
-      return true;
-    }).map((wall: any) => {
-      // Pivot doors stay blocking but with rotated endpoints when open
-      if (isPivotType(wall.type) && wall.open) {
-        const pts = getPivotDoorEndpoints(wall);
-        return { ...wall, start: pts.start, end: pts.end };
-      }
-      return wall;
-    });
-
-    // Generate virtual walls from env-asset scatter instances
-    const envAssetWalls: any[] = [];
-    if (config.envAssets && config.envAssets.length > 0) {
-      for (const inst of config.envAssets) {
-        if (inst.scatterConfig && inst.scatterConfig.blocksVision) {
-          const wallHeight = inst.scatterConfig.wallHeight || 10;
-          const cx = inst.position.x;
-          const cy = inst.position.y;
-          const hw = inst.width / 2;
-          const hh = inst.height / 2;
-          const rad = (inst.rotation || 0) * Math.PI / 180;
-          const cosR = Math.cos(rad);
-          const sinR = Math.sin(rad);
-          const corners = [
-            { x: cx + (-hw) * cosR - (-hh) * sinR, y: cy + (-hw) * sinR + (-hh) * cosR },
-            { x: cx + ( hw) * cosR - (-hh) * sinR, y: cy + ( hw) * sinR + (-hh) * cosR },
-            { x: cx + ( hw) * cosR - ( hh) * sinR, y: cy + ( hw) * sinR + ( hh) * cosR },
-            { x: cx + (-hw) * cosR - ( hh) * sinR, y: cy + (-hw) * sinR + ( hh) * cosR },
-          ];
-          for (let i = 0; i < 4; i++) {
-            const s = corners[i]!;
-            const e = corners[(i + 1) % 4]!;
-            envAssetWalls.push({
-              id: `env_wall_${inst.id}_${i}`,
-              type: 'wall',
-              start: { x: s.x, y: s.y },
-              end: { x: e.x, y: e.y },
-              height: wallHeight,
-              open: false,
-            });
-          }
-        }
-      }
-    }
-    const allWalls = walls.concat(envAssetWalls);
-
-    if (allWalls.length === 0) return; // Nothing to occlude
-
     // Build spatial index once for all vis-poly queries
-    const wallIndex = this._ensureWallIndex(allWalls);
+    const wallIndex = this._ensureWallIndex(walls);
 
     // For each vision-relevant player token, compute visibility polygon
     // (infinite range â€” only limited by walls) and cut it out of the fog.
@@ -4710,7 +4558,7 @@ export class PlayerMapView extends ItemView {
       const visPoly = this.computeVisibilityPolygon(
         pt.position.x, pt.position.y,
         10000, // effectively infinite range for daylight
-        allWalls,
+        walls,
         viewerElev,
         wallIndex
       );
@@ -4753,7 +4601,7 @@ export class PlayerMapView extends ItemView {
     for (const light of allLights) {
       const totalRadius = ((light.bright || 0) + (light.dim || 0)) * pixelsPerFoot;
       if (totalRadius <= 0) continue;
-      const visPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadius, allWalls, 0, wallIndex);
+      const visPoly = this.computeVisibilityPolygon(light.x, light.y, totalRadius, walls, 0, wallIndex);
       if (visPoly.length >= 3) {
         fogCtx.beginPath();
         const first = visPoly[0];
@@ -4864,18 +4712,17 @@ export class PlayerMapView extends ItemView {
     // Vision selection
     if (config.selectedVisionTokenId) s(config.selectedVisionTokenId);
 
-    // Env-asset scatter (affects wall list)
-    const envAssets: any[] = config.envAssets || [];
-    n(envAssets.length);
-    for (let i = 0; i < envAssets.length; i++) {
-      const ea = envAssets[i];
-      if (ea.scatterConfig?.blocksVision) n(1);
-    }
+    mixScatterVisibilityDigest(config.envAssets || [], n, s);
 
     return String(d);
   }
 
-  private drawFogOfWar(ctx: CanvasRenderingContext2D, w: number, h: number, config: any) {
+  private drawFogOfWar(
+    ctx: CanvasRenderingContext2D,
+    w: number, h: number,
+    config: any,
+    getBlockingWalls: () => SightBlockingWalls
+  ) {
     const isDragging = !!config.draggingMarkerId;
     const _freezeFlicker = isDragging;
 
@@ -5086,32 +4933,8 @@ export class PlayerMapView extends ItemView {
     }
     
     const pixelsPerFoot = config.gridSize && config.scale?.value ? config.gridSize / config.scale.value : 1;
-    // Filter walls to only include those that block sight
-    // Open doors/windows allow light through, windows/terrain always allow light
-    const walls = (config.walls || []).filter((wall: any) => {
-      const type = wall.type || 'wall';
-      // Open doors (and open secret doors) allow light through
-      if ((type === 'door' || type === 'secret') && wall.open) {
-        return false;
-      }
-      // Windows are transparent - always allow light through (even when closed)
-      if (type === 'window') {
-        return false;
-      }
-      // Terrain doesn't block sight
-      if (type === 'terrain') {
-        return false;
-      }
-      return true;
-    }).map((wall: any) => {
-      // Pivot doors stay blocking but with rotated endpoints when open
-      if (isPivotType(wall.type) && wall.open) {
-        const pts = getPivotDoorEndpoints(wall);
-        return { ...wall, start: pts.start, end: pts.end };
-      }
-      return wall;
-    });
-    
+    const walls = getBlockingWalls();
+
     // Build spatial index once for all vis-poly queries in drawFogOfWar
     const wallIndex = this._ensureWallIndex(walls);
 

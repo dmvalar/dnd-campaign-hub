@@ -18,6 +18,7 @@ Own map rendering, map persistence, player visibility, markers, projection scree
 - Map saves serialize per plugin/map, capture each write before asynchronous I/O, and acknowledge only that pending revision. Drain newer edits after an older attempt; retain the latest failed revision for retry. Flush-all joins active writes with bounded retry attempts and leaves persistent failures to their retry timers.
 - Removing a map code block must stay within a complete fenced block whose parsed top-level `mapId` matches exactly. Preserve other maps, examples, and surrounding note bytes; apply removal against the latest document with `vault.process`.
 - Player visibility depends on map state beyond token positions: fog regions/settings, walls and door state, lights, vision settings, elevation, and tunnels feed rendering/digests. Include visibility-relevant fields when changing state or cache keys; stale digests can preserve an old fog frame.
+- Fog, daylight occlusion, token visibility, and door-icon sight checks share effective blocking walls, including transformed scatter. Scatter height defaults only when missing; zero remains explicit. Hash fractional blocker geometry and height semantics, and materialize new wall arrays when state changes because the shared wall fingerprint memoizes immutable render arrays.
 - Token groups render as a collapsed visible token for vision calculations; do not let hidden group members grant sight from positions the visible group marker has not reached.
 - In the player renderer, foreground order matters: ordinary enemy markers remain below fog; player vision tokens and eligible door icons follow the canonical renderer's intentional above-fog rules. Preserve DM-layer hiding and the existing tunnel exceptions; do not make visibility unconditional in a preview.
 - Tunnel geometry, token tunnel state, depth, visibility, and cleanup are shared between GM and player rendering. Use [tunnelUtils.ts](../../src/map-views/tunnelUtils.ts) rather than creating divergent geometry rules.
@@ -40,6 +41,8 @@ npm run test -- tests/map/MapFactory.test.ts
 npm run test -- tests/map/MapPersistence.test.ts
 npm run test -- tests/map/DeleteMapConfirmModal.test.ts
 npm run test -- tests/map/playerMapDigest.test.ts
+npm run test -- tests/map/playerMapWalls.test.ts
+npm run test -- tests/utils/VisibilityCache.test.ts
 npm run test -- tests/map/resourcePath.test.ts
 ```
 
