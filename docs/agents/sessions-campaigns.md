@@ -17,6 +17,8 @@ Own campaign/session lifecycle, adventure and scene relationships, session prep/
 - A campaign is the broader scope; a session may link one or more adventures. Keep campaign selection separate from the legacy/singular `adventure` field and plural `adventures` links.
 - Session edits maintain both sides of adventure relationships: session frontmatter and the adventure's `sessions` backlinks. When links change, update additions and removals without discarding unrelated frontmatter or user-authored YAML.
 - `planned_scenes` records the session's explicit scene plan. Keep it distinct from `starting_scene`; retain compatibility for sessions whose adventure/scene information is legacy or absent.
+- Scene edits merge owned fields into existing frontmatter and preserve handout fields, custom properties, lifecycle/session metadata, and authored body content. In-place edits use `vault.process` against the latest document; invalid YAML must leave the original note intact.
+- When a scene edit already persists its encounter link, save encounter data with `linkToScene = false` to avoid a second scene rewrite. Other encounter creation callers retain the default linking behavior.
 - Session creation/edit unsaved-state comparison includes scene planning as well as other fields. When adding editable state, include it in the guard's snapshot so closing with unsaved changes is handled consistently.
 - The run dashboard owns its quick-note updates and timer/display intervals, and tracks workspace leaves it manages. Clean up timers and restore only managed leaf state during teardown; avoid touching unrelated workspace leaves.
 - Quick-note saves must capture the original file and draft, update only their section atomically, and finish outgoing edits before switching context. Reject stale loads and detached input callbacks; a failed save must retain a recoverable draft and must not report success. Dashboard opening awaits `setContext` before lifecycle/layout work.
@@ -33,6 +35,7 @@ npm run test -- tests/session/sessionLifecycle.test.ts
 npm run test -- tests/session/SessionBacklinks.test.ts
 npm run test -- tests/session/quickNotes.test.ts
 npm run test -- tests/session/SessionRunDashboardView.test.ts
+npm run test -- tests/scene/SceneCreationModal.test.ts
 npm run test -- tests/migration/session-lifecycle.test.ts
 npm run test -- tests/migration/session-multiple-adventures.test.ts
 npm run test -- tests/migration/session-scene-plan.test.ts
