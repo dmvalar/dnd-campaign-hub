@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep live-session quick notes bound to their original session during asynchronous saves and campaign/session switching; preserve outgoing edits and unrelated note content instead of writing a stale document to another session.
+
 ## [0.15.0-beta.2] - 2026-11-17
 
 Beta / unstable release from the combined `dev` branch. Includes all battlemap changes from beta.1 plus the integrated session and usability work below. Manual Obsidian acceptance testing remains pending.
