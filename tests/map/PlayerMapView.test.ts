@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("obsidian", () => ({
   ItemView: class {
@@ -12,6 +12,7 @@ vi.mock("obsidian", () => ({
 }));
 
 import { PlayerMapView } from "../../src/map-views/PlayerMapView";
+import type { EnvAssetInstance } from "../../src/envasset/EnvAssetTypes";
 
 function makeView(mode = "on-drop") {
   const markerLibrary = { getMarker: (id: string) => ({ type: id === "pc" ? "player" : "creature" }) };
@@ -131,17 +132,18 @@ describe("player map drag rendering", () => {
     view._computeFogDigest = vi.fn(() => "unchanged");
     const ctx = { drawImage: vi.fn() };
     const payload = config({ id: "a", markerId: "pc", position: { x: 100, y: 20 } });
-    view.drawFogOfWar(ctx, 500, 500, payload);
+    const getBlockingWalls = () => [];
+    view.drawFogOfWar(ctx, 500, 500, payload, getBlockingWalls);
     expect(view._computeFogDigest).not.toHaveBeenCalled();
     expect(ctx.drawImage).toHaveBeenCalledWith(atlas, 0, 0);
     view.plugin.settings.visionUpdateMode = "while-dragging";
-    view.drawFogOfWar(ctx, 500, 500, payload);
+    view.drawFogOfWar(ctx, 500, 500, payload, getBlockingWalls);
     expect(view._computeFogDigest).toHaveBeenCalledTimes(1);
     expect(view._dragLastFogCol).toBe(1);
-    view.drawFogOfWar(ctx, 500, 500, payload);
+    view.drawFogOfWar(ctx, 500, 500, payload, getBlockingWalls);
     expect(view._computeFogDigest).toHaveBeenCalledTimes(1);
     payload.markers[0].position.x = 150;
-    view.drawFogOfWar(ctx, 500, 500, payload);
+    view.drawFogOfWar(ctx, 500, 500, payload, getBlockingWalls);
     expect(view._computeFogDigest).toHaveBeenCalledTimes(2);
     expect(view._dragLastFogCol).toBe(2);
   });
@@ -152,6 +154,191 @@ describe("player map drag rendering", () => {
     const payload = config({ id: "a", markerId: "pc", position: { x: 100, y: 20 } });
     view.previewMarkerDrag(payload);
     expect(update).toHaveBeenCalledWith(payload);
+  });
+});
+
+describe("player map scatter visibility", () => {
+  function makeCanvas() {
+    const ctx = {
+      setTransform() {}, clearRect() {}, fillRect() {}, drawImage() {},
+      beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {}, clip() {},
+      save() {}, restore() {}, arc() {}, strokeText() {}, fillText: vi.fn(),
+      createRadialGradient: () => ({ addColorStop() {} }),
+    };
+    return { width: 300, height: 150, getContext: () => ctx };
+  }
+
+  function makeVisibilityView() {
+    const view = makeView();
+    view.canvas = makeCanvas();
+    view.redrawAnnotations = (PlayerMapView.prototype as any).redrawAnnotations.bind(view);
+    view.drawEnvAssets = vi.fn();
+    view.drawWallDoors = vi.fn();
+    return view;
+  }
+
+  function scatter(overrides: Partial<EnvAssetInstance> = {}): EnvAssetInstance {
+    return {
+      id: "scatter",
+      assetId: "debris",
+      position: { x: 100, y: 50 },
+      width: 36,
+      height: 12,
+      rotation: 0,
+      zIndex: 0,
+      placedAt: 0,
+      scatterConfig: { blocksVision: true },
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal("document", { createElement: makeCanvas });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it.each([true, false])("updates visibility in place without token movement (fog %s)", fogEnabled => {
+    const view = makeVisibilityView();
+    const polygons = vi.spyOn(view, "computeVisibilityPolygon");
+    const viewer = { id: "viewer", markerId: "pc", position: { x: 50, y: 50 }, darkvision: 200, elevation: { height: 5 } };
+    const target = { id: "target", markerId: "creature", position: { x: 150, y: 50 } };
+    const asset = scatter();
+    const payload = { markers: [viewer, target], envAssets: [] as EnvAssetInstance[], fogOfWar: { enabled: fogEnabled } };
+
+    function expectVisibility(visible: boolean, label: string) {
+      polygons.mockClear();
+      view.drawMarker.mockClear();
+      const lastAtlasKey = view._fogAtlasKey;
+      view.updateMapData(payload);
+      if (fogEnabled) expect(view._fogAtlasKey, label).not.toBe(lastAtlasKey);
+
+      const rendered = polygons.mock.results[0]?.value;
+      if (fogEnabled) expect(rendered, label).toBeDefined();
+      const inVisibleArea = rendered
+        ? view.pointInPolygon(target.position.x, target.position.y, rendered)
+        : true; // Daylight with zero blockers does not draw an occlusion overlay.
+      expect(inVisibleArea, label).toBe(visible);
+      if (!fogEnabled) {
+        expect(view.drawMarker.mock.calls.some(([, marker]: any[]) => marker === target), label).toBe(visible);
+      }
+    }
+
+    expectVisibility(true, "clear path");
+    payload.envAssets.push(asset);
+    expectVisibility(false, "added blocker");
+    asset.position.y = 65;
+    expectVisibility(true, "moved blocker");
+    asset.height = 36;
+    expectVisibility(false, "taller footprint");
+    asset.height = 12;
+    expectVisibility(true, "restored footprint");
+    asset.rotation = 90;
+    expectVisibility(false, "rotated blocker");
+    asset.width = 12;
+    expectVisibility(true, "narrower footprint");
+    asset.width = 36;
+    expectVisibility(false, "restored width");
+    asset.scatterConfig!.wallHeight = 0;
+    expectVisibility(true, "elevated viewer sees over an explicit zero-height blocker");
+    delete asset.scatterConfig!.wallHeight;
+    expectVisibility(false, "missing height defaults to ten feet");
+    asset.scatterConfig!.blocksVision = false;
+    expectVisibility(true, "disabled blocking");
+  });
+
+  it("reuses the fog atlas across decorative changes and equivalent blocker heights", () => {
+    const view = makeVisibilityView();
+    const polygons = vi.spyOn(view, "computeVisibilityPolygon");
+    const asset = scatter();
+    const payload = {
+      markers: [{ id: "viewer", markerId: "pc", position: { x: 50, y: 50 }, darkvision: 200 }],
+      envAssets: [asset],
+      fogOfWar: { enabled: true },
+    };
+    view.updateMapData(payload);
+    const atlasKey = view._fogAtlasKey;
+    expect(polygons).toHaveBeenCalled();
+    polygons.mockClear();
+
+    asset.scatterConfig!.wallHeight = 10;
+    payload.envAssets.push(scatter({ id: "decor", scatterConfig: undefined }));
+    view.updateMapData(payload);
+    expect(view._fogAtlasKey).toBe(atlasKey);
+    expect(polygons).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])("updates cached visibility after a subpixel blocker shift (fog %s)", fogEnabled => {
+    const view = makeVisibilityView();
+    const polygons = vi.spyOn(view, "computeVisibilityPolygon");
+    const asset = scatter();
+    const payload = {
+      markers: [{ id: "viewer", markerId: "pc", position: { x: 50, y: 50 }, darkvision: 200 }],
+      envAssets: [asset],
+      fogOfWar: { enabled: fogEnabled },
+    };
+
+    view.updateMapData(payload);
+    expect(view.pointInPolygon(82.125, 50, polygons.mock.results[0]?.value)).toBe(false);
+    polygons.mockClear();
+    asset.position.x += 0.25;
+    view.updateMapData(payload);
+    expect(view.pointInPolygon(82.125, 50, polygons.mock.results[0]?.value)).toBe(true);
+  });
+
+  it.each([true, false])("clips light and door icons with the same blockers (fog %s)", fogEnabled => {
+    const view = makeVisibilityView();
+    const polygons = vi.spyOn(view, "computeVisibilityPolygon");
+    const ctx = view.canvas.getContext();
+    const viewer = { id: "viewer", markerId: "pc", position: { x: 50, y: 50 }, darkvision: 200 };
+    const light = { x: 45, y: 50, bright: 190, dim: 0 };
+    const door = { type: "door", start: { x: 150, y: 35 }, end: { x: 150, y: 65 }, open: true };
+    const asset = scatter();
+    const payload = { markers: [viewer], lightSources: [light], envAssets: [asset], walls: [door], fogOfWar: { enabled: fogEnabled } };
+
+    function expectDoorAndLight(doorVisible: boolean, lightVisible: boolean) {
+      polygons.mockClear();
+      ctx.fillText.mockClear();
+      view.updateMapData(payload);
+      const lightIndex = polygons.mock.calls.findIndex(([x, y]) => x === light.x && y === light.y);
+      expect(lightIndex).toBeGreaterThanOrEqual(0);
+      const lightPolygon = polygons.mock.results[lightIndex]!.value;
+      expect(view.pointInPolygon(160, 50, lightPolygon)).toBe(lightVisible);
+      if (doorVisible) {
+        expect(ctx.fillText).toHaveBeenCalledWith("🚪", 150, 50);
+      } else {
+        expect(ctx.fillText).not.toHaveBeenCalled();
+      }
+    }
+
+    expectDoorAndLight(false, false);
+    asset.position.y = 100;
+    expectDoorAndLight(true, true);
+    door.open = false;
+    expectDoorAndLight(true, false);
+  });
+
+  it("keeps hidden, underground, and collapsed group members out of the surface fog vision", () => {
+    const view = makeVisibilityView();
+    const polygons = vi.spyOn(view, "computeVisibilityPolygon");
+    const group = {
+      id: "group", markerId: "pc", visibleToPlayers: true, position: { x: 50, y: 50 },
+      tokenGroup: { members: [{ markerId: "pc", position: { x: 170, y: 50 }, darkvision: 200 }] },
+    };
+    view.updateMapData({
+      markers: [
+        group,
+        { id: "hidden", markerId: "pc", layer: "DM", position: { x: 160, y: 50 }, darkvision: 200 },
+        { id: "tunnel", markerId: "pc", tunnelState: { tunnelId: "t" }, position: { x: 180, y: 50 }, darkvision: 200 },
+      ],
+      envAssets: [scatter()],
+      fogOfWar: { enabled: true },
+    });
+    expect(polygons).toHaveBeenCalled();
+    for (const [x, y] of polygons.mock.calls) expect({ x, y }).toEqual(group.position);
+    for (const result of polygons.mock.results) expect(view.pointInPolygon(150, 50, result.value)).toBe(false);
   });
 });
 
