@@ -1,5 +1,6 @@
 import { App, Modal, Notice, TFile } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
+import { removeMapCodeBlocks } from "./removeMapCodeBlocks";
 
 export class DeleteMapConfirmModal extends Modal {
   private plugin: DndCampaignHubPlugin;
@@ -112,20 +113,7 @@ export class DeleteMapConfirmModal extends Modal {
       const file = this.app.vault.getAbstractFileByPath(this.sourcePath);
       if (!(file instanceof TFile)) return;
 
-      const content = await this.app.vault.read(file);
-
-      // Find and remove the dnd-map code block containing this mapId
-      const escapedId = this.mapId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const codeBlockRegex = new RegExp(
-        '```dnd-map\\s*\\n[\\s\\S]*?"mapId"\\s*:\\s*"' + escapedId + '"[\\s\\S]*?\\n```',
-        'g'
-      );
-
-      const newContent = content.replace(codeBlockRegex, '');
-
-      if (newContent !== content) {
-        await this.app.vault.modify(file, newContent);
-      }
+      await this.app.vault.process(file, (content) => removeMapCodeBlocks(content, this.mapId));
     } catch (err) {
       console.error('[DeleteMap] Error removing code block:', err);
     }
