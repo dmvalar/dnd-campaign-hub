@@ -4,6 +4,10 @@ import { BATTLEMAP_TEMPLATE_FOLDER } from "./MapCreationModal";
 import { normalizeMapAnnotations } from "./MapFactory";
 
 const SAVE_DEBOUNCE_MS = 1000;
+const TEMPLATE_LINK_FIELDS = ['templateSourceId', 'templateSourceName', 'templateSyncedAt'];
+
+type PendingMapSave = NonNullable<ReturnType<DndCampaignHubPlugin['_pendingSaves']['get']>>;
+const activeMapSaves = new WeakMap<DndCampaignHubPlugin, Map<string, Promise<PendingMapSave | undefined>>>();
 
 // ── Template index cache ──────────────────────────────────────────────
 /** Lightweight entry cached in the template index. */
@@ -79,77 +83,116 @@ export function saveMapAnnotations(plugin: DndCampaignHubPlugin, config: any, el
 	if (existing) clearTimeout(existing.timer);
 
 	const timer = setTimeout(() => {
-		_flushMapSave(plugin, mapId);
+		void _flushMapSave(plugin, mapId);
 	}, SAVE_DEBOUNCE_MS);
 
 	plugin._pendingSaves.set(mapId, { config, el, timer });
 }
 
-/** Immediately write a pending save for `mapId` to disk. */
-export async function _flushMapSave(plugin: DndCampaignHubPlugin, mapId: string) {
-	const entry = plugin._pendingSaves.get(mapId);
-	if (!entry) return;
-	clearTimeout(entry.timer);
-
-	const config = entry.config;
-	try {
-		const annotationPath = getMapAnnotationPath(plugin, config.mapId);
-		let existingData: any = null;
-		if (await plugin.app.vault.adapter.exists(annotationPath)) {
-			try {
-				existingData = JSON.parse(await plugin.app.vault.adapter.read(annotationPath));
-			} catch {
-				existingData = null;
-			}
-		}
-
-		// Normalise through the canonical schema so every field is present
-		const mapData = normalizeMapAnnotations(config);
-		mapData.lastModified = new Date().toISOString();
-		// Older/open map views may not have template-link metadata in their
-		// in-memory config. Preserve it so routine map saves do not unlink maps.
-		for (const key of ['templateSourceId', 'templateSourceName', 'templateSyncedAt']) {
-			const configValue = config[key];
-			const existingValue = existingData?.[key];
-			const configHasValue = configValue !== undefined && configValue !== null && String(configValue).trim() !== '';
-			const existingHasValue = existingValue !== undefined && existingValue !== null && String(existingValue).trim() !== '';
-			if (!configHasValue && existingHasValue) {
-				mapData[key] = existingData[key];
-			}
-		}
-
-		// Ensure annotation directory exists
-		const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
-		const dirExists = await plugin.app.vault.adapter.exists(annotationDir);
-		if (!dirExists) {
-			await plugin.app.vault.adapter.mkdir(annotationDir);
-		}
-
-		// Save to dedicated file using adapter for config directory files
-		const annotationJson = JSON.stringify(mapData, null, 2);
-
-		await plugin.app.vault.adapter.write(annotationPath, annotationJson);
-
-		// Only remove from pending saves AFTER successful write
-		plugin._pendingSaves.delete(mapId);
-
-		// Invalidate template index — the saved map may be a template
-		invalidateTemplateIndex();
-	} catch (error) {
-		console.error('Error saving map annotations:', error);
-		// Re-arm the debounce so the save is retried automatically
-		entry.timer = setTimeout(() => {
-			_flushMapSave(plugin, mapId);
-		}, SAVE_DEBOUNCE_MS * 2);
-		new Notice('⚠️ Map save failed — will retry automatically');
+/**
+ * Drain pending revisions for one map, joining any active drain. Returns the
+ * pending entry if its write failed and an automatic retry was scheduled.
+ */
+export async function _flushMapSave(plugin: DndCampaignHubPlugin, mapId: string): Promise<PendingMapSave | undefined> {
+	let saves = activeMapSaves.get(plugin);
+	if (!saves) {
+		saves = new Map();
+		activeMapSaves.set(plugin, saves);
 	}
+
+	const active = saves.get(mapId);
+	if (active) return active;
+
+	const drain = Promise.resolve().then(async () => {
+		try {
+			for (let entry = plugin._pendingSaves.get(mapId); entry; entry = plugin._pendingSaves.get(mapId)) {
+				clearTimeout(entry.timer);
+				try {
+					await writeMapAnnotations(plugin, mapId, entry.config);
+				} catch (error) {
+					console.error('Error saving map annotations:', error);
+					if (plugin._pendingSaves.get(mapId) !== entry) continue;
+
+					entry.timer = setTimeout(() => {
+						void _flushMapSave(plugin, mapId);
+					}, SAVE_DEBOUNCE_MS * 2);
+					new Notice('⚠️ Map save failed — will retry automatically');
+					return entry;
+				}
+
+				// The entry is the revision token, even when edits share a live config.
+				if (plugin._pendingSaves.get(mapId) === entry) {
+					plugin._pendingSaves.delete(mapId);
+				}
+			}
+		} finally {
+			// Release ownership in the same turn as the final pending check.
+			saves.delete(mapId);
+		}
+	});
+	saves.set(mapId, drain);
+	return drain;
+}
+
+function hasTemplateLinkValue(value: unknown): boolean {
+	return value !== undefined && value !== null && String(value).trim() !== '';
+}
+
+async function writeMapAnnotations(plugin: DndCampaignHubPlugin, mapId: string, config: any): Promise<void> {
+	// Normalization retains nested references. Serialize before any adapter I/O
+	// so edits during this write cannot change the revision being written.
+	const mapData = normalizeMapAnnotations(config);
+	mapData.mapId = mapId;
+	mapData.lastModified = new Date().toISOString();
+	let annotationJson = JSON.stringify(mapData, null, 2);
+	const missingLinkFields = TEMPLATE_LINK_FIELDS.filter(key => !hasTemplateLinkValue(mapData[key]));
+
+	const adapter = plugin.app.vault.adapter;
+	const annotationPath = getMapAnnotationPath(plugin, mapId);
+	// Older open map views can omit template links already saved on disk.
+	if (missingLinkFields.length && await adapter.exists(annotationPath)) {
+		let existingData: any;
+		try {
+			existingData = JSON.parse(await adapter.read(annotationPath));
+		} catch { /* Missing or corrupt annotations. */ }
+		const linkFields = missingLinkFields.filter(key => hasTemplateLinkValue(existingData?.[key]));
+		if (linkFields.length) {
+			const snapshot = JSON.parse(annotationJson);
+			for (const key of linkFields) {
+				snapshot[key] = existingData[key];
+			}
+			annotationJson = JSON.stringify(snapshot, null, 2);
+		}
+	}
+
+	const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
+	if (!(await adapter.exists(annotationDir))) {
+		await adapter.mkdir(annotationDir);
+	}
+	await adapter.write(annotationPath, annotationJson);
+	invalidateTemplateIndex();
 }
 
 /** Flush all pending debounced saves immediately (called on unload). */
 export async function _flushAllPendingSaves(plugin: DndCampaignHubPlugin) {
-	const ids = [...plugin._pendingSaves.keys()];
-	for (const id of ids) {
-		await _flushMapSave(plugin, id);
+	const failed = new Set<PendingMapSave>();
+	const joinedRetries = new Set<PendingMapSave>();
+	while (true) {
+		let flushed = false;
+		for (const mapId of [...plugin._pendingSaves.keys()]) {
+			const pending = plugin._pendingSaves.get(mapId);
+			if (!pending) continue;
+			const active = activeMapSaves.get(plugin)?.get(mapId);
+			if (failed.has(pending)) {
+				// Join one active retry per revision so alternating failures cannot keep flush-all running.
+				if (!active || joinedRetries.has(pending)) continue;
+				joinedRetries.add(pending);
+			}
+			const entry = await (active ?? _flushMapSave(plugin, mapId));
+			if (entry) failed.add(entry);
+			flushed = true;
+		}
+		if (!flushed) return;
 	}
 }
 
