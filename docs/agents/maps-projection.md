@@ -16,6 +16,7 @@ Own map rendering, map persistence, player visibility, markers, projection scree
 
 - `MapController` represents one currently active map. Consumers must handle no active map and must not retain assumptions about a handle after its view closes.
 - Map saves serialize per plugin/map, capture each write before asynchronous I/O, and acknowledge only that pending revision. Drain newer edits after an older attempt; retain the latest failed revision for retry. Flush-all joins active writes with bounded retry attempts and leaves persistent failures to their retry timers.
+- Agent-created maps use `prepareMapAnnotationCreate`, sharing the annotation mutation queue without a live renderer, debounce or retry timer. Token creation uses `MarkerLibrary.prepareMarkerCreate` with strict persistence and conditional rollback. Preview/planning must not write either store. Image paths identify indexed vault raster files; they are never arbitrary URLs or local paths. Marker storage follows `vault.configDir`, preserving a legacy default-folder library when adopting a custom directory.
 - Removing a map code block must stay within a complete fenced block whose parsed top-level `mapId` matches exactly. Preserve other maps, examples, and surrounding note bytes; apply removal against the latest document with `vault.process`.
 - Player visibility depends on map state beyond token positions: fog regions/settings, walls and door state, lights, vision settings, elevation, and tunnels feed rendering/digests. Include visibility-relevant fields when changing state or cache keys; stale digests can preserve an old fog frame.
 - Fog, daylight occlusion, token visibility, and door-icon sight checks share effective blocking walls, including transformed scatter. Scatter height defaults only when missing; zero remains explicit. Hash fractional blocker geometry and height semantics, and materialize new wall arrays when state changes because the shared wall fingerprint memoizes immutable render arrays.
@@ -44,6 +45,7 @@ npm run test -- tests/map/playerMapDigest.test.ts
 npm run test -- tests/map/playerMapWalls.test.ts
 npm run test -- tests/utils/VisibilityCache.test.ts
 npm run test -- tests/map/resourcePath.test.ts
+npm run test -- tests/automation/markerPersistence.test.ts tests/automation/AgentContentApi.test.ts
 ```
 
 For projection or visibility changes, manually inspect GM and player views plus each intended projected screen. Check one fog/wall/light case, a tunnel or grouped-token case when touched, and handout return behavior when transitions changed. Do not report performance measurements unless measured.

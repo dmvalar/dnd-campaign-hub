@@ -23,6 +23,7 @@ Own encounter construction/difficulty, combat state and views, traps, and combat
 - Combat owns awards data and content; the [maps specialist](maps-projection.md) owns projection lifecycle. Route display through `ProjectionManager` interfaces instead of reaching into projection view/leaf internals.
 - Keep encounter calculations in `DifficultyMath`/builder interfaces and map operations behind `MapController`; avoid cross-system closure access or importing map-view internals.
 - PartyManager treats PC note frontmatter as the source of truth for stats and also stores party/encounter data. Coordinate any party schema change with that ownership boundary.
+- Agent monster/NPC statblocks use `automation/statblockAuthoring.ts`; encounter plans use live or staged note data and the normal difficulty calculator. Keep current/max/temp HP, token IDs and explicit fixed initiative (including zero) intact through note snapshots and tracker import. Stored encounter creation uses a strict create-only effect with conditional rollback; ordinary UI persistence remains a separate API.
 - Current HP zero is explicit. Resolve current, maximum, and temporary HP separately; missing current HP defaults to maximum, and missing maximum HP can use current HP. Encounter snapshots store both `hp` and `hp_max`.
 - Fresh encounter launches, including map launches, use `resolveEncounterPartyMembers` to refresh selected linked notes. Respect explicit empty selections, `include_party: false`, and disabled/absent members. Missing or unreadable notes use snapshot stats without a writable note path; resumed combat retains its saved state.
 - Stored encounters can use a scene as their source `notePath`. `remapEncounterNotePaths` updates only those source paths, applies each mapping once, and propagates persistence failure; combatant and party-member note paths remain separate. Party persistence writes share one queue.
@@ -37,6 +38,7 @@ npm run test -- tests/encounter/DifficultyMath.test.ts
 npm run test -- tests/encounter/EncounterBuilderModal.test.ts tests/trap/TrapCreationModal.test.ts
 npm run test -- tests/party/PartyManager.test.ts
 npm run test -- tests/encounter/renderEncounterView.test.ts
+npm run test -- tests/automation
 npm run test -- tests/migration/encounter-migration.test.ts
 ```
 

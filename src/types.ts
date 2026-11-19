@@ -30,6 +30,8 @@ export interface DndCampaignHubSettings {
   activeCampaignPath: string;
   /** Whether the user has completed or dismissed the onboarding setup wizard. */
   onboardingSetupComplete: boolean;
+  /** Process structured agent requests while Obsidian is running. */
+  agentContentRequests: boolean;
   tabletopCalibration: TabletopCalibration | null;
   /** Per-monitor projection targets (keyed by screenKey). */
   projectionTargets: ProjectionTarget[];
@@ -61,6 +63,7 @@ export const DEFAULT_SETTINGS: DndCampaignHubSettings = {
   pluginVersion: "0.0.0",
   activeCampaignPath: "",
   onboardingSetupComplete: false,
+  agentContentRequests: false,
   tabletopCalibration: null,
   projectionTargets: [],
   lastProjectionScreenKey: "",

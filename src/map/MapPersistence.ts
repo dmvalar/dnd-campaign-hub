@@ -8,6 +8,7 @@ const TEMPLATE_LINK_FIELDS = ['templateSourceId', 'templateSourceName', 'templat
 
 type PendingMapSave = NonNullable<ReturnType<DndCampaignHubPlugin['_pendingSaves']['get']>>;
 const activeMapSaves = new WeakMap<DndCampaignHubPlugin, Map<string, Promise<PendingMapSave | undefined>>>();
+const annotationMutations = new WeakMap<DndCampaignHubPlugin, Map<string, Promise<void>>>();
 
 // ── Template index cache ──────────────────────────────────────────────
 /** Lightweight entry cached in the template index. */
@@ -108,7 +109,7 @@ export async function _flushMapSave(plugin: DndCampaignHubPlugin, mapId: string)
 			for (let entry = plugin._pendingSaves.get(mapId); entry; entry = plugin._pendingSaves.get(mapId)) {
 				clearTimeout(entry.timer);
 				try {
-					await writeMapAnnotations(plugin, mapId, entry.config);
+					await mutateAnnotations(plugin, mapId, () => writeMapAnnotations(plugin, mapId, entry.config));
 				} catch (error) {
 					console.error('Error saving map annotations:', error);
 					if (plugin._pendingSaves.get(mapId) !== entry) continue;
@@ -138,6 +139,55 @@ function hasTemplateLinkValue(value: unknown): boolean {
 	return value !== undefined && value !== null && String(value).trim() !== '';
 }
 
+function mutateAnnotations<T>(plugin: DndCampaignHubPlugin, mapId: string, task: () => Promise<T>): Promise<T> {
+	let queue = annotationMutations.get(plugin);
+	if (!queue) {
+		queue = new Map();
+		annotationMutations.set(plugin, queue);
+	}
+	const tasks = queue;
+	const previous = tasks.get(mapId);
+	const result = previous ? previous.then(task) : task();
+	const tail = result.then(() => {}, () => {});
+	tasks.set(mapId, tail);
+	return result.finally(() => {
+		if (tasks.get(mapId) === tail) tasks.delete(mapId);
+	});
+}
+
+/** Prepare a create-only write without a live view, pending save, or retry timer. */
+export function prepareMapAnnotationCreate(plugin: DndCampaignHubPlugin, mapId: string, config: Record<string, unknown>): {
+	commit(): Promise<void>;
+	rollback(): Promise<void>;
+} {
+	const adapter = plugin.app.vault.adapter;
+	const path = getMapAnnotationPath(plugin, mapId);
+	const json = JSON.stringify(normalizeMapAnnotations({ ...config, mapId }), null, 2);
+	let attempted = false;
+	return {
+		commit: () => mutateAnnotations(plugin, mapId, async () => {
+			await ensureMapAnnotationDirectory(plugin);
+			if (await adapter.exists(path) || plugin._pendingSaves.has(mapId)) {
+				throw new Error(`Map ID already exists: ${mapId}`);
+			}
+			attempted = true;
+			await adapter.write(path, json);
+			invalidateTemplateIndex();
+		}),
+		rollback: () => mutateAnnotations(plugin, mapId, async () => {
+			if (!attempted) return;
+			if (await adapter.exists(path)) {
+				if (await adapter.read(path) !== json || plugin._pendingSaves.has(mapId)) {
+					throw new Error(`Map annotations changed after creation: ${mapId}`);
+				}
+				await adapter.remove(path);
+				invalidateTemplateIndex();
+			}
+			attempted = false;
+		}),
+	};
+}
+
 async function writeMapAnnotations(plugin: DndCampaignHubPlugin, mapId: string, config: any): Promise<void> {
 	// Normalization retains nested references. Serialize before any adapter I/O
 	// so edits during this write cannot change the revision being written.
@@ -165,12 +215,21 @@ async function writeMapAnnotations(plugin: DndCampaignHubPlugin, mapId: string, 
 		}
 	}
 
-	const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
-	if (!(await adapter.exists(annotationDir))) {
-		await adapter.mkdir(annotationDir);
-	}
+	await ensureMapAnnotationDirectory(plugin);
 	await adapter.write(annotationPath, annotationJson);
 	invalidateTemplateIndex();
+}
+
+async function ensureMapAnnotationDirectory(plugin: DndCampaignHubPlugin): Promise<void> {
+	const adapter = plugin.app.vault.adapter;
+	const annotationDir = `${plugin.app.vault.configDir}/plugins/${plugin.manifest.id}/map-annotations`;
+	if (await adapter.exists(annotationDir)) return;
+	try {
+		await adapter.mkdir(annotationDir);
+	} catch (error) {
+		// A save for another map may have just created the shared directory.
+		if (!(await adapter.exists(annotationDir))) throw error;
+	}
 }
 
 /** Flush all pending debounced saves immediately (called on unload). */

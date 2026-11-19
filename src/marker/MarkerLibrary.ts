@@ -3,56 +3,132 @@ import { MarkerDefinition, MarkerLibraryData } from './MarkerTypes';
 
 export class MarkerLibrary {
 	private app: App;
-	private pluginId: string;
 	private markers: Map<string, MarkerDefinition>;
 	private filePath: string;
+	private legacyFilePath: string;
+	private writes: Promise<void> = Promise.resolve();
+	private persistedJson: string | undefined;
 
 	constructor(app: App, pluginId: string) {
 		this.app = app;
-		this.pluginId = pluginId;
 		this.markers = new Map();
-		this.filePath = `.obsidian/plugins/${pluginId}/markers.json`;
+		this.filePath = `${app.vault.configDir || '.obsidian'}/plugins/${pluginId}/markers.json`;
+		this.legacyFilePath = `.obsidian/plugins/${pluginId}/markers.json`;
 	}
 
 	/**
 	 * Load markers from the markers.json file
 	 */
-	async load(): Promise<void> {
-		try {
-			const adapter = this.app.vault.adapter;
-			if (await adapter.exists(this.filePath)) {
-				const content = await adapter.read(this.filePath);
-				const data: MarkerLibraryData = JSON.parse(content);
-				
-				this.markers.clear();
-				for (const marker of data.markers) {
-					this.markers.set(marker.id, marker);
+	load(): Promise<void> {
+		return this.enqueue(async () => {
+			this.persistedJson = undefined;
+			try {
+				const adapter = this.app.vault.adapter;
+				const currentExists = await adapter.exists(this.filePath);
+				const legacyExists = !currentExists && this.filePath !== this.legacyFilePath && await adapter.exists(this.legacyFilePath);
+				if (currentExists || legacyExists) {
+					const content = await adapter.read(currentExists ? this.filePath : this.legacyFilePath);
+					const data: MarkerLibraryData = JSON.parse(content);
+					this.markers = new Map(data.markers.map(marker => [marker.id, marker]));
+					if (currentExists) this.persistedJson = content;
+					else await this.saveBestEffort();
+				} else {
+					await this.saveBestEffort();
 				}
-			} else {
-				// Initialize with empty library
-				await this.save();
+			} catch (error) {
+				console.error('Failed to load marker library:', error);
+				this.markers.clear();
 			}
-		} catch (error) {
-			console.error('Failed to load marker library:', error);
-			this.markers.clear();
-		}
+		});
 	}
 
 	/**
 	 * Save markers to the markers.json file
 	 */
-	async save(): Promise<void> {
+	save(): Promise<void> {
+		return this.enqueue(() => this.saveBestEffort());
+	}
+
+	private enqueue(task: () => Promise<void>): Promise<void> {
+		const result = this.writes.then(task);
+		this.writes = result.catch(() => {});
+		return result;
+	}
+
+	private serialize(markers: Map<string, MarkerDefinition>): string {
+		const data: MarkerLibraryData = {
+			markers: Array.from(markers.values()),
+			version: '1.0.0'
+		};
+		return JSON.stringify(data, null, 2);
+	}
+
+	private async saveBestEffort(): Promise<void> {
 		try {
-			const adapter = this.app.vault.adapter;
-			const data: MarkerLibraryData = {
-				markers: Array.from(this.markers.values()),
-				version: '1.0.0'
-			};
-			
-			await adapter.write(this.filePath, JSON.stringify(data, null, 2));
+			const json = this.serialize(this.markers);
+			await this.app.vault.adapter.write(this.filePath, json);
+			this.persistedJson = json;
 		} catch (error) {
 			console.error('Failed to save marker library:', error);
 		}
+	}
+
+	private async saveStrict(markers: Map<string, MarkerDefinition>): Promise<void> {
+		const adapter = this.app.vault.adapter;
+		const previous = this.persistedJson;
+		const json = this.serialize(markers);
+		const changed = () => new Error('Marker library changed on disk. Reload the plugin before editing it.');
+		let attempted = false;
+		try {
+			if (previous !== undefined) {
+				await adapter.process(this.filePath, current => {
+					if (current !== previous) throw changed();
+					attempted = true;
+					return json;
+				});
+			} else {
+				if (await adapter.exists(this.filePath)) throw changed();
+				attempted = true;
+				await adapter.write(this.filePath, json);
+			}
+		} catch (error) {
+			// Some adapters can reject after writing. Confirm bytes before treating
+			// that as either success or an unowned failed write.
+			const persisted = attempted ? await adapter.read(this.filePath).catch(() => undefined) : undefined;
+			if (persisted !== json) throw error;
+		}
+		this.persistedJson = json;
+	}
+
+	/** Stage a create-only write and roll back only the unchanged marker it created. */
+	prepareMarkerCreate(definition: MarkerDefinition): { commit(): Promise<void>; rollback(): Promise<void> } {
+		const marker = { ...definition };
+		const snapshot = JSON.stringify(marker);
+		let committed = false;
+		return {
+			commit: () => this.enqueue(async () => {
+				if (this.hasMarker(marker.id)) throw new Error(`Marker ID already exists: ${marker.id}`);
+				const next = new Map(this.markers).set(marker.id, marker);
+				await this.saveStrict(next);
+				this.markers.set(marker.id, marker);
+				committed = true;
+			}),
+			rollback: () => this.enqueue(async () => {
+				if (!committed) return;
+				const current = this.getMarker(marker.id);
+				const saved = (JSON.parse(this.persistedJson!) as MarkerLibraryData).markers.find(item => item.id === marker.id);
+				if ((current && JSON.stringify(current) !== snapshot) || (saved && JSON.stringify(saved) !== snapshot)) {
+					throw new Error(`Marker changed after creation: ${marker.id}`);
+				}
+				if (current || saved) {
+					const next = new Map(this.markers);
+					next.delete(marker.id);
+					await this.saveStrict(next);
+					this.markers.delete(marker.id);
+				}
+				committed = false;
+			}),
+		};
 	}
 
 	/**
@@ -72,25 +148,28 @@ export class MarkerLibrary {
 	/**
 	 * Add or update a marker
 	 */
-	async setMarker(marker: MarkerDefinition): Promise<void> {
-		const now = Date.now();
-		if (this.markers.has(marker.id)) {
-			marker.updatedAt = now;
-		} else {
-			marker.createdAt = marker.createdAt || now;
-			marker.updatedAt = marker.updatedAt || now;
-		}
-		
-		this.markers.set(marker.id, marker);
-		await this.save();
+	setMarker(marker: MarkerDefinition): Promise<void> {
+		return this.enqueue(async () => {
+			const now = Date.now();
+			if (this.markers.has(marker.id)) {
+				marker.updatedAt = now;
+			} else {
+				marker.createdAt = marker.createdAt || now;
+				marker.updatedAt = marker.updatedAt || now;
+			}
+			this.markers.set(marker.id, marker);
+			await this.saveBestEffort();
+		});
 	}
 
 	/**
 	 * Delete a marker
 	 */
-	async deleteMarker(id: string): Promise<void> {
-		this.markers.delete(id);
-		await this.save();
+	deleteMarker(id: string): Promise<void> {
+		return this.enqueue(async () => {
+			this.markers.delete(id);
+			await this.saveBestEffort();
+		});
 	}
 
 	/**

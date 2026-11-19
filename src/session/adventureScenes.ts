@@ -2,8 +2,10 @@ import { TFile, type App, type FrontMatterCache } from "obsidian";
 
 const parentPath = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf("/")));
 const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+const noteName = (path: string) => basename(path).replace(/\.md$/i, "");
 const inFolder = (path: string, folder: string) => !folder || path.startsWith(`${folder}/`);
 const frontmatter = (app: App, file: TFile) => app.metadataCache.getFileCache(file)?.frontmatter;
+type ReferenceResolver = (reference: unknown, sourcePath: string) => { path: string; type?: unknown } | null;
 
 export function noteReferencePath(value: unknown): string {
   const raw = Array.isArray(value) ? value[0] : value;
@@ -35,18 +37,32 @@ function isBareName(reference: unknown, path: string): boolean {
   return typeof reference === "string" && reference.trim() === path && !path.includes("/");
 }
 
-function adventureForReference(app: App, reference: unknown, sourcePath: string, adventures: TFile[]): TFile | null {
+function adventurePathForReference(
+  reference: unknown, sourcePath: string, adventures: readonly string[], resolveReference: ReferenceResolver,
+): string | null {
   const path = noteReferencePath(reference);
   if (!path) return null;
   if (!path.includes("/")) {
     // Legacy and short wiki links can name an adventure that also exists in
     // another campaign. Prefer a unique local match before resolving aliases.
-    const matching = adventures.filter(file => file.basename === path.replace(/\.md$/i, ""));
+    const matching = adventures.filter(adventure => noteName(adventure) === path.replace(/\.md$/i, ""));
     if (matching.length === 1) return matching[0]!;
     if (isBareName(reference, path)) return null;
   }
-  const file = resolveNoteReference(app, reference, sourcePath);
-  return adventures.find(adventure => adventure.path === file?.path) ?? null;
+  const target = resolveReference(reference, sourcePath);
+  return adventures.find(adventure => adventure === target?.path) ?? null;
+}
+
+function vaultReferenceResolver(app: App): ReferenceResolver {
+  return (reference, sourcePath) => {
+    const file = resolveNoteReference(app, reference, sourcePath);
+    return file ? { path: file.path, type: frontmatter(app, file)?.type } : null;
+  };
+}
+
+function adventureForReference(app: App, reference: unknown, sourcePath: string, adventures: TFile[]): TFile | null {
+  const path = adventurePathForReference(reference, sourcePath, adventures.map(file => file.path), vaultReferenceResolver(app));
+  return adventures.find(adventure => adventure.path === path) ?? null;
 }
 
 function campaignAdventures(app: App, campaignPath: string, files = app.vault.getMarkdownFiles()): TFile[] {
@@ -100,41 +116,62 @@ function campaignPathForAdventure(app: App, adventure: TFile): string {
   return basename(parent) === adventure.basename ? parentPath(parent) : parent;
 }
 
-function matchesCampaign(app: App, reference: unknown, sourcePath: string, campaignPath: string): boolean {
+export function matchesNoteCampaign(
+  reference: unknown, sourcePath: string, campaignPath: string, resolveReference: ReferenceResolver,
+): boolean {
   const path = noteReferencePath(reference);
   if (!path) return reference == null || (typeof reference === "string" && !reference.trim());
   const matchesName = path === campaignPath || path === basename(campaignPath);
   // Generated scenes store the campaign's folder name as plain text.
   if (matchesName && isBareName(reference, path)) return true;
-  const linked = resolveNoteReference(app, reference, sourcePath);
+  const linked = resolveReference(reference, sourcePath);
   if (!linked) return matchesName;
-  const type = frontmatter(app, linked)?.type;
-  return parentPath(linked.path) === campaignPath && (type === "world" || type === "campaign");
+  return parentPath(linked.path) === campaignPath && (linked.type === "world" || linked.type === "campaign");
 }
 
-function legacyFolderOwners(scene: TFile, adventures: TFile[]): TFile[] {
+function legacyFolderOwners(scenePath: string, adventures: readonly string[]): string[] {
   // Adventure folder notes own their directory. Flat adventures can own a
   // named scene directory, but only share their own parent as a last resort.
   const specific = adventures.filter(adventure => {
-    const parent = parentPath(adventure.path);
-    if (basename(parent) === adventure.basename) return inFolder(scene.path, parent);
+    const parent = parentPath(adventure);
+    const name = noteName(adventure);
+    if (basename(parent) === name) return inFolder(scenePath, parent);
     const prefix = parent ? `${parent}/` : "";
-    return inFolder(scene.path, `${prefix}${adventure.basename} - Scenes`)
-      || inFolder(scene.path, `${prefix}${adventure.basename}`);
+    return inFolder(scenePath, `${prefix}${name} - Scenes`)
+      || inFolder(scenePath, `${prefix}${name}`);
   });
   if (specific.length) return specific;
 
   return adventures.filter(adventure => {
-    const parent = parentPath(adventure.path);
+    const parent = parentPath(adventure);
     const prefix = parent ? `${parent}/` : "";
-    if (!scene.path.startsWith(prefix)) return false;
-    const relativePath = scene.path.slice(prefix.length);
+    if (!scenePath.startsWith(prefix)) return false;
+    const relativePath = scenePath.slice(prefix.length);
     if (relativePath.includes("/") && !/^(?:Scenes|Act [^/]+)\//i.test(relativePath)) return false;
     // A folder-based sibling also makes a shared scene directory ambiguous.
     return !adventures.some(other => other !== adventure && (
-      parentPath(other.path) === parent || parentPath(parentPath(other.path)) === parent
+      parentPath(other) === parent || parentPath(parentPath(other)) === parent
     ));
   });
+}
+
+/** Resolve an existing or staged scene against all of the campaign's adventures. */
+export function sceneAdventurePath(
+  scenePath: string, fields: Record<string, unknown>, adventurePaths: readonly string[],
+  campaignPath: string, resolveReference: ReferenceResolver,
+): string | null {
+  if (!inFolder(scenePath, campaignPath) || fields.type !== "scene"
+    || !matchesNoteCampaign(fields.campaign, scenePath, campaignPath, resolveReference)) return null;
+
+  const { adventure } = fields;
+  const hasAdventure = adventure != null && (typeof adventure !== "string" || !!adventure.trim());
+  if (hasAdventure) return adventurePathForReference(adventure, scenePath, adventurePaths, resolveReference);
+  const owners = legacyFolderOwners(scenePath, adventurePaths);
+  return owners.length === 1 ? owners[0]! : null;
+}
+
+export function getSceneNumber(path: string, value: unknown): number {
+  return parseInt(String(value ?? noteName(path).match(/Scene\s+(\d+)/i)?.[1] ?? "0"), 10) || 0;
 }
 
 export interface AdventureScene {
@@ -150,23 +187,17 @@ export function getAdventureScenes(app: App, adventure: TFile, campaignPath = ca
   const adventures = campaignAdventures(app, campaignPath, files);
   if (!adventures.some(file => file.path === adventure.path)) return [];
 
+  const adventurePaths = adventures.map(file => file.path);
+  const resolveReference = vaultReferenceResolver(app);
   const scenes: AdventureScene[] = [];
   for (const file of files) {
     if (!inFolder(file.path, campaignPath)) continue;
     const fm = frontmatter(app, file);
-    if (fm?.type !== "scene" || !matchesCampaign(app, fm.campaign, file.path, campaignPath)) continue;
-
-    const hasAdventure = fm.adventure != null && (typeof fm.adventure !== "string" || !!fm.adventure.trim());
-    if (hasAdventure) {
-      if (adventureForReference(app, fm.adventure, file.path, adventures)?.path !== adventure.path) continue;
-    } else {
-      const owners = legacyFolderOwners(file, adventures);
-      if (owners.length !== 1 || owners[0]?.path !== adventure.path) continue;
-    }
+    if (!fm || sceneAdventurePath(file.path, fm, adventurePaths, campaignPath, resolveReference) !== adventure.path) continue;
     scenes.push({
       file,
       frontmatter: fm,
-      sceneNumber: parseInt(fm.scene_number ?? file.basename.match(/Scene\s+(\d+)/i)?.[1] ?? "0", 10) || 0,
+      sceneNumber: getSceneNumber(file.path, fm.scene_number),
       status: String(fm.status || "not-started"),
     });
   }

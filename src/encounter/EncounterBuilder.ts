@@ -35,6 +35,10 @@ export interface EncounterCreature {
   initiativeCounts?: number[];
   fixedInitiative?: boolean;
   hp?: number;
+  maxHp?: number;
+  thp?: number;
+  tokenId?: string;
+  initBonus?: number;
   ac?: number;
   cr?: string;
   source?: string;
@@ -67,6 +71,11 @@ export interface EncounterData {
     partyStats?: any;
     enemyStats?: any;
   };
+}
+
+interface EncounterDifficultyInputs {
+  statblocks: ReadonlyMap<string, Record<string, unknown>>;
+  partyMembers: Awaited<ReturnType<EncounterBuilder["getPartyForDifficulty"]>>;
 }
 
 export class EncounterBuilder {
@@ -667,8 +676,15 @@ export class EncounterBuilder {
         return null;
       }
 
-      const fm = cache.frontmatter;
-      
+      return this.getStatblockStats(cache.frontmatter);
+    } catch (error) {
+      console.error("[Parser] Error parsing statblock:", filePath, error);
+      return null;
+    }
+  }
+
+  private getStatblockStats(fm: Record<string, unknown>): { hp: number; ac: number; dpr: number; attackBonus: number; hasPackTactics?: boolean } | null {
+    try {
       // Extract basic stats
       const hp = this.parseHP(fm.hp);
       const ac = this.parseAC(fm.ac);
@@ -1021,7 +1037,7 @@ export class EncounterBuilder {
       };
       return result;
     } catch (error) {
-      console.error("[Parser] Error parsing statblock:", filePath, error);
+      console.error("[Parser] Error parsing statblock:", fm.name, error);
       return null;
     }
   }
@@ -1136,9 +1152,14 @@ export class EncounterBuilder {
     this.creatures = [...nonTraps, ...consolidatedTraps];
   }
 
-  async calculateEncounterDifficulty(): Promise<any> {
+  async calculateEncounterDifficulty(inputs?: EncounterDifficultyInputs) {
     // First, consolidate any trap elements
     await this.consolidateTrapElements();
+
+    const readStats = async (path: string) => {
+      const preloaded = inputs?.statblocks.get(path);
+      return preloaded ? this.getStatblockStats(preloaded) : this.parseStatblockStats(path);
+    };
     
     // Calculate enemy stats with real statblock data when available
     let enemyTotalHP = 0;
@@ -1168,11 +1189,11 @@ export class EncounterBuilder {
         // Get stats for friendly creature (same logic as enemies)
         let realStats = null;
         if (creature.path && typeof creature.path === 'string') {
-          realStats = await this.parseStatblockStats(creature.path);
+          realStats = await readStats(creature.path);
         }
         
         const crStats = this.getCRStats(creature.cr);
-        const hp = creature.hp || realStats?.hp || crStats.hp;
+        const hp = creature.maxHp ?? (creature.hp || realStats?.hp || crStats.hp);
         const ac = creature.ac || realStats?.ac || crStats.ac;
         const dpr = realStats?.dpr || crStats.dpr;
         const attackBonus = realStats?.attackBonus || crStats.attackBonus;
@@ -1208,13 +1229,13 @@ export class EncounterBuilder {
       // Try to get real stats from statblock if available
       let realStats = null;
       if (creature.path && typeof creature.path === 'string') {
-        realStats = await this.parseStatblockStats(creature.path);
+        realStats = await readStats(creature.path);
       }
       
       // Fall back to CR-based estimates if no statblock or parsing failed
       const crStats = this.getCRStats(creature.cr);
       
-      const hp = creature.hp || realStats?.hp || crStats.hp;
+      const hp = creature.maxHp ?? (creature.hp || realStats?.hp || crStats.hp);
       const ac = creature.ac || realStats?.ac || crStats.ac;
       const dpr = realStats?.dpr || crStats.dpr;
       const attackBonus = realStats?.attackBonus || crStats.attackBonus;
@@ -1245,7 +1266,7 @@ export class EncounterBuilder {
     const avgEnemyAttackBonus = enemyCount > 0 ? enemyTotalAttackBonus / enemyCount : 3;
 
     // Get party stats
-    const partyMembers = await this.getPartyForDifficulty();
+    const partyMembers = inputs?.partyMembers ?? await this.getPartyForDifficulty();
 
     let partyTotalHP = 0;
     let partyTotalAC = 0;
@@ -1588,7 +1609,7 @@ export class EncounterBuilder {
       const creatures: import("../party/PartyTypes").StoredEncounterCreature[] = this.creatures.flatMap(c => {
         const instances: import("../party/PartyTypes").StoredEncounterCreature[] = [];
         for (let i = 0; i < c.count; i++) {
-          const hp = c.hp || 1;
+          const hp = c.hp ?? 1;
           const ac = c.ac || 10;
 
           let creatureName = c.name;
@@ -1603,13 +1624,14 @@ export class EncounterBuilder {
           instances.push({
             name: creatureName,
             display: displayName,
-            initiative: c.fixedInitiative && c.initiative ? c.initiative : 0,
-            fixedInitiative: c.fixedInitiative === true && !!c.initiative,
-            modifier: c.fixedInitiative && c.initiative ? c.initiative : 0,
+            initiative: c.fixedInitiative ? (c.initiative ?? 0) : 0,
+            fixedInitiative: c.fixedInitiative === true,
+            modifier: c.initBonus ?? 0,
             hp: hp,
-            maxHP: hp,
+            maxHP: c.maxHp ?? hp,
             currentHP: hp,
-            tempHP: 0,
+            tempHP: c.thp ?? 0,
+            tokenId: c.tokenId,
             cr: c.cr || undefined,
             ac: ac,
             currentAC: ac,

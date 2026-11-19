@@ -24,6 +24,10 @@ Three specialists share the repository rules in [AGENTS.md](../../AGENTS.md) and
 - **GitHub/editor agents:** thin definitions in [`.github/agents/`](../../.github/agents/), alongside the existing general campaign-hub agent.
 - **Other clients or clients without custom-role discovery:** follow the root `AGENTS.md` routing table and read the same shared guide. These files do not change the capabilities exposed by a running session.
 
+## Content-agent integration
+
+The coordinator owns `src/automation` contracts, transaction/receipt handling, transport lifecycle, `main.ts` integration and the MCP/CLI bridge in `tools/dnd-hub-agent.mjs`. Domain specialists own their authoring planners by explicit assignment. Read [the authoring guide](../agent-authoring.md) before extending the versioned API. Input changes must update runtime validation, `src/automation/schemas.json`, tests and examples together. Plans stage writes/effects; they must not mutate plugin state during validation or preview. The transaction overlay is the source for links to preceding batch operations.
+
 ## Verification and maintenance
 
 For instruction/configuration changes, check TOML/YAML syntax, role names, guide links, and all referenced source/test paths. Review realistic routing and boundary scenarios. Runtime code changes follow the repository validation workflow; manual display/performance checks remain manual and should be reported accurately.
