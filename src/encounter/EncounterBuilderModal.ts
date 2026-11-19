@@ -12,7 +12,7 @@ import {
 
 const ENCOUNTER_CREATURE_FIELDS = [
   "name", "count", "initiative", "initiative_counts", "initiativeCounts", "fixed_initiative", "fixedInitiative",
-  "hp", "ac", "cr", "source", "path", "is_trap", "isTrap", "trap_path", "trapPath", "is_friendly", "is_hidden",
+  "hp", "hp_max", "thp", "token_id", "init_bonus", "ac", "cr", "source", "path", "is_trap", "isTrap", "trap_path", "trapPath", "is_friendly", "is_hidden",
 ];
 const ENCOUNTER_PARTY_MEMBER_FIELDS = [
   "name", "level", "hp", "hp_max", "ac", "combat_dpr", "combat_attack_bonus", "note_path", "token_id", "init_bonus", "thp",
@@ -207,6 +207,10 @@ export class EncounterBuilderModal extends Modal {
             initiativeCounts: Array.isArray(c.initiative_counts) ? c.initiative_counts : c.initiativeCounts,
             fixedInitiative: c.fixed_initiative === true || c.fixedInitiative === true,
             hp: c.hp,
+            maxHp: c.hp_max,
+            thp: c.thp,
+            tokenId: c.token_id,
+            initBonus: c.init_bonus,
             ac: c.ac,
             cr: c.cr,
             source: c.source,
@@ -1545,12 +1549,16 @@ creatures:`;
     for (const creature of this.creatures) {
       frontmatter += `\n  - name: ${this.escapeYamlString(creature.name)}
     count: ${creature.count}`;
-      if (creature.initiative) frontmatter += `\n    initiative: ${creature.initiative}`;
+      if (creature.initiative !== undefined) frontmatter += `\n    initiative: ${creature.initiative}`;
       if (Array.isArray(creature.initiativeCounts) && creature.initiativeCounts.length > 0) {
         frontmatter += `\n    initiative_counts: [${creature.initiativeCounts.join(", ")}]`;
       }
       if (creature.fixedInitiative) frontmatter += `\n    fixed_initiative: true`;
-      if (creature.hp) frontmatter += `\n    hp: ${creature.hp}`;
+      if (creature.hp !== undefined) frontmatter += `\n    hp: ${creature.hp}`;
+      if (creature.maxHp !== undefined) frontmatter += `\n    hp_max: ${creature.maxHp}`;
+      if (creature.thp !== undefined) frontmatter += `\n    thp: ${creature.thp}`;
+      if (creature.tokenId) frontmatter += `\n    token_id: ${this.escapeYamlString(creature.tokenId)}`;
+      if (creature.initBonus !== undefined) frontmatter += `\n    init_bonus: ${creature.initBonus}`;
       if (creature.ac) frontmatter += `\n    ac: ${creature.ac}`;
       if (creature.cr) frontmatter += `\n    cr: ${this.escapeYamlString(String(creature.cr))}`;
       if (creature.source) frontmatter += `\n    source: ${this.escapeYamlString(creature.source)}`;
@@ -1697,16 +1705,16 @@ _Add notes about tactics, environment, or special conditions here._
         const instances: import("../party/PartyTypes").StoredEncounterCreature[] = [];
         const fixedInitiatives = c.isTrap && Array.isArray(c.initiativeCounts) && c.initiativeCounts.length > 0
           ? c.initiativeCounts
-          : (c.fixedInitiative && c.initiative ? [c.initiative] : []);
-        const instanceCount = fixedInitiatives.length > 0 ? fixedInitiatives.length : c.count;
+          : (c.fixedInitiative && c.initiative !== undefined ? [c.initiative] : []);
+        const instanceCount = c.isTrap && fixedInitiatives.length > 0 ? fixedInitiatives.length : c.count;
 
         for (let i = 0; i < instanceCount; i++) {
-          const hp = c.hp || 1;
+          const hp = c.hp ?? 1;
           const ac = c.ac || 10;
-          const fixedInitiative = fixedInitiatives[i];
+          const fixedInitiative = c.isTrap ? fixedInitiatives[i] : c.fixedInitiative ? (c.initiative ?? 0) : undefined;
 
           let displayName = c.name;
-          if (fixedInitiative) {
+          if (fixedInitiative !== undefined) {
             displayName = fixedInitiatives.length > 1 ? `${c.name} (Initiative ${fixedInitiative})` : c.name;
           } else if (c.count > 1 && this.useColorNames) {
             const colorIndex = i % colors.length;
@@ -1716,13 +1724,14 @@ _Add notes about tactics, environment, or special conditions here._
           const creature: import("../party/PartyTypes").StoredEncounterCreature = {
             name: c.name,
             display: displayName,
-            initiative: fixedInitiative || 0,
-            fixedInitiative: !!fixedInitiative,
-            modifier: fixedInitiative || 0,
+            initiative: fixedInitiative ?? 0,
+            fixedInitiative: fixedInitiative !== undefined,
+            modifier: fixedInitiative ?? c.initBonus ?? 0,
             hp: hp,
-            maxHP: hp,
+            maxHP: c.maxHp ?? hp,
             currentHP: hp,
-            tempHP: 0,
+            tempHP: c.thp ?? 0,
+            tokenId: c.tokenId,
             cr: c.cr || undefined,
             ac: ac,
             currentAC: ac,

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Agent authoring API with validated linked batches, previews, durable request receipts, file requests, a CLI, and a local MCP bridge.
+- Programmatic monster and NPC creation with complete statblocks and reusable tokens using vault images, plus native adventure, scene, encounter, map, and session creation.
+- Campaign/image discovery, per-operation schemas, an agent guide generated in the vault, and an example adventure batch.
+
 ## [0.15.0-beta.3] - 2026-11-19
 
 Beta / unstable release from `dev`, addressing all 11 P1 findings in the specialist review. Manual Obsidian acceptance and large-map performance testing remain pending.

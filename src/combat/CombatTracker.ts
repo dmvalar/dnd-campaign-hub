@@ -502,19 +502,19 @@ export class CombatTracker {
         }
 
         // Try to read modifier from vault note
-        let modifier = 0;
+        let modifier = ec.initBonus ?? 0;
         if (ec.path && ec.path !== "[SRD]") {
           const dexMod = await this.readDexModifier(ec.path);
           if (dexMod !== null) modifier = dexMod;
         }
 
         // Resolve tokenId from MarkerLibrary
-        let tokenId: string | undefined;
+        let tokenId: string | undefined = ec.tokenId;
         if (ec.path && ec.path !== "[SRD]") {
           const file = this.app.vault.getAbstractFileByPath(ec.path);
           if (file instanceof TFile) {
             const cache = this.app.metadataCache.getFileCache(file);
-            tokenId = cache?.frontmatter?.token_id;
+            tokenId = cache?.frontmatter?.token_id ?? tokenId;
           }
         }
 
@@ -522,11 +522,12 @@ export class CombatTracker {
           id: this.generateId(),
           name: ec.name,
           display,
-          initiative: rollInitiative ? this.rollD20() + modifier : 0,
+          initiative: ec.fixedInitiative ? (ec.initiative ?? 0) : rollInitiative ? this.rollD20() + modifier : 0,
+          fixedInitiative: ec.fixedInitiative ?? false,
           modifier,
           currentHP: ec.hp ?? 1,
-          maxHP: ec.hp ?? 1,
-          tempHP: 0,
+          maxHP: ec.maxHp ?? ec.hp ?? 1,
+          tempHP: ec.thp ?? 0,
           ac: ec.ac ?? 10,
           currentAC: ec.ac ?? 10,
           player: false,

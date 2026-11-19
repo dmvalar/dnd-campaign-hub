@@ -176,6 +176,8 @@ import { renderMapView as renderMapViewFn } from './map-views/renderMapView';
 import { buildEncounterInlineMarkdown, handleInlineEncounterInteraction, parseEncounterCodeblockMarkdown, parseEncounterInlineMarkdown, renderEncounterView as renderEncounterViewFn, renderInlineEncounterWidgets } from './encounter/renderEncounterView';
 import { renderPoiView as renderPoiViewFn } from './poi/renderPoiView';
 import { renderPartyView as renderPartyViewFn } from './party/renderPartyView';
+import { AgentContentApi } from './automation/AgentContentApi';
+import { AgentRequestProcessor } from './automation/AgentRequestProcessor';
 import { getAdventureScenes, getSessionAdventures, getSessionCampaignPath, hasSessionAdventureReferences } from './session/adventureScenes';
 import {
   saveMapAnnotations as saveMapAnnotationsFn,
@@ -314,6 +316,9 @@ export default class DndCampaignHubPlugin extends Plugin {
   mapManager!: MapManager;
   mapController!: MapController;
   markerLibrary!: MarkerLibrary;
+  /** Versioned authoring API shared by file requests and external agent bridges. */
+  agentContentApi!: AgentContentApi;
+  agentRequestProcessor!: AgentRequestProcessor;
   envAssetLibrary!: EnvAssetLibrary;
   musicPlayer!: MusicPlayer;
   projectionManager!: ProjectionManager;
@@ -462,6 +467,24 @@ export default class DndCampaignHubPlugin extends Plugin {
     // Initialize the environment asset library
     this.envAssetLibrary = new EnvAssetLibrary(this.app, this.manifest.id);
     await this.envAssetLibrary.load();
+
+    this.agentContentApi = new AgentContentApi(this);
+    this.agentRequestProcessor = new AgentRequestProcessor(this, this.agentContentApi);
+    const pollAgentRequests = () => {
+      if (this.settings.agentContentRequests) {
+        void this.agentRequestProcessor.poll().catch(error => console.error('[AgentContent] Could not process requests:', error));
+      }
+    };
+    this.registerInterval(window.setInterval(pollAgentRequests, 5000));
+    this.app.workspace.onLayoutReady(pollAgentRequests);
+    this.addCommand({
+      id: 'process-agent-content-requests',
+      name: 'Process agent content requests',
+      callback: async () => {
+        try { new Notice(`Processed ${await this.agentRequestProcessor.poll()} agent request(s). Results are in .dnd-hub/agent/results.`); }
+        catch (error) { new Notice(`Could not process agent requests: ${error instanceof Error ? error.message : String(error)}`); }
+      },
+    });
 
     // Initialize the migration system (registry + runner)
     this.migrationRegistry = createMigrationRegistry();
@@ -2022,6 +2045,8 @@ export default class DndCampaignHubPlugin extends Plugin {
   }
 
   onunload() {
+    this.agentRequestProcessor?.stop();
+    this.agentContentApi?.dispose();
     // Flush any debounced map saves before shutdown
     this._flushAllPendingSaves();
     // Persist playback state before shutdown

@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "requestId": "haunted-monastery-preview-001",
+  "campaignPath": "ttrpgs/My Campaign",
+  "dryRun": true,
+  "operations": [
+    {
+      "id": "monster",
+      "type": "create_monster",
+      "input": {
+        "name": "Ghast Captain",
+        "statblock": {
+          "size": "Medium",
+          "creatureType": "undead",
+          "alignment": "chaotic evil",
+          "ac": 14,
+          "hp": 45,
+          "hitDice": "7d8 + 14",
+          "speed": "30 ft.",
+          "stats": [
+            16,
+            14,
+            14,
+            10,
+            12,
+            8
+          ],
+          "cr": "2",
+          "skillsaves": {
+            "perception": 3
+          },
+          "senses": "darkvision 60 ft., passive Perception 13",
+          "languages": "Common",
+          "damageImmunities": "poison",
+          "conditionImmunities": "charmed, exhaustion, poisoned",
+          "traits": [
+            {
+              "name": "Undead Fortitude",
+              "desc": "If damage reduces the captain to 0 hit points, it must make a Constitution saving throw with DC 5 + the damage taken, unless the damage is radiant or from a critical hit. On a success, it drops to 1 hit point instead."
+            }
+          ],
+          "actions": [
+            {
+              "name": "Claws",
+              "desc": "Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 10 (2d6 + 3) slashing damage."
+            }
+          ]
+        },
+        "token": {
+          "imagePath": "Assets/Tokens/ghast-captain.png",
+          "imageFit": "contain",
+          "backgroundColor": "#4a174a"
+        },
+        "description": "The captain guards the monastery gate and carries a tarnished key."
+      }
+    },
+    {
+      "id": "npc",
+      "type": "create_npc",
+      "input": {
+        "name": "Sister Ada",
+        "motivation": "Recover the monastery's lost records.",
+        "pursuit": "Recruit people willing to enter the sealed cloister.",
+        "activeProblem": "The gatekeeper recognizes her.",
+        "token": {
+          "imagePath": "Assets/Tokens/sister-ada.png",
+          "imageFit": "cover"
+        }
+      }
+    },
+    {
+      "id": "adventure",
+      "type": "create_adventure",
+      "input": {
+        "name": "The Haunted Monastery",
+        "problem": "The dead are ringing the monastery bell every midnight.",
+        "levelFrom": 3,
+        "levelTo": 4,
+        "expectedSessions": 2,
+        "description": "Discover why the bell rings and decide whether the monastery can be reclaimed."
+      }
+    },
+    {
+      "id": "map",
+      "type": "create_map",
+      "input": {
+        "name": "Monastery Gate",
+        "imagePath": "Assets/Maps/monastery.png",
+        "type": "battlemap",
+        "gridType": "square",
+        "gridSize": 70,
+        "scaleValue": 5,
+        "scaleUnit": "feet",
+        "width": 2100,
+        "height": 1400
+      }
+    },
+    {
+      "id": "scene",
+      "type": "create_scene",
+      "input": {
+        "name": "The Sealed Gate",
+        "adventurePath": {
+          "$ref": "adventure.notePath"
+        },
+        "sceneNumber": 1,
+        "act": 1,
+        "sceneType": "combat",
+        "duration": "30min",
+        "difficulty": "medium",
+        "goal": "Enter the monastery and learn who commands its dead.",
+        "npcPaths": [
+          {
+            "$ref": "npc.notePath"
+          }
+        ],
+        "mapPaths": [
+          {
+            "$ref": "map.notePath"
+          }
+        ],
+        "description": "Ada approaches the gate. A figure in rusted armor rises behind it."
+      }
+    },
+    {
+      "id": "encounter",
+      "type": "create_encounter",
+      "input": {
+        "name": "Monastery Gatekeeper",
+        "scenePath": {
+          "$ref": "scene.notePath"
+        },
+        "creatures": [
+          {
+            "path": {
+              "$ref": "monster.notePath"
+            },
+            "count": 1
+          }
+        ],
+        "includeParty": false,
+        "description": "The captain challenges intruders before attacking. It will accept proof of the abbot's authority."
+      }
+    },
+    {
+      "id": "session",
+      "type": "create_session",
+      "input": {
+        "name": "The Midnight Bell",
+        "adventurePaths": [
+          {
+            "$ref": "adventure.notePath"
+          }
+        ],
+        "plannedScenePaths": [
+          {
+            "$ref": "scene.notePath"
+          }
+        ],
+        "startingScenePath": {
+          "$ref": "scene.notePath"
+        },
+        "location": "The Haunted Monastery",
+        "description": "Start with the midnight bell sounding across the valley."
+      }
+    }
+  ]
+}

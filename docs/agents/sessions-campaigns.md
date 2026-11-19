@@ -18,6 +18,7 @@ Own campaign/session lifecycle, adventure and scene relationships, session prep/
 - Session edits maintain both sides of adventure relationships: session frontmatter and the adventure's `sessions` backlinks. When links change, update additions and removals without discarding unrelated frontmatter or user-authored YAML.
 - `planned_scenes` records the session's explicit scene plan. Keep it distinct from `starting_scene`; retain compatibility for sessions whose adventure/scene information is legacy or absent.
 - Use `session/adventureScenes.ts` for campaign-scoped adventure resolution and scene membership in pickers, dashboards, note listings, continuation, and bulk status updates. Explicit adventure/campaign relationships take precedence over directory inference. Legacy folder inference must have one unambiguous owner; a shared parent prefix or a global basename match is insufficient.
+- Agent authoring uses the shared pure `sceneAdventurePath` rules over transaction-backed reads, including preceding staged adventures/scenes/maps. Do not rely on metadata-cache updates for batch dependencies. Reject occupied scene/session numbers; agent creation must never silently renumber authored scenes. Relationship updates preserve comments and the authored body with `automation/frontmatter.ts` and commit-time conflict checks.
 - Intersect explicit planned scenes with the linked adventures' current membership. A nonempty plan whose links are missing or outside that membership must not expand into all adventure scenes.
 - Scene edits merge owned fields into existing frontmatter and preserve handout fields, custom properties, lifecycle/session metadata, and authored body content. In-place edits use `vault.process` against the latest document; invalid YAML must leave the original note intact.
 - When a scene edit already persists its encounter link, save encounter data with `linkToScene = false` to avoid a second scene rewrite. Other encounter creation callers retain the default linking behavior.
@@ -39,6 +40,7 @@ npm run test -- tests/session/SessionBacklinks.test.ts
 npm run test -- tests/session/quickNotes.test.ts
 npm run test -- tests/session/SessionRunDashboardView.test.ts
 npm run test -- tests/session/adventureScenes.test.ts tests/rendering/ViewRenderer.test.ts
+npm run test -- tests/automation
 npm run test -- tests/scene/SceneCreationModal.test.ts
 npm run test -- tests/migration/session-lifecycle.test.ts
 npm run test -- tests/migration/session-multiple-adventures.test.ts

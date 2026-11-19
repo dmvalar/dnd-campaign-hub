@@ -77,6 +77,20 @@ afterEach(() => {
 });
 
 describe("EncounterBuilderModal note save", () => {
+  it("round-trips agent-authored zero HP, maximum/temp HP, image token and fixed initiative for every creature instance", async () => {
+    const f=await setup(true,original.replace("    count: 1", "    count: 2\n    hp: 0\n    hp_max: 22\n    thp: 5\n    token_id: image-token\n    init_bonus: 3\n    initiative: 0\n    fixed_initiative: true"));
+    await f.modal.saveEncounter();
+    expect(parseYamlFrontmatter(f.read(f.file)).frontmatter.creatures).toMatchObject([
+      {name:"Goblin",count:2,hp:0,hp_max:22,thp:5,token_id:"image-token",init_bonus:3,initiative:0,fixed_initiative:true},
+    ]);
+    const stored=f.partyManager.saveEncounter.mock.calls[0]![1];
+    expect(stored.creatures).toHaveLength(2);
+    expect(stored.creatures).toMatchObject([
+      {currentHP:0,maxHP:22,tempHP:5,tokenId:"image-token",fixedInitiative:true,initiative:0},
+      {currentHP:0,maxHP:22,tempHP:5,tokenId:"image-token",fixedInitiative:true,initiative:0},
+    ]);
+  });
+
   it("edits the latest note in its own folder, preserving body, metadata and the original file through rename", async () => {
     const f = await setup();
     f.addFolder("Other/ttrpgs");

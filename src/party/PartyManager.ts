@@ -667,6 +667,44 @@ export class PartyManager {
     this.emit();
   }
 
+  /** Create-only automation effect; failures propagate and rollback checks ownership. */
+  prepareEncounterCreate(name: string, encounter: StoredEncounter): { commit(): Promise<void>; rollback(): Promise<void> } {
+    const owned = structuredClone(encounter);
+    const snapshot = JSON.stringify(owned);
+    let attempted = false;
+    return {
+      commit: () => this.queuePersistence(async () => {
+        if (Object.keys(this.data.encounters).some(key => key.toLowerCase() === name.toLowerCase())) {
+          throw new Error(`Stored encounter already exists: ${name}`);
+        }
+        const encounters = { ...this.data.encounters, [name]: owned };
+        attempted = true;
+        await this.app.vault.adapter.write(this.filePath, JSON.stringify({ ...this.data, encounters }, null, 2));
+        this.data.encounters[name] = owned;
+        this.emit();
+      }),
+      rollback: () => this.queuePersistence(async () => {
+        if (!attempted) return;
+        const current = this.data.encounters[name];
+        if (current && JSON.stringify(current) !== snapshot) throw new Error(`Stored encounter changed after creation: ${name}`);
+        const adapter = this.app.vault.adapter;
+        if (await adapter.exists(this.filePath)) {
+          await adapter.process(this.filePath, content => {
+            const stored = JSON.parse(content) as PartyManagerData;
+            const entry = stored.encounters?.[name];
+            if (!entry) return content;
+            if (JSON.stringify(entry) !== snapshot) throw new Error(`Stored encounter changed on disk: ${name}`);
+            delete stored.encounters[name];
+            return JSON.stringify(stored, null, 2);
+          });
+        }
+        if (current) delete this.data.encounters[name];
+        attempted = false;
+        this.emit();
+      }),
+    };
+  }
+
   async deleteEncounter(name: string): Promise<boolean> {
     if (!this.data.encounters[name]) return false;
     delete this.data.encounters[name];

@@ -87,6 +87,18 @@ export class DndCampaignHubSettingTab extends PluginSettingTab {
     );
 
     new Setting(setup)
+      .setName("Agent content requests")
+      .setDesc("Let connected agents create validated campaign content, monsters, tokens, and maps while Obsidian is open. See the agent-authoring guide in the plugin repository for file and MCP setup.")
+      .addToggle(toggle => toggle.setValue(this.plugin.settings.agentContentRequests).onChange(async value => {
+        this.plugin.settings.agentContentRequests = value;
+        await this.plugin.saveSettings();
+        if (value) {
+          try { await this.plugin.agentRequestProcessor.poll(); }
+          catch (error) { new Notice(`Could not start agent requests: ${error instanceof Error ? error.message : String(error)}`); }
+        }
+      }));
+
+    new Setting(setup)
       .setName("Setup wizard")
       .setDesc("Choose the campaign structure, starter content, and optional systems without digging through every setting.")
       .addButton((btn) =>
