@@ -3,6 +3,7 @@ import type DndCampaignHubPlugin from "../main";
 import { SESSION_PREP_VIEW_TYPE } from "../constants";
 import { SessionCreationModal } from "./SessionCreationModal";
 import { renderActionableEmptyState } from "../utils/ActionableEmptyState";
+import { getAdventureScenes, getSessionAdventures, getSessionPlannedScenePaths } from "./adventureScenes";
 
 export class SessionPrepDashboardView extends ItemView {
   private static readonly AUTO_REFRESH_MS = 30000;
@@ -366,47 +367,14 @@ export class SessionPrepDashboardView extends ItemView {
     });
   }
 
-  private extractLinkPath(raw: unknown): string {
-    const match = String(raw || "").match(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/);
-    return (match?.[1] || String(raw || "")).replace(/\.md$/i, "").trim();
-  }
-
   private getTargetSessionAdventures(): Array<{ path: string; name: string; status: string }> {
     const session = this.getTargetSession();
     if (!session) return [];
-    const fm = this.app.metadataCache.getFileCache(session)?.frontmatter;
-    const rawValues = Array.isArray(fm?.adventures) && fm.adventures.length > 0
-      ? fm.adventures
-      : (fm?.adventure ? [fm.adventure] : []);
-    const seen = new Set<string>();
-    const adventures: Array<{ path: string; name: string; status: string }> = [];
-    for (const raw of rawValues) {
-      const linkpath = this.extractLinkPath(raw);
-      const file = this.app.metadataCache.getFirstLinkpathDest(linkpath, session.path);
-      if (!(file instanceof TFile) || seen.has(file.path)) continue;
-      seen.add(file.path);
-      const adventureFm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-      adventures.push({ path: file.path, name: file.basename, status: adventureFm?.status || "planning" });
-    }
-    return adventures;
-  }
-
-  private getTargetPlannedScenePaths(): string[] {
-    const session = this.getTargetSession();
-    if (!session) return [];
-    const fm = this.app.metadataCache.getFileCache(session)?.frontmatter;
-    if (!Array.isArray(fm?.planned_scenes)) return [];
-    const seen = new Set<string>();
-    const paths: string[] = [];
-    for (const raw of fm.planned_scenes) {
-      const ref = this.extractLinkPath(raw);
-      const file = this.app.metadataCache.getFirstLinkpathDest(ref, session.path);
-      if (!(file instanceof TFile) || seen.has(file.path)) continue;
-      if (this.app.metadataCache.getFileCache(file)?.frontmatter?.type !== "scene") continue;
-      seen.add(file.path);
-      paths.push(file.path);
-    }
-    return paths;
+    return getSessionAdventures(this.app, session, this.campaignPath).map(file => ({
+      path: file.path,
+      name: file.basename,
+      status: this.app.metadataCache.getFileCache(file)?.frontmatter?.status || "planning",
+    }));
   }
 
   private getNpcCount(): number {
@@ -433,8 +401,8 @@ export class SessionPrepDashboardView extends ItemView {
     let hasScenes = false;
     let nextScenePath = "";
     let sessionScenes = (await Promise.all(adventures.map((adventure) => this.getScenesForAdventure(adventure.path)))).flat();
-    const plannedPaths = this.getTargetPlannedScenePaths();
-    if (plannedPaths.length > 0) {
+    const plannedPaths = getSessionPlannedScenePaths(this.app, targetSession);
+    if (plannedPaths) {
       const byPath = new Map(sessionScenes.map(scene => [scene.path, scene]));
       sessionScenes = plannedPaths.map(path => byPath.get(path)).filter((scene): scene is NonNullable<typeof scene> => Boolean(scene));
     }
@@ -741,6 +709,8 @@ export class SessionPrepDashboardView extends ItemView {
       return;
     }
 
+    const plannedPaths = getSessionPlannedScenePaths(this.app, this.getTargetSession());
+    const plannedOrder = plannedPaths && new Map(plannedPaths.map((path, index) => [path, index]));
     for (const adventure of adventures) {
       const adventureCard = container.createEl("div", { cls: "dashboard-adventure-card" });
       
@@ -763,10 +733,9 @@ export class SessionPrepDashboardView extends ItemView {
 
       // Get scenes for this adventure
       let scenes = await this.getScenesForAdventure(adventure.path);
-      const plannedPaths = this.getTargetPlannedScenePaths();
-      if (plannedPaths.length > 0) {
-        const order = new Map(plannedPaths.map((path, index) => [path, index]));
-        scenes = scenes.filter(scene => order.has(scene.path)).sort((a, b) => order.get(a.path)! - order.get(b.path)!);
+      if (plannedOrder) {
+        scenes = scenes.filter(scene => plannedOrder.has(scene.path))
+          .sort((a, b) => plannedOrder.get(a.path)! - plannedOrder.get(b.path)!);
       }
       
       if (scenes.length === 0) {
@@ -1194,48 +1163,18 @@ export class SessionPrepDashboardView extends ItemView {
     status: string;
     goal: string;
   }>> {
-    const scenes: Array<any> = [];
     const adventureFile = this.app.vault.getAbstractFileByPath(adventurePath);
-
-    if (!(adventureFile instanceof TFile)) return scenes;
-
-    const adventureName = adventureFile.basename;
-
-    // Search all markdown files by frontmatter: type=scene + adventure matches
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      const cache = this.app.metadataCache.getFileCache(file);
-      const fm = cache?.frontmatter;
-      if (!fm || fm.type !== "scene") continue;
-
-      // Match by adventure frontmatter field (basename of the adventure)
-      if (fm.adventure !== adventureName) continue;
-
-      const sceneNum = parseInt(
-        fm.scene_number ?? file.basename.match(/Scene\s+(\d+)/i)?.[1] ?? "0"
-      ) || 0;
-
-      // Extract scene name from frontmatter or filename
-      let sceneName = fm.name || "";
-      if (!sceneName) {
-        const nameMatch = file.basename.match(/^Scene\s+\d+\s+-\s+(.+)$/);
-        sceneName = nameMatch ? nameMatch[1] : file.basename;
-      }
-
-      scenes.push({
-        path: file.path,
-        number: sceneNum,
-        name: sceneName,
-        type: fm.scene_type || "exploration",
-        duration: fm.duration || "?",
-        difficulty: fm.difficulty || "medium",
-        status: fm.status || "not-started",
-        goal: fm.goal || ""
-      });
-    }
-
-    // Sort by scene number
-    scenes.sort((a, b) => a.number - b.number);
-    return scenes;
+    if (!(adventureFile instanceof TFile)) return [];
+    return getAdventureScenes(this.app, adventureFile, this.campaignPath).map(({ file, frontmatter: fm, sceneNumber, status }) => ({
+      path: file.path,
+      number: sceneNumber,
+      name: fm.name || file.basename.match(/^Scene\s+\d+\s+-\s+(.+)$/)?.[1] || file.basename,
+      type: fm.scene_type || "exploration",
+      duration: fm.duration || "?",
+      difficulty: fm.difficulty || "medium",
+      status,
+      goal: fm.goal || "",
+    }));
   }
 
   getSceneIcon(type: string): string {

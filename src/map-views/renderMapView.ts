@@ -1,5 +1,6 @@
 import { App, MarkdownRenderer, Menu, Modal, Notice, Setting, TFile, TFolder, WorkspaceLeaf, requestUrl } from "obsidian";
 import type DndCampaignHubPlugin from "../main";
+import { resolveEncounterPartyMembers } from "../encounter/renderEncounterView";
 import type { MapMediaElement } from "../constants";
 import { PLAYER_MAP_VIEW_TYPE, GM_MAP_VIEW_TYPE } from "../constants";
 import { GmMapView } from "./GmMapView";
@@ -183,45 +184,7 @@ class MapEncounterSetupModal extends Modal {
 				};
 			});
 
-			const partyMembers: Array<{ name: string; level: number; hp: number; maxHp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }> = [];
-			const includeParty = fm.include_party !== false;
-			const fmParty: any[] | undefined = fm.party_members;
-			if (Array.isArray(fmParty) && fmParty.length > 0) {
-				for (const m of fmParty) {
-					if (!m || !m.name) continue;
-					const maxHp = typeof m.hp_max === 'number' ? m.hp_max : (typeof m.hp === 'number' ? m.hp : 10);
-					partyMembers.push({
-						name: m.name,
-						level: typeof m.level === 'number' ? m.level : 1,
-						hp: typeof m.hp === 'number' ? m.hp : maxHp,
-						maxHp,
-						ac: typeof m.ac === 'number' ? m.ac : 10,
-						notePath: m.note_path || undefined,
-						tokenId: m.token_id || undefined,
-						initBonus: typeof m.init_bonus === 'number' ? m.init_bonus : 0,
-						thp: typeof m.thp === 'number' ? m.thp : 0,
-					});
-				}
-			} else if (includeParty) {
-				const resolvedParty = this.plugin.partyManager.resolvePartyForNote(file.path) || this.plugin.partyManager.getDefaultParty();
-				if (resolvedParty) {
-					const resolved = await this.plugin.partyManager.resolveMembers(resolvedParty.id);
-					for (const m of resolved) {
-						if (!m.enabled || m.absent) continue;
-						partyMembers.push({
-							name: m.name,
-							level: m.level,
-							hp: m.hp,
-							maxHp: m.maxHp,
-							ac: m.ac,
-							notePath: m.notePath,
-							tokenId: m.tokenId,
-							initBonus: m.initBonus,
-							thp: m.thp,
-						});
-					}
-				}
-			}
+			const partyMembers = await resolveEncounterPartyMembers(this.plugin, file.path, fm);
 
 			await this.plugin.combatTracker.startFromEncounter(
 				encounterName,

@@ -22,6 +22,24 @@ export interface PartyMemberStatUpdate {
   combatAttackBonus?: number | null;
 }
 
+export function resolveMemberHealth(fields: Record<string, unknown>, defaultMaxHp = 0) {
+  const integer = (value: unknown): number | undefined => {
+    if (typeof value === "string" && value.trim()) value = Number(value);
+    return typeof value === "number" && Number.isSafeInteger(value) ? value : undefined;
+  };
+
+  const currentHp = integer(fields.hp);
+  const explicitMaxHp = integer(fields.hp_max);
+  const maxHp = explicitMaxHp !== undefined && explicitMaxHp >= 0
+    ? explicitMaxHp
+    : Math.max(0, currentHp ?? defaultMaxHp);
+  return {
+    hp: Math.max(0, Math.min(maxHp, currentHp ?? maxHp)),
+    maxHp,
+    thp: Math.max(0, integer(fields.thp) ?? 0),
+  };
+}
+
 /**
  * Self-contained party and encounter management engine.
  * Persists data in `parties.json` inside the plugin folder.
@@ -462,6 +480,7 @@ export class PartyManager {
     const parsed = parseYamlFrontmatter(content);
     if (!parsed.hasFrontmatter) return null;
     const fm = parsed.frontmatter;
+    if (Object.keys(fm).length === 0) return null;
     const text = (value: unknown): string | undefined => value == null || value === "" ? undefined : String(value);
     const int = (value: unknown): number => parseInt(String(value ?? ""));
     const optionalNumber = (value: unknown): number | undefined => {
@@ -474,9 +493,7 @@ export class PartyManager {
       name: text(fm.name) || file.basename,
       notePath,
       level: int(fm.level) || (fm.cr != null ? this.estimateLevelFromCR(String(fm.cr)) : 1),
-      hp: int(fm.hp) || int(fm.hp_max) || 0,
-      maxHp: int(fm.hp_max) || int(fm.hp) || 0,
-      thp: int(fm.thp) || 0,
+      ...resolveMemberHealth(fm),
       ac: int(fm.ac) || 10,
       initBonus: parseInt(String(fm.init_bonus || "0").replace(/[^-\d]/g, "")) || 0,
       combatDpr: optionalNumber(fm.combat_dpr),

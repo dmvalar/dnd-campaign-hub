@@ -7,6 +7,9 @@ import { PartySelector } from '../party/PartySelector';
 import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
 import { addSessionBacklink, removeSessionBacklink } from './SessionBacklinks';
 import { UnsavedChangesGuard } from '../utils/UnsavedChangesGuard';
+import { getAdventureScenes, getSessionCampaignPath, noteReferencePath, resolveCampaignAdventure, resolveNoteReference } from './adventureScenes';
+
+type SessionScene = { path: string; name: string; sceneNumber: number; status: string };
 
 export class SessionCreationModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -50,7 +53,7 @@ export class SessionCreationModal extends Modal {
       this.isEdit = true;
       this.originalSessionPath = sessionPath;
       const sessionFile = this.app.vault.getAbstractFileByPath(sessionPath);
-      if (sessionFile instanceof TFile && sessionFile.parent) this.campaignPath = sessionFile.parent.path;
+      if (sessionFile instanceof TFile) this.campaignPath = getSessionCampaignPath(sessionFile);
     }
   }
 
@@ -70,15 +73,6 @@ export class SessionCreationModal extends Modal {
     this.unsavedGuard.requestClose(() => super.close());
   }
 
-  private parseFrontmatterLink(value: unknown): string {
-    if (!value) return "";
-    if (typeof value === "object" && value !== null && "path" in value) {
-      return String((value as { path?: unknown }).path ?? "");
-    }
-    const text = String(value).trim();
-    return text.match(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/)?.[1] ?? text;
-  }
-
   async loadSessionData() {
     const file = this.app.vault.getAbstractFileByPath(this.originalSessionPath);
     if (!(file instanceof TFile)) {
@@ -91,15 +85,17 @@ export class SessionCreationModal extends Modal {
       return;
     }
 
-    const allAdventureValues = Array.isArray(fm.adventures) ? fm.adventures : [];
-    this.adventurePaths = allAdventureValues.map((value: unknown) => this.parseFrontmatterLink(value)).filter(Boolean);
-    this.adventurePath = this.parseFrontmatterLink(fm.adventure);
+    const adventurePath = (value: unknown) => this.resolveAdventureFile(value)?.path
+      ?? resolveNoteReference(this.app, value, file.path)?.path ?? noteReferencePath(value);
+    const scenePath = (value: unknown) => resolveNoteReference(this.app, value, file.path)?.path ?? noteReferencePath(value);
+    const allAdventureValues: unknown[] = Array.isArray(fm.adventures) ? fm.adventures : [];
+    this.adventurePaths = [...new Set(allAdventureValues.map(adventurePath).filter(Boolean))];
+    this.adventurePath = adventurePath(fm.adventure);
     if (this.adventurePath && !this.adventurePaths.includes(this.adventurePath)) this.adventurePaths.unshift(this.adventurePath);
     this.originalAdventurePaths = [...this.adventurePaths];
-    this.startingScenePath = this.parseFrontmatterLink(fm.starting_scene);
-    this.plannedScenePaths = (Array.isArray(fm.planned_scenes) ? fm.planned_scenes : [])
-      .map((value: unknown) => this.parseFrontmatterLink(value)).filter(Boolean)
-      .filter((path: string, index: number, paths: string[]) => paths.indexOf(path) === index);
+    this.startingScenePath = scenePath(fm.starting_scene);
+    const plan: unknown[] = Array.isArray(fm.planned_scenes) ? fm.planned_scenes : [];
+    this.plannedScenePaths = [...new Set(plan.map(scenePath).filter(Boolean))];
     this.originalStartingScenePath = this.startingScenePath;
     this.location = String(fm.location ?? "");
     this.sessionDate = String(fm.date ?? this.sessionDate);
@@ -146,82 +142,16 @@ export class SessionCreationModal extends Modal {
     return adventures;
   }
 
-  /**
-   * Resolve an adventure reference to a TFile.
-   * Handles full paths, wikilink paths, and bare names (e.g. "My Adventure").
-   */
-  resolveAdventureFile(adventureRef: string): TFile | null {
-    // Try as a direct vault path first
-    const direct = this.app.vault.getAbstractFileByPath(adventureRef);
-    if (direct instanceof TFile) return direct;
-
-    // Try appending .md
-    const withMd = this.app.vault.getAbstractFileByPath(adventureRef + '.md');
-    if (withMd instanceof TFile) return withMd;
-
-    // Search the vault for a file matching this name with type: adventure
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      if (file.basename !== adventureRef) continue;
-      const cache = this.app.metadataCache.getFileCache(file);
-      if (cache?.frontmatter?.type === 'adventure') return file;
-    }
-
-    // Last resort: any file with that basename
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      if (file.basename === adventureRef) return file;
-    }
-
-    return null;
+  resolveAdventureFile(adventureRef: unknown): TFile | null {
+    return resolveCampaignAdventure(this.app, adventureRef, this.campaignPath, this.originalSessionPath || `${this.campaignPath}/`);
   }
 
-  async getAllScenesForAdventure(adventurePath: string): Promise<Array<{ path: string; name: string; sceneNumber: number; status: string }>> {
-    if (!adventurePath) return [];
-
+  async getAllScenesForAdventure(adventurePath: string): Promise<SessionScene[]> {
     const advFile = this.resolveAdventureFile(adventurePath);
-    if (!(advFile instanceof TFile)) return [];
-
-    const advFolder = advFile.parent;
-    if (!advFolder) return [];
-
-    // Determine the folder prefix to search under.
-    // If the adventure is stored as Folder/Folder.md, search that folder.
-    // Otherwise search a sibling "Name - Scenes" folder, or fall back to the parent.
-    const candidatePrefixes: string[] = [];
-
-    // Case: Adventures/AdventureName/AdventureName.md  -> search Adventures/AdventureName/
-    if (advFolder.name === advFile.basename) {
-      candidatePrefixes.push(advFolder.path + '/');
-    }
-
-    // Case: Adventures/AdventureName.md -> search Adventures/AdventureName - Scenes/ or Adventures/AdventureName/
-    candidatePrefixes.push(`${advFolder.path}/${advFile.basename} - Scenes/`);
-    candidatePrefixes.push(`${advFolder.path}/${advFile.basename}/`);
-
-    // Always also try the parent folder itself as a last resort
-    candidatePrefixes.push(advFolder.path + '/');
-
-    // Walk every markdown file in the vault and collect scenes under any prefix
-    const seen = new Set<string>();
-    const scenes: Array<{ path: string; name: string; sceneNumber: number; status: string }> = [];
-
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      if (seen.has(file.path)) continue;
-      const underAdventure = candidatePrefixes.some(prefix => file.path.startsWith(prefix));
-      if (!underAdventure) continue;
-
-      const cache = this.app.metadataCache.getFileCache(file);
-      const fm = cache?.frontmatter;
-      if (!fm || fm.type !== 'scene') continue;
-
-      seen.add(file.path);
-      const num = parseInt(
-        fm.scene_number ?? file.name.match(/Scene\s+(\d+)/i)?.[1] ?? '0'
-      ) || 0;
-      scenes.push({ path: file.path, name: file.basename, sceneNumber: num, status: fm.status || 'not-started' });
-    }
-
-    scenes.sort((a, b) => a.sceneNumber - b.sceneNumber);
-    return scenes;
+    if (!advFile) return [];
+    return getAdventureScenes(this.app, advFile, this.campaignPath).map(({ file, sceneNumber, status }) => ({
+      path: file.path, name: file.basename, sceneNumber, status,
+    }));
   }
 
   async loadCalendarData() {
@@ -836,11 +766,18 @@ export class SessionCreationModal extends Modal {
 
   /** Add session backlink to scene, then optionally update scene statuses. */
   async handleStartingSceneUpdate(startingScenePath: string, sessionFilePath: string) {
-    await this.addSessionBacklinkToScene(startingScenePath, sessionFilePath);
-
+    const startingFile = this.resolveSceneFile(startingScenePath, sessionFilePath);
+    if (!startingFile) return;
     const scenes = await this.getAllScenesForAdventure(this.adventurePath);
-    const startIdx = scenes.findIndex(s => s.path === startingScenePath);
-    if (startIdx < 0) return;
+    const startIdx = scenes.findIndex(s => s.path === startingFile.path);
+    if (startIdx < 0) {
+      const linkedScenes = (await Promise.all(this.adventurePaths.map(path => this.getAllScenesForAdventure(path)))).flat();
+      if (linkedScenes.some(scene => scene.path === startingFile.path)) {
+        await this.addSessionBacklinkToScene(startingFile.path, sessionFilePath);
+      }
+      return;
+    }
+    await this.addSessionBacklinkToScene(startingFile.path, sessionFilePath);
 
     const startingScene = scenes[startIdx];
     if (!startingScene) return;
@@ -898,11 +835,7 @@ export class SessionCreationModal extends Modal {
   }
 
   private resolveSceneFile(scenePath: string, sourcePath: string): TFile | null {
-    const direct = this.app.vault.getAbstractFileByPath(scenePath);
-    if (direct instanceof TFile) return direct;
-    const withExtension = this.app.vault.getAbstractFileByPath(`${scenePath}.md`);
-    if (withExtension instanceof TFile) return withExtension;
-    return this.app.metadataCache.getFirstLinkpathDest(scenePath.replace(/\.md$/i, ""), sourcePath);
+    return resolveNoteReference(this.app, scenePath, sourcePath);
   }
 
   private async reconcileStartingSceneBacklink(sessionFilePath: string): Promise<void> {
@@ -919,11 +852,17 @@ export class SessionCreationModal extends Modal {
 
   /** Set scenes before startIdx to 'completed', scene at startIdx to 'in-progress'. */
   async updateSceneStatusesFromStartingScene(
-    scenes: Array<{ path: string; name: string; sceneNumber: number; status: string }>,
-    startIdx: number
+    scenes: SessionScene[],
+    startIdx: number,
+    adventurePaths = [this.adventurePath],
   ) {
+    const current = (await Promise.all(adventurePaths.map(path => this.getAllScenesForAdventure(path)))).flat();
+    const scopedScenes = new Map(current.map(scene => [scene.path, scene]));
+    const startPath = scenes[startIdx]?.path;
+    const startScene = startPath ? scopedScenes.get(startPath) : undefined;
+    if (!startScene) return;
     for (let i = 0; i < startIdx; i++) {
-      const scene = scenes[i];
+      const scene = scopedScenes.get(scenes[i]?.path ?? '');
       if (!scene || scene.status === 'completed') continue;
       const file = this.app.vault.getAbstractFileByPath(scene.path);
       if (!(file instanceof TFile)) continue;
@@ -936,8 +875,7 @@ export class SessionCreationModal extends Modal {
         await this.app.vault.modify(file, updated);
       } catch (_e) { /* skip */ }
     }
-    const startScene = scenes[startIdx];
-    if (startScene && startScene.status !== 'in-progress') {
+    if (startScene.status !== 'in-progress') {
       const file = this.app.vault.getAbstractFileByPath(startScene.path);
       if (file instanceof TFile) {
         try {

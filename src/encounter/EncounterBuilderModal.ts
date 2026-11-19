@@ -15,7 +15,7 @@ const ENCOUNTER_CREATURE_FIELDS = [
   "hp", "ac", "cr", "source", "path", "is_trap", "isTrap", "trap_path", "trapPath", "is_friendly", "is_hidden",
 ];
 const ENCOUNTER_PARTY_MEMBER_FIELDS = [
-  "name", "level", "hp", "ac", "combat_dpr", "combat_attack_bonus", "note_path", "token_id", "init_bonus", "thp",
+  "name", "level", "hp", "hp_max", "ac", "combat_dpr", "combat_attack_bonus", "note_path", "token_id", "init_bonus", "thp",
 ];
 
 function encounterCreatureKey(row: Record<string, unknown>): string {
@@ -42,6 +42,7 @@ export class EncounterBuilderModal extends Modal {
   private originalEncounterName = "";
   private saving = false;
   private originalCreatureKeys = new WeakMap<EncounterCreature, string>();
+  private hasPartyMemberSelection = false;
   
   // UI containers
   creatureListContainer: HTMLElement | null = null;
@@ -191,6 +192,7 @@ export class EncounterBuilderModal extends Modal {
           this.selectedPartyId = this.selectedPartyName;
         }
         if (Array.isArray(cache.frontmatter.party_members)) {
+          this.hasPartyMemberSelection = true;
           this.selectedPartyMembers = cache.frontmatter.party_members.filter(isNoteMapping)
             .map((member: Record<string, unknown>) => member.name)
             .filter((name: unknown): name is string => typeof name === "string");
@@ -254,7 +256,8 @@ export class EncounterBuilderModal extends Modal {
       container: this.partySelectionContainer,
       campaignHint,
       initialPartyId: this.selectedPartyId,
-      initialMembers: this.selectedPartyMembers,
+      initialMembers: this.hasPartyMemberSelection ? this.selectedPartyMembers : undefined,
+      preserveEmptySelection: true,
       onChange: (partyId, partyName, members) => {
         this.selectedPartyId = partyId;
         this.selectedPartyName = partyName;
@@ -267,6 +270,7 @@ export class EncounterBuilderModal extends Modal {
     this.selectedPartyId = this.partySelector.getSelectedPartyId();
     this.selectedPartyName = this.partySelector.getSelectedPartyName();
     this.selectedPartyMembers = this.partySelector.getSelectedMembers();
+    this.hasPartyMemberSelection = true;
     this.syncEncounterBuilder();
   }
 
@@ -1564,37 +1568,30 @@ use_color_names: ${this.useColorNames}`;
   if (this.selectedPartyId) frontmatter += `\nselected_party_id: ${this.escapeYamlString(this.selectedPartyId)}`;
   if (this.selectedPartyName) frontmatter += `\nselected_party_name: ${this.escapeYamlString(this.selectedPartyName)}`;
 
-    // Save individual party members so the Combat Tracker can load them
-    // without depending on Initiative Tracker at runtime.
-    if (this.includeParty && this.selectedPartyMembers.length > 0) {
-      try {
-        const party = this.plugin.partyManager.resolveParty(
-          this.selectedPartyId,
-          this.campaignPath ? this.campaignPath.split("/").pop() || "" : "",
-        );
-        if (party) {
-          const resolved = await this.plugin.partyManager.resolveMembers(party.id);
-          const selected = resolved.filter((m) => m.enabled && !m.absent && this.selectedPartyMembers.includes(m.name));
-
-          if (selected.length > 0) {
-            frontmatter += `\nparty_members:`;
-            for (const m of selected) {
-              frontmatter += `\n  - name: ${this.escapeYamlString(m.name)}`;
-              frontmatter += `\n    level: ${m.level}`;
-              frontmatter += `\n    hp: ${m.maxHp}`;
-              frontmatter += `\n    ac: ${m.ac}`;
-              if (m.combatDpr !== undefined) frontmatter += `\n    combat_dpr: ${m.combatDpr}`;
-              if (m.combatAttackBonus !== undefined) frontmatter += `\n    combat_attack_bonus: ${m.combatAttackBonus}`;
-              if (m.notePath) frontmatter += `\n    note_path: ${this.escapeYamlString(m.notePath)}`;
-              if (m.tokenId) frontmatter += `\n    token_id: ${this.escapeYamlString(m.tokenId)}`;
-              if (m.initBonus !== undefined) frontmatter += `\n    init_bonus: ${m.initBonus}`;
-              if (m.thp) frontmatter += `\n    thp: ${m.thp}`;
-            }
-          }
+    if (this.includeParty) {
+      let snapshots = "";
+      if (this.selectedPartyMembers.length > 0) {
+        const manager = this.plugin.partyManager;
+        const party = this.selectedPartyId
+          ? manager.getParty(this.selectedPartyId) ?? manager.getPartyByName(this.selectedPartyId)
+          : manager.resolveParty(undefined, this.campaignPath.split("/").pop());
+        const resolved = party ? await manager.resolveMembers(party.id) : [];
+        const selected = resolved.filter((m) => m.enabled && !m.absent && this.selectedPartyMembers.includes(m.name));
+        for (const m of selected) {
+          snapshots += `\n  - name: ${this.escapeYamlString(m.name)}`;
+          snapshots += `\n    level: ${m.level}`;
+          snapshots += `\n    hp: ${m.hp}`;
+          snapshots += `\n    hp_max: ${m.maxHp}`;
+          snapshots += `\n    ac: ${m.ac}`;
+          if (m.combatDpr !== undefined) snapshots += `\n    combat_dpr: ${m.combatDpr}`;
+          if (m.combatAttackBonus !== undefined) snapshots += `\n    combat_attack_bonus: ${m.combatAttackBonus}`;
+          if (m.notePath) snapshots += `\n    note_path: ${this.escapeYamlString(m.notePath)}`;
+          if (m.tokenId) snapshots += `\n    token_id: ${this.escapeYamlString(m.tokenId)}`;
+          if (m.initBonus !== undefined) snapshots += `\n    init_bonus: ${m.initBonus}`;
+          if (m.thp) snapshots += `\n    thp: ${m.thp}`;
         }
-      } catch (error) {
-        console.error("Error saving party members to encounter frontmatter:", error);
       }
+      frontmatter += `\nparty_members:${snapshots || " []"}`;
     }
 
     if (this.adventurePath) frontmatter += `\nadventure_path: ${this.escapeYamlString(this.adventurePath)}`;

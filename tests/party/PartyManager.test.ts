@@ -1,4 +1,4 @@
-import { type App } from "obsidian";
+import { TFile, type App } from "obsidian";
 import { describe, expect, it, vi } from "vitest";
 import { PartyManager } from "../../src/party/PartyManager";
 
@@ -98,5 +98,30 @@ describe("PartyManager scene path reconciliation", () => {
     await f.manager.remapEncounterNotePaths(new Map([["Unrelated.md", third], [first, first]]));
     expect(f.adapter.write).not.toHaveBeenCalled();
     expect(f.listener).not.toHaveBeenCalled();
+  });
+});
+
+describe("PartyManager live HP", () => {
+  it.each([
+    ["hp: 0\nhp_max: 28\nthp: 5", { hp: 0, maxHp: 28, thp: 5 }],
+    ["hp: '0'\nhp_max: '28'\nthp: '0'", { hp: 0, maxHp: 28, thp: 0 }],
+    ["hp_max: 28", { hp: 28, maxHp: 28, thp: 0 }],
+    ["hp: \nhp_max: 28\nthp: false", { hp: 28, maxHp: 28, thp: 0 }],
+    ["hp: invalid\nhp_max: 28\nthp: 4xyz", { hp: 28, maxHp: 28, thp: 0 }],
+    ["hp: 7\nhp_max: -1\nthp: -2", { hp: 7, maxHp: 7, thp: 0 }],
+    ["hp: 31\nhp_max: 28\nthp: 35", { hp: 28, maxHp: 28, thp: 35 }],
+    ["hp: -3\nhp_max: 28", { hp: 0, maxHp: 28, thp: 0 }],
+    ["hp: 0\nhp_max: 0", { hp: 0, maxHp: 0, thp: 0 }],
+    ["hp: true\nhp_max: ' '\nthp: 2.5", { hp: 0, maxHp: 0, thp: 0 }],
+  ])("resolves bounded HP for %j", async (fields, expected) => {
+    const path = "Party/Scout.md";
+    const file = Object.assign(new TFile(), { path, basename: "Scout" });
+    const vault = {
+      getAbstractFileByPath: (notePath: string) => notePath === path ? file : null,
+      read: async () => `---\ntype: player\n${fields}\n---\n`,
+    };
+    const manager = new PartyManager({ vault } as unknown as App, "dnd-campaign-hub");
+
+    expect(await manager.resolveMemberFromNote(path)).toMatchObject(expected);
   });
 });

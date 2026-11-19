@@ -2,6 +2,8 @@ import { App, Notice, TFile } from "obsidian";
 import { ConfirmModal } from "../utils/ConfirmModal";
 import type DndCampaignHubPlugin from "../main";
 import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
+import { resolveMemberHealth } from "../party/PartyManager";
+import { isNoteMapping } from "./EncounterTrapNote";
 
 /** Format a relative "time ago" string from an ISO date. */
 function formatTimeAgo(isoDate: string): string {
@@ -72,6 +74,57 @@ export interface InlineEncounterConfig {
 	name?: string;
 }
 
+export async function resolveEncounterPartyMembers(
+	plugin: DndCampaignHubPlugin,
+	encounterPath: string,
+	fm: Record<string, unknown>,
+) {
+	if (fm.include_party === false) return [];
+
+	const manager = plugin.partyManager;
+	const partyId = fm.party_id || fm.selected_party_id || fm.selected_party_name;
+	const party = typeof partyId === "string" && partyId
+		? manager.getParty(partyId) ?? manager.getPartyByName(partyId)
+		: manager.resolvePartyForNote(encounterPath);
+
+	// Legacy notes without a saved selection use the contextual party.
+	if (fm.party_members === undefined) {
+		if (!party) return [];
+		return (await manager.resolveMembers(party.id)).filter(member => member.enabled && !member.absent);
+	}
+	if (!Array.isArray(fm.party_members)) return [];
+
+	const members = [];
+	for (const row of fm.party_members) {
+		if (!isNoteMapping(row) || typeof row.name !== "string" || !row.name.trim()) continue;
+		if (row.absent === true || row.enabled === false) continue;
+		const path = typeof row.note_path === "string" ? row.note_path.trim() : "";
+		if (path) {
+			const ref = party?.members.find(member => member.notePath === path);
+			if (ref?.absent) continue;
+			const live = await manager.resolveMemberFromNote(path, ref?.role).catch(error => {
+				console.warn(`[EncounterView] Could not read party member note "${path}":`, error);
+				return null;
+			});
+			if (live) {
+				if (live.enabled) members.push(live);
+				continue;
+			}
+		}
+
+		// Snapshot combatants have no note path, so HP sync cannot write fallback stats.
+		members.push({
+			name: row.name,
+			level: typeof row.level === "number" ? row.level : 1,
+			...resolveMemberHealth(row, 10),
+			ac: typeof row.ac === "number" ? row.ac : 10,
+			tokenId: typeof row.token_id === "string" ? row.token_id : undefined,
+			initBonus: typeof row.init_bonus === "number" ? row.init_bonus : 0,
+		});
+	}
+	return members;
+}
+
 export async function startEncounterFromFile(plugin: DndCampaignHubPlugin, encounterFile: TFile): Promise<void> {
 	const cache = plugin.app.metadataCache.getFileCache(encounterFile);
 	const fm = cache?.frontmatter;
@@ -82,47 +135,7 @@ export async function startEncounterFromFile(plugin: DndCampaignHubPlugin, encou
 
 	const encounterName = fm.name || encounterFile.basename;
 	const mappedCreatures = mapEncounterCreatures(fm);
-	const partyMembers: Array<{ name: string; level: number; hp: number; maxHp: number; ac: number; notePath?: string; tokenId?: string; initBonus?: number; thp?: number }> = [];
-
-	const includeParty = fm.include_party !== false;
-	const fmParty: any[] | undefined = fm.party_members;
-	if (Array.isArray(fmParty) && fmParty.length > 0) {
-		for (const m of fmParty) {
-			if (!m || !m.name) continue;
-			const maxHp = typeof m.hp_max === "number" ? m.hp_max : (typeof m.hp === "number" ? m.hp : 10);
-			partyMembers.push({
-				name: m.name,
-				level: typeof m.level === "number" ? m.level : 1,
-				hp: typeof m.hp === "number" ? m.hp : maxHp,
-				maxHp,
-				ac: typeof m.ac === "number" ? m.ac : 10,
-				notePath: m.note_path || undefined,
-				tokenId: m.token_id || undefined,
-				initBonus: typeof m.init_bonus === "number" ? m.init_bonus : 0,
-				thp: typeof m.thp === "number" ? m.thp : 0,
-			});
-		}
-	} else if (includeParty) {
-		const resolvedParty = plugin.partyManager.resolvePartyForNote(encounterFile.path)
-			|| plugin.partyManager.getDefaultParty();
-		if (resolvedParty) {
-			const resolved = await plugin.partyManager.resolveMembers(resolvedParty.id);
-			for (const m of resolved) {
-				if (!m.enabled || m.absent) continue;
-				partyMembers.push({
-					name: m.name,
-					level: m.level,
-					hp: m.hp,
-					maxHp: m.maxHp,
-					ac: m.ac,
-					notePath: m.notePath,
-					tokenId: m.tokenId,
-					initBonus: m.initBonus,
-					thp: m.thp,
-				});
-			}
-		}
-	}
+	const partyMembers = await resolveEncounterPartyMembers(plugin, encounterFile.path, fm);
 
 	await plugin.combatTracker.startFromEncounter(
 		encounterName,

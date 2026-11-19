@@ -176,6 +176,7 @@ import { renderMapView as renderMapViewFn } from './map-views/renderMapView';
 import { buildEncounterInlineMarkdown, handleInlineEncounterInteraction, parseEncounterCodeblockMarkdown, parseEncounterInlineMarkdown, renderEncounterView as renderEncounterViewFn, renderInlineEncounterWidgets } from './encounter/renderEncounterView';
 import { renderPoiView as renderPoiViewFn } from './poi/renderPoiView';
 import { renderPartyView as renderPartyViewFn } from './party/renderPartyView';
+import { getAdventureScenes, getSessionAdventures, getSessionCampaignPath, hasSessionAdventureReferences } from './session/adventureScenes';
 import {
   saveMapAnnotations as saveMapAnnotationsFn,
   _flushMapSave as _flushMapSaveFn,
@@ -3221,11 +3222,18 @@ export default class DndCampaignHubPlugin extends Plugin {
 		const fm = this.app.metadataCache.getFileCache(sessionFile)?.frontmatter;
 		if (!fm) return null;
 
-		const adventureFile = this.resolveFrontmatterLink(fm.adventure, sessionFile.path);
+		const adventures = getSessionAdventures(this.app, sessionFile);
+		const adventureFile = adventures[0] ?? null;
+		const campaignPath = getSessionCampaignPath(sessionFile);
+		const memberPaths = new Set(adventures.flatMap(adventure =>
+			getAdventureScenes(this.app, adventure, campaignPath).map(scene => scene.file.path)));
 		const linkedScenes = [
 			this.resolveFrontmatterLink(fm.starting_scene, sessionFile.path),
 			this.resolveFrontmatterLink(fm.ending_scene, sessionFile.path),
-		].filter((file): file is TFile => file instanceof TFile);
+		].filter((file): file is TFile => file instanceof TFile
+			&& this.app.metadataCache.getFileCache(file)?.frontmatter?.type === "scene"
+			&& (!campaignPath || file.path.startsWith(`${campaignPath}/`))
+			&& (!hasSessionAdventureReferences(this.app, sessionFile) || memberPaths.has(file.path)));
 
 		const inProgressLinked = linkedScenes.find((file) => this.getSceneStatus(file) === "in-progress");
 		if (inProgressLinked) return inProgressLinked;
@@ -3249,35 +3257,7 @@ export default class DndCampaignHubPlugin extends Plugin {
 	}
 
 	private getScenesForAdventureFile(adventureFile: TFile): Array<{ file: TFile; sceneNumber: number; status: string }> {
-		const advFolder = adventureFile.parent;
-		if (!advFolder) return [];
-
-		const candidatePrefixes: string[] = [];
-		if (advFolder.name === adventureFile.basename) {
-			candidatePrefixes.push(`${advFolder.path}/`);
-		}
-		candidatePrefixes.push(`${advFolder.path}/${adventureFile.basename} - Scenes/`);
-		candidatePrefixes.push(`${advFolder.path}/${adventureFile.basename}/`);
-		candidatePrefixes.push(`${advFolder.path}/`);
-
-		const seen = new Set<string>();
-		const scenes: Array<{ file: TFile; sceneNumber: number; status: string }> = [];
-		for (const file of this.app.vault.getMarkdownFiles()) {
-			if (seen.has(file.path)) continue;
-			if (!candidatePrefixes.some((prefix) => file.path.startsWith(prefix))) continue;
-
-			const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-			if (!fm || fm.type !== "scene") continue;
-
-			seen.add(file.path);
-			scenes.push({
-				file,
-				sceneNumber: Number(fm.scene_number ?? file.name.match(/Scene\s+(\d+)/i)?.[1] ?? 0) || 0,
-				status: String(fm.status || "not-started"),
-			});
-		}
-
-		return scenes.sort((a, b) => a.sceneNumber - b.sceneNumber);
+		return getAdventureScenes(this.app, adventureFile);
 	}
 
 	private getSceneStatus(file: TFile): string {
