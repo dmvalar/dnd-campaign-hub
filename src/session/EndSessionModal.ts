@@ -3,6 +3,7 @@ import type DndCampaignHubPlugin from "../main";
 import { SessionCreationModal } from './SessionCreationModal';
 import { ConfirmModal } from '../utils/ConfirmModal';
 import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
+import { getSessionAdventures, getSessionCampaignPath } from './adventureScenes';
 
 export class EndSessionModal extends Modal {
   plugin: DndCampaignHubPlugin;
@@ -16,38 +17,13 @@ export class EndSessionModal extends Modal {
     this.sessionFile = sessionFile;
   }
 
-  private parseWikilink(val: unknown): string | null {
-    if (!val) return null;
-    // Obsidian metadata cache resolves wikilinks to {path, ...} objects
-    if (typeof val === 'object' && val !== null && 'path' in val) {
-      return (val as { path: string }).path || null;
-    }
-    const s = String(val);
-    const m = s.match(/\[\[(.+?)\]\]/);
-    return m ? (m[1] ?? null) : (s.trim() || null);
-  }
-
   async onOpen() {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.createEl('h2', { text: '🏁 End Session Here' });
 
-    const cache = this.app.metadataCache.getFileCache(this.sessionFile);
-    const fm = cache?.frontmatter;
-    const tmp = new SessionCreationModal(this.app, this.plugin);
-    const rawAdventures = Array.isArray(fm?.adventures) && fm.adventures.length > 0
-      ? fm.adventures
-      : [fm?.adventure];
-    const linkedAdventures: Array<{ path: string; name: string }> = [];
-    const seen = new Set<string>();
-    for (const value of rawAdventures) {
-      const ref = this.parseWikilink(value);
-      if (!ref) continue;
-      const file = tmp.resolveAdventureFile(ref);
-      if (!file || seen.has(file.path)) continue;
-      seen.add(file.path);
-      linkedAdventures.push({ path: file.path, name: file.basename });
-    }
+    const linkedAdventures = getSessionAdventures(this.app, this.sessionFile)
+      .map(file => ({ path: file.path, name: file.basename }));
 
     if (linkedAdventures.length > 0) {
       await this.buildScenePicker(contentEl, linkedAdventures);
@@ -58,9 +34,7 @@ export class EndSessionModal extends Modal {
         cls: 'setting-item-description'
       });
 
-      const campaignPath = this.sessionFile.parent?.path ?? '';
-      const tmp = new SessionCreationModal(this.app, this.plugin);
-      tmp.campaignPath = campaignPath;
+      const tmp = this.createSceneSelector();
       const adventures = await tmp.getAllAdventures();
 
       if (adventures.length === 0) {
@@ -95,10 +69,14 @@ export class EndSessionModal extends Modal {
     }
   }
 
+  private createSceneSelector(): SessionCreationModal {
+    return new SessionCreationModal(this.app, this.plugin, undefined, getSessionCampaignPath(this.sessionFile));
+  }
+
   /** Renders the scene picker and Save button into `container`. */
   private async buildScenePicker(container: HTMLElement, adventures: Array<{ path: string; name: string }>) {
     const modal = this;
-    const tmp = new SessionCreationModal(this.app, this.plugin);
+    const tmp = this.createSceneSelector();
     this.scenes = [];
     const seenScenes = new Set<string>();
     for (const adventure of adventures) {
@@ -154,6 +132,13 @@ export class EndSessionModal extends Modal {
 
   async saveEndingScene(resolvedAdventurePath: string) {
     try {
+      const tmp = this.createSceneSelector();
+      const selected = this.scenes.find(scene => scene.path === this.endingScenePath);
+      if (this.endingScenePath && (!selected || !(await tmp.getAllScenesForAdventure(selected.adventurePath))
+        .some(scene => scene.path === selected.path))) {
+        new Notice('The ending scene no longer belongs to this adventure. Reopen the session to select it again.');
+        return;
+      }
       // Write ending_scene (and adventure if missing) to session frontmatter
       let content = await this.app.vault.read(this.sessionFile);
       const endingSceneWiki = this.endingScenePath ? `[[${this.endingScenePath}]]` : "";
@@ -176,8 +161,6 @@ export class EndSessionModal extends Modal {
       await this.app.vault.modify(this.sessionFile, content);
 
       // Add session backlink to scene
-      const tmp = new SessionCreationModal(this.app, this.plugin);
-      tmp.adventurePath = resolvedAdventurePath;
       if (this.endingScenePath) await tmp.addSessionBacklinkToScene(this.endingScenePath, this.sessionFile.path);
 
       // Optionally update scene statuses
@@ -195,7 +178,8 @@ export class EndSessionModal extends Modal {
             new ConfirmModal(this.app, 'Update Scene Statuses?', msgs.join('\n'), resolve).open();
           });
           if (confirmed) {
-            await tmp.updateSceneStatusesFromStartingScene(this.scenes, endIdx);
+            const adventurePaths = [...new Set(this.scenes.map(scene => scene.adventurePath))];
+            await tmp.updateSceneStatusesFromStartingScene(this.scenes, endIdx, adventurePaths);
           }
         }
       }

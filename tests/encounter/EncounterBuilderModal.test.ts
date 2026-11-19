@@ -1,12 +1,21 @@
 import { Notice } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EncounterBuilderModal } from "../../src/encounter/EncounterBuilderModal";
+import { PartyManager } from "../../src/party/PartyManager";
 import { parseYamlFrontmatter } from "../../src/utils/YamlFrontmatter";
 import { noteVaultFixture } from "./noteVaultFixture";
 
 vi.mock("obsidian", async (importOriginal) => ({
   ...await importOriginal<typeof import("../mocks/obsidian")>(),
   Notice: vi.fn(),
+  Setting: class {
+    setName() { return this; }
+    setDesc() { return this; }
+    addDropdown(setup: (dropdown: object) => void) {
+      setup({ addOption: vi.fn(), setValue: vi.fn(), onChange: vi.fn() });
+      return this;
+    }
+  },
 }));
 
 const folder = "ttrpgs/Keep/z_Encounters";
@@ -39,6 +48,21 @@ async function setup(edit = true, document = original) {
   if (edit) await modal.loadEncounterData();
   else Object.assign(modal, { encounterName: "Gate", includeParty: false, creatures: [{ name: "Goblin", count: 1 }] });
   return { ...vault, file: file!, modal, close, partyManager };
+}
+
+async function addParty(f: Awaited<ReturnType<typeof setup>>) {
+  Object.assign(f.app.vault.adapter, { write: vi.fn() });
+  const manager = new PartyManager(f.app, "dnd-campaign-hub");
+  Object.assign(f.modal.plugin, { partyManager: manager });
+  const party = await manager.createParty("Keepers");
+  const addMember = async (name: string, fields: string) => {
+    const notePath = `Keep/Party/${name}.md`;
+    f.addNote(notePath, `---\ntype: player\nname: ${name}\n${fields}\n---\n`);
+    await manager.addMember(party.id, notePath, name);
+    return notePath;
+  };
+  f.modal.selectedPartyId = party.id;
+  return { manager, party, addMember };
 }
 
 beforeEach(() => {
@@ -190,5 +214,62 @@ describe("EncounterBuilderModal note save", () => {
     expect(f.read(f.file)).toBe(malformed);
     expect(f.partyManager.saveEncounter).not.toHaveBeenCalled();
     expect(f.close).not.toHaveBeenCalled();
+  });
+
+  it("saves current, maximum and temporary HP separately for selected party members", async () => {
+    const f = await setup(false);
+    const { addMember } = await addParty(f);
+    const down = await addMember("Down", "hp: 0\nhp_max: 30\nthp: 4");
+    const hurt = await addMember("Hurt", "hp: 7\nhp_max: 25");
+    await addMember("Unselected", "hp: 9\nhp_max: 18");
+    f.modal.includeParty = true;
+    f.modal.selectedPartyMembers = ["Down", "Hurt"];
+
+    await f.modal.saveEncounter();
+
+    const saved = f.entries.get("z_Encounters/Gate.md") as typeof f.file;
+    expect(parseYamlFrontmatter(f.read(saved)).frontmatter.party_members).toMatchObject([
+      { name: "Down", note_path: down, hp: 0, hp_max: 30, thp: 4 },
+      { name: "Hurt", note_path: hurt, hp: 7, hp_max: 25 },
+    ]);
+  });
+
+  it("does not overwrite a saved selection if the selected party fails to load during save", async () => {
+    const f = await setup(true, original.replace("include_party: false", "include_party: true"));
+    const { manager, addMember } = await addParty(f);
+    await addMember("Scout", "hp: 9\nhp_max: 18");
+    const document = f.read(f.file);
+    const resolve = vi.spyOn(manager, "resolveMembers").mockRejectedValue(new Error("party read failed"));
+
+    await f.modal.saveEncounter();
+
+    expect(f.read(f.file)).toBe(document);
+    expect(f.process).not.toHaveBeenCalled();
+    expect(f.close).not.toHaveBeenCalled();
+
+    resolve.mockRestore();
+    await f.modal.saveEncounter();
+    expect(f.process).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["party_members: []", []],
+    ["", ["Scout"]],
+  ])("preserves the member selection when editing a note with %j", async (selection, expected) => {
+    const f = await setup(true, original.replace("include_party: false", "include_party: true")
+      .replace("party_members:\n  - name: Scout\n    level: 3", selection));
+    const { addMember } = await addParty(f);
+    await addMember("Scout", "hp: 9\nhp_max: 18");
+    const container = {
+      style: {}, empty: vi.fn(), querySelector: () => null,
+      createDiv: () => container, createEl: () => container,
+    };
+    f.modal.partySelectionContainer = container as unknown as HTMLElement;
+
+    await f.modal.renderPartySelection();
+    expect(f.modal.selectedPartyMembers).toEqual(expected);
+    await f.modal.saveEncounter();
+    const rows = parseYamlFrontmatter(f.read(f.file)).frontmatter.party_members as { name: string }[];
+    expect(rows.map(row => row.name)).toEqual(expected);
   });
 });

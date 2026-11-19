@@ -10,6 +10,9 @@ import { updateYamlFrontmatter } from '../utils/YamlFrontmatter';
 import { selectCurrentSession } from './sessionLifecycle';
 import { extractQuickNotes, updateQuickNotesSection } from './quickNotes';
 import { renderActionableEmptyState } from '../utils/ActionableEmptyState';
+import { getAdventureScenes, getSessionAdventures, getSessionPlannedScenePaths, hasSessionAdventureReferences } from './adventureScenes';
+
+type RunAdventure = { path: string; name: string; status: string };
 
 type RunScene = {
   path: string;
@@ -535,24 +538,12 @@ export class SessionRunDashboardView extends ItemView {
 
     // Use the adventures explicitly linked to this session, in session order.
     const adventures = await this.getSessionAdventures();
-    let adventure = adventures.length > 0 ? adventures[0] : null;
-    const orderedScenes: Array<{ scene: RunScene; adventure: typeof adventure }> = [];
-    for (const candidate of adventures) {
-      const scenes = await this.getScenesForAdventure(candidate.path) as RunScene[];
-      orderedScenes.push(...scenes.map(scene => ({ scene, adventure: candidate })));
-    }
-    const planned = await this.getPlannedScenes();
-    if (planned.length > 0) {
-      const adventureByScene = new Map(orderedScenes.map(entry => [entry.scene.path, entry.adventure]));
-      orderedScenes.splice(0, orderedScenes.length, ...planned.map(scene => ({ scene, adventure: adventureByScene.get(scene.path) || adventure })));
-    }
+    const orderedScenes = await this.getOrderedSessionScenes(adventures);
     const selected = orderedScenes.find(entry => entry.scene.status === "in-progress")
       || orderedScenes.find(entry => entry.scene.status === "not-started")
       || orderedScenes.find(entry => entry.scene.status !== "completed");
     const currentScene = selected?.scene;
-    if (selected) {
-      adventure = selected.adventure;
-    }
+    const adventure = selected?.adventure ?? adventures[0];
     
     if (adventure) {
       if (currentScene) {
@@ -796,8 +787,10 @@ export class SessionRunDashboardView extends ItemView {
 
     const actions = card.createEl("div", { cls: "session-live-scene-actions" });
     this.createSceneActionButton(actions, "Start Scene", async () => {
-      await this.updateSceneStatus(current.path, "in-progress");
-      await this.openScene(current.path);
+      if (await this.updateSceneStatus(current.path, "in-progress")) {
+        await this.render();
+        await this.openScene(current.path);
+      }
     }, current.status !== "in-progress");
 
     if (current.musicConfig) {
@@ -848,13 +841,7 @@ export class SessionRunDashboardView extends ItemView {
   }
 
   private async getLiveSceneContext(): Promise<{ current: RunScene | null; previous: RunScene | null; next: RunScene | null }> {
-    const adventures = await this.getSessionAdventures();
-    const scenes: RunScene[] = [];
-    for (const adventure of adventures) {
-      scenes.push(...await this.getScenesForAdventure(adventure.path) as RunScene[]);
-    }
-    const planned = await this.getPlannedScenes();
-    if (planned.length > 0) scenes.splice(0, scenes.length, ...planned);
+    const scenes = (await this.getOrderedSessionScenes(await this.getSessionAdventures())).map(entry => entry.scene);
     for (const scene of scenes) {
       await this.enrichRunScene(scene);
     }
@@ -1098,16 +1085,18 @@ export class SessionRunDashboardView extends ItemView {
     await this.app.workspace.openLinkText(scenePath, "", false);
   }
 
-  private async updateSceneStatus(scenePath: string, status: string) {
+  private async updateSceneStatus(scenePath: string, status: string): Promise<boolean> {
+    const scenes = await this.getOrderedSessionScenes(await this.getSessionAdventures());
+    if (!scenes.some(entry => entry.scene.path === scenePath)) return false;
     const file = this.app.vault.getAbstractFileByPath(scenePath);
-    if (!(file instanceof TFile)) return;
+    if (!(file instanceof TFile)) return false;
     const content = await this.app.vault.read(file);
     const newContent = updateYamlFrontmatter(content, (fm) => ({
       ...fm,
       status,
     }));
     await this.app.vault.modify(file, newContent);
-    await this.render();
+    return true;
   }
 
   private async openLinkedEncounter(scene: RunScene) {
@@ -1162,22 +1151,16 @@ export class SessionRunDashboardView extends ItemView {
     return trimmed.replace(/^["']|["']$/g, "");
   }
 
-  private async getPlannedScenes(): Promise<RunScene[]> {
-    if (!this.currentSessionFile) return [];
-    const fm = this.app.metadataCache.getFileCache(this.currentSessionFile)?.frontmatter;
-    if (!Array.isArray(fm?.planned_scenes) || fm.planned_scenes.length === 0) return [];
-    const result: RunScene[] = [];
-    const seen = new Set<string>();
-    for (const raw of fm.planned_scenes) {
-      const ref = this.extractLinkPath(raw);
-      const file = this.app.metadataCache.getFirstLinkpathDest(ref, this.currentSessionFile.path);
-      if (!(file instanceof TFile) || seen.has(file.path)) continue;
-      seen.add(file.path);
-      const sceneFm = this.app.metadataCache.getFileCache(file)?.frontmatter || {};
-      if (sceneFm.type !== "scene") continue;
-      result.push({ path: file.path, number: Number(sceneFm.scene_number) || 0, name: file.basename, type: sceneFm.scene_type || "", difficulty: sceneFm.difficulty || "", status: sceneFm.status || "not-started" });
+  private async getOrderedSessionScenes(adventures: RunAdventure[]): Promise<Array<{ scene: RunScene; adventure: RunAdventure }>> {
+    const plannedPaths = getSessionPlannedScenePaths(this.app, this.currentSessionFile);
+    const byPath = new Map<string, { scene: RunScene; adventure: RunAdventure }>();
+    for (const adventure of adventures) {
+      for (const scene of await this.getScenesForAdventure(adventure.path)) {
+        if (!byPath.has(scene.path)) byPath.set(scene.path, { scene, adventure });
+      }
     }
-    return result;
+    if (!plannedPaths) return [...byPath.values()];
+    return plannedPaths.flatMap(path => byPath.has(path) ? [byPath.get(path)!] : []);
   }
 
   private renderQuickNotes(container: HTMLElement, renderId: number) {
@@ -1637,85 +1620,28 @@ export class SessionRunDashboardView extends ItemView {
   }
 
   /** Resolve the current session's ordered adventures, deduplicated by vault path. */
-  async getSessionAdventures(): Promise<Array<{ path: string; name: string; status: string }>> {
+  async getSessionAdventures(): Promise<RunAdventure[]> {
     if (!this.currentSessionFile) return this.getActiveAdventures();
-
-    const fm = this.app.metadataCache.getFileCache(this.currentSessionFile)?.frontmatter;
-    const raw = Array.isArray(fm?.adventures) && fm.adventures.length > 0
-      ? fm.adventures
-      : [fm?.adventure];
-    const result: Array<{ path: string; name: string; status: string }> = [];
-    const seen = new Set<string>();
-
-    for (const value of raw) {
-      const ref = this.extractLinkPath(value);
-      if (!ref) continue;
-      const file = this.resolveAdventureFile(ref);
-      if (!file || seen.has(file.path)) continue;
-      seen.add(file.path);
-      result.push({
-        path: file.path,
-        name: file.basename,
-        status: this.app.metadataCache.getFileCache(file)?.frontmatter?.status || "planning",
-      });
-    }
-
     // Sessions predating adventure links retain the old campaign-active fallback.
-    return result.length > 0 ? result : this.getActiveAdventures();
+    if (!hasSessionAdventureReferences(this.app, this.currentSessionFile)) return this.getActiveAdventures();
+    return getSessionAdventures(this.app, this.currentSessionFile, this.campaignPath).map(file => ({
+      path: file.path,
+      name: file.basename,
+      status: this.app.metadataCache.getFileCache(file)?.frontmatter?.status || "planning",
+    }));
   }
 
-  private resolveAdventureFile(ref: string): TFile | null {
-    const direct = this.app.vault.getAbstractFileByPath(ref);
-    if (direct instanceof TFile) return direct;
-    const withExtension = this.app.vault.getAbstractFileByPath(`${ref}.md`);
-    if (withExtension instanceof TFile) return withExtension;
-    const basename = ref.split('/').pop()?.replace(/\.md$/i, "") || ref;
-    return this.app.vault.getMarkdownFiles().find(file => {
-      if (file.basename !== basename) return false;
-      return this.app.metadataCache.getFileCache(file)?.frontmatter?.type === "adventure";
-    }) || null;
-  }
-
-  async getScenesForAdventure(adventurePath: string) {
-    const scenes: Array<any> = [];
+  async getScenesForAdventure(adventurePath: string): Promise<RunScene[]> {
     const adventureFile = this.app.vault.getAbstractFileByPath(adventurePath);
-
-    if (!(adventureFile instanceof TFile)) return scenes;
-
-    const adventureName = adventureFile.basename;
-
-    // Search all markdown files by frontmatter: type=scene + adventure matches
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      const cache = this.app.metadataCache.getFileCache(file);
-      const fm = cache?.frontmatter;
-      if (!fm || fm.type !== "scene") continue;
-
-      // Match by adventure frontmatter field (basename of the adventure)
-      if (fm.adventure !== adventureName) continue;
-
-      const sceneNum = parseInt(
-        fm.scene_number ?? file.basename.match(/Scene\s+(\d+)/i)?.[1] ?? "0"
-      ) || 0;
-
-      // Extract scene name from frontmatter or filename
-      let sceneName = fm.name || "";
-      if (!sceneName) {
-        const nameMatch = file.basename.match(/^Scene\s+\d+\s+-\s+(.+)$/);
-        sceneName = nameMatch ? nameMatch[1] : file.basename;
-      }
-
-      scenes.push({
-        path: file.path,
-        number: sceneNum,
-        name: sceneName,
-        type: fm.scene_type || "exploration",
-        difficulty: fm.difficulty || "medium",
-        status: fm.status || "not-started"
-      });
-    }
-
-    scenes.sort((a, b) => a.number - b.number);
-    return scenes;
+    if (!(adventureFile instanceof TFile)) return [];
+    return getAdventureScenes(this.app, adventureFile, this.campaignPath).map(({ file, frontmatter: fm, sceneNumber, status }) => ({
+      path: file.path,
+      number: sceneNumber,
+      name: fm.name || file.basename.match(/^Scene\s+\d+\s+-\s+(.+)$/)?.[1] || file.basename,
+      type: fm.scene_type || "exploration",
+      difficulty: fm.difficulty || "medium",
+      status,
+    }));
   }
 
   getSceneIcon(type: string): string {
@@ -1730,17 +1656,8 @@ export class SessionRunDashboardView extends ItemView {
   }
 
   async markSceneComplete(scenePath: string) {
-    const file = this.app.vault.getAbstractFileByPath(scenePath);
-    if (!(file instanceof TFile)) return;
-
     try {
-      const content = await this.app.vault.read(file);
-      const newContent = updateYamlFrontmatter(content, (fm) => ({
-        ...fm,
-        status: 'completed',
-      }));
-      await this.app.vault.modify(file, newContent);
-      new Notice("Scene marked as completed!");
+      if (await this.updateSceneStatus(scenePath, "completed")) new Notice("Scene marked as completed!");
     } catch (error) {
       console.error("Error marking scene complete:", error);
       new Notice("Error updating scene status");

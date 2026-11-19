@@ -1,5 +1,6 @@
 import { App, TFile, TFolder } from "obsidian";
 import { updateYamlFrontmatter } from "../utils/YamlFrontmatter";
+import { getAdventureScenes, getSessionCampaignPath, getSessionPlannedScenePaths, noteReferencePath, resolveCampaignAdventure } from "../session/adventureScenes";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -60,16 +61,7 @@ function openNoteInNewTab(app: App, path: string): void {
 }
 
 function parseLink(val: any): string | null {
-  if (!val || val === '""' || val === "") return null;
-  if (typeof val === "string") {
-    const m = val.match(/\[\[(.+?)\]\]/);
-    return m ? m[1]! : val;
-  }
-  return val?.path || null;
-}
-
-function sceneNum(fm: Record<string, any>, fileName: string): number {
-  return parseInt(fm.scene_number || fileName.match(/Scene\s+(\d+)/)?.[1] || "0");
+  return noteReferencePath(val) || null;
 }
 
 const STATUS_ICON: Record<string, string> = { completed: "✅", "in-progress": "🎬", "not-started": "⬜" };
@@ -123,9 +115,7 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
   }
   const startPath = parseLink(fm.starting_scene);
   const endPath = parseLink(fm.ending_scene);
-  const plannedLinks = (Array.isArray(fm.planned_scenes) ? fm.planned_scenes : [])
-    .map((value: unknown) => parseLink(value))
-    .filter((value: string | null): value is string => Boolean(value));
+  const plannedPaths = getSessionPlannedScenePaths(app, file);
 
   if (adventureLinks.length === 0) {
     el.createEl("p", { text: "No adventure linked to this session.", cls: "dnd-hub-empty" });
@@ -140,7 +130,7 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
   const adventureGroups: Array<{ name: string; scenes: FileMeta[] }> = [];
   const seenAdventurePaths = new Set<string>();
   for (const adventureLink of adventureLinks) {
-    const adventureFile = resolveFile(app, adventureLink);
+    const adventureFile = resolveCampaignAdventure(app, adventureLink, getSessionCampaignPath(file), file.path);
     if (!adventureFile) {
       if (seenAdventurePaths.has(adventureLink)) continue;
       seenAdventurePaths.add(adventureLink);
@@ -153,31 +143,19 @@ function renderSceneNavigator(el: HTMLElement, app: App, sourcePath: string): vo
     const adventureName = adventureFm?.name || adventureFile.basename;
     adventureGroups.push({
       name: adventureName,
-      scenes: collectScenes(app, adventureFile.parent?.path || "", adventureFm?.campaign || "", adventureName),
+      scenes: collectScenes(app, adventureFile),
     });
   }
   let allScenes = adventureGroups.flatMap(group => group.scenes);
-  if (plannedLinks.length > 0) {
-    const byPath = new Map<string, FileMeta>();
-    for (const scene of allScenes) {
-      byPath.set(scene.file.path, scene);
-      byPath.set(scene.file.basename, scene);
-      byPath.set(scene.file.path.replace(/\.md$/i, ""), scene);
-    }
+  if (plannedPaths !== null) {
+    const byPath = new Map(allScenes.map(scene => [scene.file.path, scene]));
     const plannedScenes: FileMeta[] = [];
-    const seen = new Set<string>();
-    for (const link of plannedLinks) {
-      const resolved = resolveFile(app, link);
-      const scene = (resolved && byPath.get(resolved.path)) || byPath.get(link) || byPath.get(link.replace(/\.md$/i, ""));
-      if (scene && !seen.has(scene.file.path)) {
-        seen.add(scene.file.path);
-        plannedScenes.push(scene);
-      }
+    for (const path of plannedPaths) {
+      const scene = byPath.get(path);
+      if (scene) plannedScenes.push(scene);
     }
-    if (plannedScenes.length > 0) {
-      adventureGroups.splice(0, adventureGroups.length, { name: "Planned Scenes", scenes: plannedScenes });
-      allScenes = plannedScenes;
-    }
+    adventureGroups.splice(0, adventureGroups.length, { name: "Planned Scenes", scenes: plannedScenes });
+    allScenes = plannedScenes;
   }
 
   if (allScenes.length === 0) {
@@ -291,11 +269,7 @@ function renderAdventureScenes(el: HTMLElement, app: App, sourcePath: string): v
   const fm = cache?.frontmatter;
   if (!fm) return;
 
-  const adventureName = fm.name || file.basename;
-  const adventureFolder = file.parent?.path || "";
-  const campaignFolder = fm.campaign || "";
-
-  const allScenes = collectScenes(app, adventureFolder, campaignFolder, adventureName);
+  const allScenes = collectScenes(app, file);
 
   if (allScenes.length === 0) {
     el.createEl("p", { text: "No scenes created yet. Use the button above to create your first scene.", cls: "dnd-hub-empty" });
@@ -677,49 +651,6 @@ function renderPcQuickStats(el: HTMLElement, app: App, sourcePath: string): void
 
 // ─── Shared: Collect Scenes ─────────────────────────────────────────────────
 
-function collectScenes(app: App, adventureFolder: string, campaignFolder: string, adventureName: string): FileMeta[] {
-  const scenePaths = new Set<string>();
-  const raw: FileMeta[] = [];
-
-  const addFrom = (folder: string, filter?: (fm: Record<string, any>, file: TFile) => boolean) => {
-    const files = getFilesRecursive(app, folder);
-    for (const file of files) {
-      if (scenePaths.has(file.path)) continue;
-      const cache = app.metadataCache.getFileCache(file);
-      const fm = cache?.frontmatter;
-      if (!fm) continue;
-      if (filter && !filter(fm, file)) continue;
-      scenePaths.add(file.path);
-      raw.push({ file, fm });
-    }
-  };
-
-  // New structure: Adventures/AdventureName/Scenes/
-  addFrom(`${adventureFolder}/Scenes`, (fm) => fm.type === "scene");
-
-  // Legacy flat structure: Adventures/AdventureName - Scenes/
-  if (campaignFolder) {
-    addFrom(`${campaignFolder}/Adventures/${adventureName} - Scenes`, (_fm, file) => file.basename.startsWith("Scene"));
-  }
-
-  // Scenes directly in adventure folder
-  addFrom(adventureFolder, (fm) => fm.type === "scene");
-
-  // Sort by scene number
-  raw.sort((a, b) => sceneNum(a.fm, a.file.basename) - sceneNum(b.fm, b.file.basename));
-  return raw;
-}
-
-function resolveFile(app: App, linkTarget: string): TFile | null {
-  // Try direct path first
-  let file = app.vault.getAbstractFileByPath(linkTarget);
-  if (file instanceof TFile) return file;
-
-  // Try with .md extension
-  file = app.vault.getAbstractFileByPath(linkTarget + ".md");
-  if (file instanceof TFile) return file;
-
-  // Search by basename
-  const allFiles = app.vault.getMarkdownFiles();
-  return allFiles.find((f) => f.basename === linkTarget || f.path === linkTarget) || null;
+function collectScenes(app: App, adventureFile: TFile): FileMeta[] {
+  return getAdventureScenes(app, adventureFile).map(scene => ({ file: scene.file, fm: scene.frontmatter }));
 }

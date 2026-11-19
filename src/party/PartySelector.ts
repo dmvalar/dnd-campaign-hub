@@ -13,6 +13,8 @@ export interface PartySelectorOptions {
   initialPartyId?: string;
   /** Pre-selected member names. */
   initialMembers?: string[];
+  /** Treat a supplied empty selection as intentional. */
+  preserveEmptySelection?: boolean;
   /** Called when the selected party or members change. */
   onChange?: (partyId: string, partyName: string, selectedMembers: string[]) => void;
   /** If true show member checkboxes (default true). */
@@ -28,6 +30,7 @@ export class PartySelector {
   private selectedPartyId = "";
   private selectedPartyName = "";
   private selectedMembers: string[] = [];
+  private selectAllOnEmpty: boolean;
   private parties: Array<{ id: string; name: string; memberCount: number; avgLevel: number }> = [];
 
   constructor(opts: PartySelectorOptions) {
@@ -36,11 +39,13 @@ export class PartySelector {
       campaignHint: "",
       initialPartyId: "",
       initialMembers: [],
+      preserveEmptySelection: false,
       onChange: () => {},
       ...opts,
     };
     this.selectedPartyId = this.opts.initialPartyId;
-    this.selectedMembers = [...this.opts.initialMembers];
+    this.selectedMembers = [...(opts.initialMembers ?? [])];
+    this.selectAllOnEmpty = !this.opts.preserveEmptySelection || opts.initialMembers === undefined;
   }
 
   /* ── Public API ───────────────────────────────── */
@@ -105,6 +110,7 @@ export class PartySelector {
         const match = this.parties.find((p) => p.id === value);
         this.selectedPartyName = match?.name || "";
         this.selectedMembers = [];
+        this.selectAllOnEmpty = true;
         await this.renderMembers();
         this.emitChange();
       });
@@ -135,10 +141,10 @@ export class PartySelector {
 
     wrapper.createEl("h4", { text: "Select Party Members", attr: { style: "margin-top: 0;" } });
 
-    // If no selection yet, default to all
-    if (this.selectedMembers.length === 0) {
+    if (this.selectedMembers.length === 0 && this.selectAllOnEmpty) {
       this.selectedMembers = members.map((m) => m.name);
     }
+    this.selectAllOnEmpty = !this.opts.preserveEmptySelection;
 
     for (const member of members) {
       const row = wrapper.createDiv();
