@@ -7,11 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0-beta.4] - 2026-11-19
+
+Beta / unstable release from `dev`, adding agent-driven content creation. Manual Obsidian acceptance testing remains pending.
+
 ### Added
 
 - Agent authoring API with validated linked batches, previews, durable request receipts, file requests, a CLI, and a local MCP bridge.
 - Programmatic monster and NPC creation with complete statblocks and reusable tokens using vault images, plus native adventure, scene, encounter, map, and session creation.
 - Campaign/image discovery, per-operation schemas, an agent guide generated in the vault, and an example adventure batch.
+
+### Fixed
+
+- Preserve current/maximum/temporary HP, token IDs, and fixed initiative including zero when agent-created encounters are launched or re-saved through the normal editor.
+- Store markers in the vault's configured Obsidian directory and preserve a legacy default-directory marker library when adopting a custom directory.
+
+### Changed
+
+- Expanded the regression suite to 419 tests, including actual MCP integration, complete linked batches, retries, failed writes and preservation of concurrent DM edits.
 
 ## [0.15.0-beta.3] - 2026-11-19
 
