@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Sync combat HP and temporary HP without consuming adjacent YAML fields when the note's values are blank.
 - Include vision-blocking scatter in player fog visibility and refresh cached visibility when blockers move, resize, rotate, or change height.
 - Keep session plans and stored scene references aligned when scenes are renamed or renumbered, using Obsidian's link-aware rename operation.
 - Preserve handout links, custom properties, and existing metadata when editing a scene.

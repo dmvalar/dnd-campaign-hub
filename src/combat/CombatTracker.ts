@@ -1,4 +1,5 @@
 import { App, Notice, TFile, TFolder } from "obsidian";
+import { isMap, isScalar, parseDocument, visit } from "yaml";
 import type DndCampaignHubPlugin from "../main";
 import type { Combatant, CombatState, CombatListener, StatusEffect, DeathSaveState, SyncPreviewEntry, CombatRunActorRef, CombatRunEventType, CombatRunEvent, CombatUndoKind, CombatUndoSummary } from "./types";
 import type { EncounterCreature } from "../encounter/EncounterBuilder";
@@ -1306,10 +1307,7 @@ export class CombatTracker {
         const file = this.app.vault.getAbstractFileByPath(c.notePath);
         if (!(file instanceof TFile)) { failed++; continue; }
 
-        let content = await this.app.vault.read(file);
-        content = this.setFrontmatterField(content, "hp", String(c.currentHP));
-        content = this.setFrontmatterField(content, "thp", String(c.tempHP));
-        await this.app.vault.modify(file, content);
+        await this.app.vault.process(file, content => this.updatePcNoteHp(content, c.currentHP, c.tempHP));
         synced++;
       } catch (err) {
         console.error(`[CombatTracker] Failed to sync PC "${c.name}" to note:`, err);
@@ -1412,21 +1410,88 @@ export class CombatTracker {
     await this.refreshSelectedPCsFromNotes(pcs.map(c => c.id));
   }
 
-  /**
-   * Set (or update) a single frontmatter field value in raw file content.
-   * Operates purely on the string — does not call vault.modify().
-   */
-  private setFrontmatterField(content: string, field: string, value: string): string {
-    const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-    if (!fmMatch || fmMatch[1] === undefined) return content;
+  private updatePcNoteHp(content: string, hp: number, thp: number): string {
+    const opening = /^\uFEFF?---[ \t]*\r?\n/.exec(content)?.[0];
+    if (!opening) throw new Error("The PC note needs YAML frontmatter.");
+    const rest = content.slice(opening.length);
+    const closing = /^---[ \t]*(?:\r?\n|$)/m.exec(rest);
+    if (!closing) throw new Error("The PC note needs a closing frontmatter delimiter.");
+    const yaml = rest.slice(0, closing.index);
+    const eol = opening.endsWith("\r\n") ? "\r\n" : "\n";
+    const document = parseDocument(yaml, { keepSourceTokens: true });
+    const map = document.contents;
+    const token = map?.srcToken;
+    if (document.errors.length || !isMap(map) || !token ||
+      (token.type !== "block-map" && token.type !== "flow-collection")) {
+      throw new Error("The PC note frontmatter must be a valid YAML mapping.");
+    }
+    // Complex or aliased keys can resolve to hp/thp and override an inserted field.
+    if (map.items.some(({ key }) => !isScalar(key))) {
+      throw new Error("The PC note frontmatter must use plain field names for HP sync.");
+    }
+    visit(document, {
+      Alias(_key, alias) {
+        const target = alias.resolve(document);
+        if (!target) throw new Error("The PC note frontmatter contains an unresolved YAML alias.");
+      },
+    });
 
-    const fieldRegex = new RegExp(`^(${field}:\\s*).*$`, "m");
-    if (fieldRegex.test(fmMatch[0])) {
-      return content.replace(fieldRegex, `$1${value}`);
+    const edits: { from: number; to: number; text: string }[] = [];
+    const missing: string[] = [];
+    for (const [field, amount] of [["hp", hp], ["thp", thp]] as const) {
+      if (!Number.isFinite(amount)) throw new Error(`Cannot sync a non-finite ${field} value.`);
+      const pair = map.items.find(({ key }) => isScalar(key) && key.value === field);
+      if (!pair) {
+        missing.push(`${field}: ${amount}`);
+        continue;
+      }
+
+      const value = pair.value;
+      if (!value) {
+        // YAML also allows null entries without a colon, such as {hp, thp}.
+        if (!isScalar(pair.key)) throw new Error(`Cannot update ${field} in the PC note.`);
+        const at = pair.key.range[1];
+        const separator = token.type === "block-map" ? eol + " ".repeat(token.indent) : "";
+        edits.push({ from: at, to: at, text: `${separator}: ${amount}` });
+        continue;
+      }
+      if (!isScalar(value) || value.anchor || value.tag) {
+        throw new Error(`Cannot update ${field} in the PC note. Use a plain value without anchors or tags.`);
+      }
+      const [from, to] = value.range;
+      let text = String(amount);
+      if (from === to) {
+        // An empty scalar has a zero-width range that may touch the colon or a comment.
+        if (yaml[from - 1] === ":") text = " " + text;
+        if (yaml[from] === "#") text += " ";
+      } else if (value.srcToken?.type === "block-scalar") {
+        const headerEnd = to - value.srcToken.source.length;
+        const marker = value.srcToken.props[0];
+        if (marker?.type !== "block-scalar-header") throw new Error(`Cannot update ${field} in the PC note.`);
+        text += yaml.slice(from + marker.source.length, headerEnd);
+      }
+      edits.push({ from, to, text });
     }
 
-    // Field not present — insert after the opening --- line
-    return content.replace(/^---(\r?\n)/, `---$1${field}: ${value}$1`);
+    if (missing.length && token.type === "block-map") {
+      const at = token.offset - token.indent;
+      const text = missing.map(field => " ".repeat(token.indent) + field + eol).join("");
+      edits.push({ from: at, to: at, text });
+    } else if (missing.length && token.type === "flow-collection") {
+      const at = token.offset + 1;
+      const separator = map.items.length ? (/\s/.test(yaml[at] ?? "") ? "," : ", ") : "";
+      edits.push({ from: at, to: at, text: missing.join(", ") + separator });
+    }
+
+    let updated = yaml;
+    for (const { from, to, text } of edits.sort((a, b) => b.from - a.from)) {
+      updated = updated.slice(0, from) + text + updated.slice(to);
+    }
+    const written = parseDocument(updated);
+    if (written.errors.length || !isMap(written.contents) || written.get("hp") !== hp || written.get("thp") !== thp) {
+      throw new Error("Cannot write valid HP and temporary HP values to the PC note.");
+    }
+    return opening + updated + rest.slice(closing.index);
   }
 
   /* ────────────────── Private Helpers ────────────────── */
