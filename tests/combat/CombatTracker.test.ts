@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Notice, TFile } from "obsidian";
 import { CombatTracker } from "../../src/combat/CombatTracker";
 
 vi.mock("obsidian", () => {
@@ -59,7 +60,7 @@ function createTracker() {
     saveSettings: vi.fn(async () => {}),
   };
 
-  return { tracker: new CombatTracker(app, plugin), plugin };
+  return { tracker: new CombatTracker(app, plugin), app, plugin };
 }
 
 async function seedCombat(
@@ -71,6 +72,24 @@ async function seedCombat(
   const state = tracker.getState();
   if (!state) throw new Error("Expected combat state");
   return state.combatants.map((c) => c.id);
+}
+
+async function seedLinkedPc(content: string) {
+  const { tracker, app } = createTracker();
+  const notePath = "Party/Aelar.md";
+  const file = new TFile();
+  const note = { content };
+  const write = vi.fn((updated: string) => { note.content = updated; });
+  const process = vi.fn(async (_file: TFile, update: (latest: string) => string) => {
+    const updated = update(note.content);
+    write(updated);
+    return updated;
+  });
+  app.vault.getAbstractFileByPath.mockImplementation((path: string) => path === notePath ? file : null);
+  app.vault.read.mockResolvedValue(content);
+  app.vault.process = process;
+  const [id] = await seedCombat(tracker, [], [{ name: "Aelar", level: 3, hp: 18, ac: 15, notePath }]);
+  return { tracker, app, id: id!, file, note, process, write };
 }
 
 describe("combat/CombatTracker", () => {
@@ -324,5 +343,91 @@ describe("combat/CombatTracker", () => {
     expect(state.turnIndex).toBe(0);
     expect(state.round).toBe(1);
     expect(state.combatants[0]!.statuses).toMatchObject([{ name: "Bless", duration: 1 }]);
+  });
+
+  describe("syncing PC HP to notes", () => {
+    it.each([
+      ["LF", "\n", ""],
+      ["CRLF with BOM", "\r\n", "\uFEFF"],
+    ])("updates blank HP and temporary HP in a %s note without consuming adjacent properties", async (_label, eol, bom) => {
+      const body = ["", "# Aelar", "", "---", "hp: authored body text", "thp: more text", "Trailing spaces  ", ""];
+      const fields = ["--- ", "type: player", "hp:", "hp_max: 18", "thp:", "custom:", "  hp: 44", "  thp: 21", "---\t"];
+      const { tracker, id, note } = await seedLinkedPc(bom + [...fields, ...body].join(eol));
+      tracker.setHP(id, 0);
+      tracker.setTempHP(id, 4);
+
+      expect(await tracker.syncSelectedPCsToNotes([id])).toEqual({ synced: 1, failed: 0 });
+      fields[2] = "hp: 0";
+      fields[4] = "thp: 4";
+      expect(note.content).toBe(bom + [...fields, ...body].join(eol));
+    });
+
+    it.each([
+      ["hp: 0  # current\nthp: null\nname: Aelar\n", "hp: 18  # current\nthp: 0\nname: Aelar\n"],
+      ["hp: # current\nthp:   # temporary\nname: Aelar\n", "hp: 18 # current\nthp:   0 # temporary\nname: Aelar\n"],
+      ["  type: player\n  custom: { hp: 44, thp: 21 }\n", "  hp: 18\n  thp: 0\n  type: player\n  custom: { hp: 44, thp: 21 }\n"],
+      ["{ name: Aelar, 'hp': ~ }\n", "{thp: 0, name: Aelar, 'hp': 18 }\n"],
+      ["{ hp, thp: }\n", "{ hp: 18, thp: 0}\n"],
+      ["hp: > # current\n  8\nthp: ~\n", "hp: 18 # current\nthp: 0\n"],
+    ])("writes only the top-level HP fields in %j", async (original, expected) => {
+      const { tracker, id, note } = await seedLinkedPc(`---\n${original}---`);
+
+      expect(await tracker.syncSelectedPCsToNotes([id])).toEqual({ synced: 1, failed: 0 });
+      expect(note.content).toBe(`---\n${expected}---`);
+    });
+
+    it.each([
+      ["without frontmatter", "# Aelar\n---\nhp: 9\n---\n"],
+      ["without a closing delimiter", "---\nhp: 9\n---extra\n"],
+      ["with malformed YAML", "---\nhp: [\nthp: 0\n---\n"],
+      ["with duplicate HP entries", "---\nhp: 3\nhp: 8\n---\n"],
+      ["with a sequence", "---\n- hp: 9\n- thp: 0\n---\n"],
+      ["with a scalar instead of a mapping", "---\nAelar\n---\n"],
+      ["with empty frontmatter", "---\n---\n"],
+      ["with a map in HP", "---\nhp:\n  custom: note\nthp: 2\n---\n"],
+      ["with an unresolved alias", "---\nhp: 3\ncustom: *missing\n---\n"],
+      ["with HP used by an unrelated alias", "---\nhp: &first 3\ncustom: *first\n---\n"],
+      ["with an alias pointing to an HP key", "---\ncustom: &field hp\n*field : 3\nthp: 2\n---\n"],
+      ["with explicitly tagged HP", "---\nhp: !!str 3\nthp: 2\n---\n"],
+      ["with a complex HP key", "---\n? [hp]\n: 3\nthp: 2\n---\n"],
+    ])("rejects a note %s without writing", async (_label, original) => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const { tracker, id, note, write } = await seedLinkedPc(original);
+
+      expect(await tracker.syncSelectedPCsToNotes([id])).toEqual({ synced: 0, failed: 1 });
+      expect(write).not.toHaveBeenCalled();
+      expect(note.content).toBe(original);
+      expect(Notice).toHaveBeenLastCalledWith("Synced 0 PCs to notes (1 failed)");
+    });
+
+    it("uses the latest document when a note changes before the atomic update runs", async () => {
+      const original = "---\nhp: 5\nname: Aelar\n---\n# Aelar\n";
+      const { tracker, app, id, file, note, process, write } = await seedLinkedPc(original);
+      process.mockImplementationOnce(async (_file, update) => {
+        note.content = original.replace("name: Aelar", "name: Aelar\ncustom: new field") + "\nLatest body edit\n";
+        const updated = update(note.content);
+        write(updated);
+        return updated;
+      });
+
+      expect(await tracker.syncSelectedPCsToNotes([id])).toEqual({ synced: 1, failed: 0 });
+      expect(process).toHaveBeenCalledOnce();
+      expect(process).toHaveBeenCalledWith(file, expect.any(Function));
+      expect(app.vault.read).not.toHaveBeenCalled();
+      expect(note.content).toBe("---\nthp: 0\nhp: 18\nname: Aelar\ncustom: new field\n---\n# Aelar\n\nLatest body edit\n");
+    });
+
+    it("reports a failed vault write as a failed sync", async () => {
+      const original = "---\nhp: 5\nthp: 2\n---\n# Aelar\n";
+      const { tracker, id, note, write } = await seedLinkedPc(original);
+      const failure = new Error("write failed");
+      const onError = vi.spyOn(console, "error").mockImplementation(() => {});
+      write.mockImplementationOnce(() => { throw failure; });
+
+      expect(await tracker.syncSelectedPCsToNotes([id])).toEqual({ synced: 0, failed: 1 });
+      expect(note.content).toBe(original);
+      expect(onError).toHaveBeenCalledWith('[CombatTracker] Failed to sync PC "Aelar" to note:', failure);
+      expect(Notice).toHaveBeenLastCalledWith("Synced 0 PCs to notes (1 failed)");
+    });
   });
 });
