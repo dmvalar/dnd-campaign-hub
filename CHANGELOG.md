@@ -7,8 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0-beta.3] - 2026-11-19
+
+Beta / unstable release from `dev`, addressing all 11 P1 findings in the specialist review. Manual Obsidian acceptance and large-map performance testing remain pending.
+
 ### Fixed
 
+- Preserve zero current HP and load selected PCs' current stats from linked notes when starting saved encounters, including map launches; store current and maximum HP separately.
+- Honor disabled/absent party members and explicit empty encounter selections, and prevent missing-note snapshot fallbacks from writing stale stats to PC notes.
+- Scope scene discovery, session plans, continuation, and status updates to the correct adventure and campaign, including legacy layouts and duplicate adventure names.
 - Sync combat HP and temporary HP without consuming adjacent YAML fields when the note's values are blank.
 - Include vision-blocking scatter in player fog visibility and refresh cached visibility when blockers move, resize, rotate, or change height.
 - Keep session plans and stored scene references aligned when scenes are renamed or renumbered, using Obsidian's link-aware rename operation.
@@ -17,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Remove only the matching map code blocks when deleting a map from a note, preserving other maps and surrounding content.
 - Preserve authored content when editing encounters and traps, and prevent renames or duplicate names from overwriting another note.
 - Keep live-session quick notes bound to their original session during asynchronous saves and campaign/session switching; preserve outgoing edits and unrelated note content instead of writing a stale document to another session.
+
+### Changed
+
+- Expanded the regression suite to 379 tests covering note preservation, asynchronous saves, scene relationships, visibility, and combat health.
+- Added shared specialist-agent development guides and routing profiles.
 
 ## [0.15.0-beta.2] - 2026-11-17
 
