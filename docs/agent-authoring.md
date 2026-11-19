@@ -1,12 +1,12 @@
 # Agent content authoring
 
-Available in the development build after v0.15.0-beta.3. The published beta.3 does not contain this feature.
+Available from v0.15.0-beta.4.
 
 Agents can create plugin-native monsters, NPCs, adventures, scenes, encounters, maps, and sessions without opening creation forms. All transports call the same versioned API inside Obsidian. No AI subscription or model is built into the plugin; use your existing agents.
 
 ## Setup
 
-1. Install a development build containing this feature and reload Obsidian.
+1. Install v0.15.0-beta.4 or a newer build and reload Obsidian.
 2. In **D&D Campaign Hub → Setup**, enable **Agent content requests**. Keep the target vault open.
 3. Choose file requests, the CLI, or the local MCP bridge below.
 

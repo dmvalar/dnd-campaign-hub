@@ -420,7 +420,7 @@ See the [docs/](docs/) folder for detailed guides:
 
 Specialist agents for maps/projection, sessions/campaigns, and encounters/combat are documented in [the agent setup guide](docs/agents/README.md).
 
-Content-creation agents can use the development build's [authoring API, file requests and MCP bridge](docs/agent-authoring.md) to create monsters with statblocks and image tokens, NPCs, adventures, scenes, encounters, maps and sessions. See the [example adventure batch](examples/agent-authoring/adventure-batch.json).
+From v0.15.0-beta.4, content-creation agents can use the [authoring API, file requests and MCP bridge](docs/agent-authoring.md) to create monsters with statblocks and image tokens, NPCs, adventures, scenes, encounters, maps and sessions. See the [example adventure batch](examples/agent-authoring/adventure-batch.json).
 
 All features and fixes branch from and merge into `dev`. Pull requests target `dev`; validated, tested releases are promoted to `main`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the development, beta-release, and cleanup workflow.
 
